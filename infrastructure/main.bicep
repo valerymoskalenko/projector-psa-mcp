@@ -201,7 +201,8 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
 
 // Key Vault Secrets User on the EXISTING vault only (role assignment; never create/delete vault).
 // App Service system-assigned MI reads secrets via ManagedIdentityCredential.
-var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+// Built-in Azure role 'Key Vault Secrets User' (same id in every tenant, not a secret).
+var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6' // gitleaks:allow
 
 resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVault.id, webApp.id, keyVaultSecretsUserRoleId)
