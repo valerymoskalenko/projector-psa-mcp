@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <pws:PwsGetResourceUtilizationSummaryResponse>
+      <pws:PwsGetResourceUtilizationSummaryResult>
+        <UtilizationSummaryPackage>
+          <ThisYearUtilization>
+            <Year>2026</Year>
+            <BillableUtilizationAndTarget><ActualUtilizationPercent>0.55</ActualUtilizationPercent></BillableUtilizationAndTarget>
+            <ChargeableUtilizationAndTarget><ActualUtilizationPercent>0.60</ActualUtilizationPercent></ChargeableUtilizationAndTarget>
+            <ProductiveUtilizationAndTarget><ActualUtilizationPercent>0.70</ActualUtilizationPercent></ProductiveUtilizationAndTarget>
+            <TotalUtilizationAndTarget><ActualUtilizationPercent>0.75</ActualUtilizationPercent></TotalUtilizationAndTarget>
+          </ThisYearUtilization>
+          <LastYearUtilization>
+            <Year>2025</Year>
+            <BillableUtilizationAndTarget><ActualUtilizationPercent>0.50</ActualUtilizationPercent></BillableUtilizationAndTarget>
+            <ChargeableUtilizationAndTarget><ActualUtilizationPercent>0.52</ActualUtilizationPercent></ChargeableUtilizationAndTarget>
+            <ProductiveUtilizationAndTarget><ActualUtilizationPercent>0.65</ActualUtilizationPercent></ProductiveUtilizationAndTarget>
+            <TotalUtilizationAndTarget><ActualUtilizationPercent>0.68</ActualUtilizationPercent></TotalUtilizationAndTarget>
+          </LastYearUtilization>
+        </UtilizationSummaryPackage>
+      </pws:PwsGetResourceUtilizationSummaryResult>
+    </pws:PwsGetResourceUtilizationSummaryResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/" xmlns:tim="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/">
+  <soapenv:Body>
+    <pws:PwsGetResourcePtoResponse>
+      <pws:PwsGetResourcePtoResult>
+        <tim:CutoffDate>2026-08-29T00:00:00Z</tim:CutoffDate>
+        <tim:ScheduledHolidaysFuture>
+          <tim:PwsHolidayPto>
+            <tim:Date>2026-09-07T00:00:00</tim:Date>
+            <tim:EffectiveTimeOffMinutes>480</tim:EffectiveTimeOffMinutes>
+            <tim:Name>Labor Day</tim:Name>
+            <tim:TimeOffMinutes>1440</tim:TimeOffMinutes>
+          </tim:PwsHolidayPto>
+          <tim:PwsHolidayPto>
+            <tim:Date>2026-11-26T00:00:00</tim:Date>
+            <tim:EffectiveTimeOffMinutes>480</tim:EffectiveTimeOffMinutes>
+            <tim:Name>Thanksgiving Day</tim:Name>
+            <tim:TimeOffMinutes>1440</tim:TimeOffMinutes>
+          </tim:PwsHolidayPto>
+        </tim:ScheduledHolidaysFuture>
+      </pws:PwsGetResourcePtoResult>
+    </pws:PwsGetResourcePtoResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

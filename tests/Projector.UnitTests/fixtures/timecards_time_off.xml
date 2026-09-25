@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetTimeCardsResponse>
+      <pws:PwsGetTimeCardsResult>
+        <TimeEntryTimeOff>
+          <PwsTimeEntryTimeOff>
+            <TimeOffCards>
+              <PwsTimeOffCardDetail>
+                <TimecardUid>4000000000000000002</TimecardUid>
+                <WorkDate>2026-09-01T00:00:00.000Z</WorkDate>
+                <WorkMinutes>480</WorkMinutes>
+                <Description>Paid Time Off (Paid Time Off)</Description>
+                <CardStatus>A</CardStatus>
+                <TimeOffReasonIdentity>
+                  <TimeOffReasonName>PTO</TimeOffReasonName>
+                  <TimeOffReasonUid>3458764513820541148</TimeOffReasonUid>
+                </TimeOffReasonIdentity>
+              </PwsTimeOffCardDetail>
+              <PwsTimeOffCardDetail>
+                <TimecardUid>4000000000000000003</TimecardUid>
+                <WorkDate>2026-09-02T00:00:00.000Z</WorkDate>
+                <WorkMinutes>480</WorkMinutes>
+                <Description>Paid Time Off (Paid Time Off)</Description>
+                <CardStatus>A</CardStatus>
+                <TimeOffReasonIdentity>
+                  <TimeOffReasonName>PTO</TimeOffReasonName>
+                  <TimeOffReasonUid>3458764513820541148</TimeOffReasonUid>
+                </TimeOffReasonIdentity>
+              </PwsTimeOffCardDetail>
+            </TimeOffCards>
+          </PwsTimeEntryTimeOff>
+        </TimeEntryTimeOff>
+      </pws:PwsGetTimeCardsResult>
+    </pws:PwsGetTimeCardsResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

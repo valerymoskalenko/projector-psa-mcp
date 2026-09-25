@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetEngagementListResponse>
+      <pws:PwsGetEngagementListResult>
+        <Engagements>
+          <PwsEngagementSummary>
+            <EngagementCode>E100</EngagementCode>
+            <EngagementName>Sample Engagement</EngagementName>
+            <ClosedFlag>false</ClosedFlag>
+            <ClientIdentity>
+              <ClientNumber>C000001</ClientNumber>
+            </ClientIdentity>
+          </PwsEngagementSummary>
+          <PwsEngagementSummary>
+            <EngagementCode>E200</EngagementCode>
+            <EngagementName>Closed Engagement</EngagementName>
+            <ClosedFlag>true</ClosedFlag>
+          </PwsEngagementSummary>
+        </Engagements>
+      </pws:PwsGetEngagementListResult>
+    </pws:PwsGetEngagementListResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

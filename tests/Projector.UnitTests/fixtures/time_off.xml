@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetTimeEntryTimeOffResponse>
+      <pws:PwsGetTimeEntryTimeOffResult>
+        <TimeEntryTimeOff>
+          <PwsTimeEntryTimeOff>
+            <TimeOffCards>
+              <PwsTimeOffCardDetail>
+                <TimecardUid>4000000000000000001</TimecardUid>
+                <WorkDate>2026-01-09T00:00:00.000Z</WorkDate>
+                <WorkMinutes>480</WorkMinutes>
+                <Description>Vacation</Description>
+                <CardStatus>Approved</CardStatus>
+                <TimeOffReasonIdentity>
+                  <TimeOffReasonName>PTO</TimeOffReasonName>
+                  <TimeOffReasonUid>3458764513820541148</TimeOffReasonUid>
+                  <TimeOffReasonId>42</TimeOffReasonId>
+                </TimeOffReasonIdentity>
+              </PwsTimeOffCardDetail>
+              <PwsTimeOffCardDetail>
+                <TimecardUid>4000000000000000009</TimecardUid>
+                <WorkDate>2026-01-10T00:00:00.000Z</WorkDate>
+                <WorkMinutes>240</WorkMinutes>
+                <Description>Half day</Description>
+                <CardStatus>R</CardStatus>
+                <RejectedReason>Insufficient notice</RejectedReason>
+                <RejectedTimestamp>2026-01-08T15:30:00.000Z</RejectedTimestamp>
+                <RejectedByUser>
+                  <UserDisplayName>Jane Doe</UserDisplayName>
+                  <EmailAddress>jane.doe@example.com</EmailAddress>
+                  <UserReferenceSystemId>10001</UserReferenceSystemId>
+                </RejectedByUser>
+                <TimeOffReasonIdentity>
+                  <TimeOffReasonName>PTO</TimeOffReasonName>
+                  <TimeOffReasonUid>3458764513820541148</TimeOffReasonUid>
+                </TimeOffReasonIdentity>
+              </PwsTimeOffCardDetail>
+            </TimeOffCards>
+          </PwsTimeEntryTimeOff>
+        </TimeEntryTimeOff>
+      </pws:PwsGetTimeEntryTimeOffResult>
+    </pws:PwsGetTimeEntryTimeOffResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

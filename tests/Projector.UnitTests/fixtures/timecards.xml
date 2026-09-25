@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetTimeCardsResponse>
+      <pws:PwsGetTimeCardsResult>
+        <TimeEntryProjects>
+          <PwsTimeEntryProject>
+            <ProjectDescriptor>
+              <ProjectCode>P005678-001</ProjectCode>
+              <ProjectName>Sample Project</ProjectName>
+              <ProjectUid>2000000000000000001</ProjectUid>
+              <EngagementCode>E005678</EngagementCode>
+              <EngagementName>Sample Engagement</EngagementName>
+              <ClientDescriptor>
+                <ClientName>Contoso</ClientName>
+                <ClientNumber>C000001</ClientNumber>
+              </ClientDescriptor>
+              <EngagementTypeDescriptor>
+                <BillableFlag>true</BillableFlag>
+              </EngagementTypeDescriptor>
+              <ProjectStageIdentity>
+                <ProjectStageName>Delivery</ProjectStageName>
+              </ProjectStageIdentity>
+            </ProjectDescriptor>
+            <ProjectTasks>
+              <PwsProjectTask>
+                <ProjectTaskUid>2100000000000000001</ProjectTaskUid>
+                <Name>SysAdmin: Office 365</Name>
+              </PwsProjectTask>
+            </ProjectTasks>
+            <Roles>
+              <PwsRole>
+                <ProjectRoleUid>2200000000000000001</ProjectRoleUid>
+                <RoleName>System Engineer</RoleName>
+              </PwsRole>
+            </Roles>
+            <AllowedProjectRateTypes>
+              <PwsProjectRateTypeSummary>
+                <ProjectRateTypeUid>2300000000000000001</ProjectRateTypeUid>
+                <ProjectRateTypeName>Billable Zero Rate</ProjectRateTypeName>
+              </PwsProjectRateTypeSummary>
+            </AllowedProjectRateTypes>
+            <TimeCards>
+              <PwsTimecardDetail>
+                <TimecardUid>3000000000000000001</TimecardUid>
+                <WorkDate>2026-01-05T00:00:00.000Z</WorkDate>
+                <WorkMinutes>480</WorkMinutes>
+                <Status>Approved</Status>
+                <CardStatus>A</CardStatus>
+                <Description>Work</Description>
+                <ProjectIdentity>
+                  <ProjectCode>P005678-001</ProjectCode>
+                  <ProjectUid>2000000000000000001</ProjectUid>
+                </ProjectIdentity>
+                <ProjectRateTypeIdentity>
+                  <ProjectRateTypeUid>2300000000000000001</ProjectRateTypeUid>
+                </ProjectRateTypeIdentity>
+                <ProjectTaskIdentity>
+                  <ProjectTaskUid>2100000000000000001</ProjectTaskUid>
+                </ProjectTaskIdentity>
+                <RoleIdentity>
+                  <ProjectRoleUid>2200000000000000001</ProjectRoleUid>
+                </RoleIdentity>
+              </PwsTimecardDetail>
+              <PwsTimecardDetail>
+                <TimecardUid>3000000000000000002</TimecardUid>
+                <WorkDate>2026-01-06T00:00:00.000Z</WorkDate>
+                <WorkMinutes>240</WorkMinutes>
+                <Status>Draft</Status>
+                <CardStatus>D</CardStatus>
+                <Description>Draft work</Description>
+                <ProjectRateTypeIdentity><ProjectRateTypeName>Billable</ProjectRateTypeName></ProjectRateTypeIdentity>
+                <ProjectTaskIdentity><ProjectTaskName>Development</ProjectTaskName></ProjectTaskIdentity>
+              </PwsTimecardDetail>
+            </TimeCards>
+          </PwsTimeEntryProject>
+          <PwsTimeEntryProject>
+            <ProjectDescriptor>
+              <ProjectCode>P000001-001</ProjectCode>
+              <ProjectName>Other Project</ProjectName>
+            </ProjectDescriptor>
+            <TimeCards>
+              <PwsTimecardDetail>
+                <TimecardUid>3000000000000000003</TimecardUid>
+                <WorkDate>2026-01-07T00:00:00.000Z</WorkDate>
+                <WorkMinutes>60</WorkMinutes>
+                <Status>Approved</Status>
+                <CardStatus>A</CardStatus>
+              </PwsTimecardDetail>
+            </TimeCards>
+          </PwsTimeEntryProject>
+        </TimeEntryProjects>
+      </pws:PwsGetTimeCardsResult>
+    </pws:PwsGetTimeCardsResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

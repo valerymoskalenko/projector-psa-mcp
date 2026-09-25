@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soapenv:Body>
+    <pws:PwsGetResourceResponse>
+      <pws:PwsGetResourceResult>
+        <Resources>
+          <PwsResourceElement>
+            <ActiveHistoryIndex>0</ActiveHistoryIndex>
+            <ResourceDetail>
+              <ResourceUid>2000000000000000001</ResourceUid>
+              <ResourceReferenceSystemId>10101</ResourceReferenceSystemId>
+              <ResourceDisplayName>Alice Example</ResourceDisplayName>
+              <FirstName>Alice</FirstName>
+              <LastName>Example</LastName>
+              <EmailAddress>alice@example.com</EmailAddress>
+              <InactiveFlag>false</InactiveFlag>
+              <ManagerResourceIdentity>
+                <ResourceDisplayName>Manager Example</ResourceDisplayName>
+                <EmailAddress>manager@example.com</EmailAddress>
+              </ManagerResourceIdentity>
+              <LatestHistoryRecord>
+                <LocationIdentity><LocationName>US - United States</LocationName></LocationIdentity>
+                <CostCenterIdentity><CostCenterName>Contoso - US</CostCenterName></CostCenterIdentity>
+                <TitleIdentity>
+                  <TitleName>Solution Architect</TitleName>
+                  <DepartmentIdentity><DepartmentName>Professional Services</DepartmentName></DepartmentIdentity>
+                </TitleIdentity>
+                <ResourceTypeIdentity><ResourceTypeName>Project FTE</ResourceTypeName></ResourceTypeIdentity>
+              </LatestHistoryRecord>
+              <PwsUserDefinedFieldDetail>
+                <UdfName>Resource Department</UdfName>
+                <TextValue>Project Development</TextValue>
+              </PwsUserDefinedFieldDetail>
+              <PwsUserDefinedFieldDetail>
+                <UdfName>Team Manager</UdfName>
+                <TextValue>D365 - Team 1</TextValue>
+              </PwsUserDefinedFieldDetail>
+            </ResourceDetail>
+            <History>
+              <PwsResourceHistory>
+                <Record>
+                  <EffectiveDate>2024-01-01T00:00:00.000Z</EffectiveDate>
+                  <TrackMissingTimeFlag>true</TrackMissingTimeFlag>
+                  <LocationIdentity><LocationName>US - United States</LocationName></LocationIdentity>
+                  <CostCenterIdentity><CostCenterName>Contoso - US</CostCenterName></CostCenterIdentity>
+                  <TitleIdentity>
+                    <TitleName>Solution Architect</TitleName>
+                    <DepartmentIdentity><DepartmentName>Professional Services</DepartmentName></DepartmentIdentity>
+                  </TitleIdentity>
+                  <ResourceTypeIdentity><ResourceTypeName>Project FTE</ResourceTypeName></ResourceTypeIdentity>
+                </Record>
+              </PwsResourceHistory>
+            </History>
+          </PwsResourceElement>
+        </Resources>
+      </pws:PwsGetResourceResult>
+    </pws:PwsGetResourceResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

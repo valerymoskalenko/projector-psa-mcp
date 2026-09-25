@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetResourceSchedulingRoleDataResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetResourceSchedulingRoleDataResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/Scheduling/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <a:EndDate>2026-11-01T00:00:00Z</a:EndDate>
+        <a:ProjectRoles xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <b:PwsProjectRoleSchedule>
+            <b:BookedBuckets>
+              <b:PwsProjectRoleHoursBucket>
+                <b:BucketStartDate>2026-10-04T00:00:00Z</b:BucketStartDate>
+                <b:DailyMinutes i:nil="true" xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays"/>
+                <b:SchedulingMode>W</b:SchedulingMode>
+                <b:WeeklyMinutes>720</b:WeeklyMinutes>
+              </b:PwsProjectRoleHoursBucket>
+              <b:PwsProjectRoleHoursBucket>
+                <b:BucketStartDate>2026-11-01T00:00:00Z</b:BucketStartDate>
+                <b:DailyMinutes i:nil="true" xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays"/>
+                <b:SchedulingMode>W</b:SchedulingMode>
+                <b:WeeklyMinutes>480</b:WeeklyMinutes>
+              </b:PwsProjectRoleHoursBucket>
+              <b:PwsProjectRoleHoursBucket>
+                <b:BucketStartDate>2026-10-11T00:00:00Z</b:BucketStartDate>
+                <b:DailyMinutes i:nil="true" xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays"/>
+                <b:SchedulingMode>W</b:SchedulingMode>
+                <b:WeeklyMinutes>0</b:WeeklyMinutes>
+              </b:PwsProjectRoleHoursBucket>
+            </b:BookedBuckets>
+            <b:BookedHoursFlag>true</b:BookedHoursFlag>
+            <b:Candidates>
+              <b:PwsProjectRoleCandidate>
+                <b:AssignedCandidateFlag>true</b:AssignedCandidateFlag>
+                <b:ResourceIdentity>
+                  <b:ResourceDisplayName>Jane Doe</b:ResourceDisplayName>
+                  <b:ResourceReferenceSystemId>10007</b:ResourceReferenceSystemId>
+                  <b:ResourceUid>5764607523034663490</b:ResourceUid>
+                </b:ResourceIdentity>
+                <b:SelectedCandidateFlag>true</b:SelectedCandidateFlag>
+              </b:PwsProjectRoleCandidate>
+            </b:Candidates>
+            <b:ProjectIdentity>
+              <b:ProjectCode>P001234-001</b:ProjectCode>
+            </b:ProjectIdentity>
+            <b:ProjectName>Contoso - ERP Rollout Program 1</b:ProjectName>
+            <b:ProjectRoleIdentity>
+              <b:ProjectRoleUid>2200000000000000010</b:ProjectRoleUid>
+            </b:ProjectRoleIdentity>
+            <b:ProjectRoleName>Director of Consulting - Team 2</b:ProjectRoleName>
+            <b:ResourceIdentity i:nil="true"/>
+          </b:PwsProjectRoleSchedule>
+          <b:PwsProjectRoleSchedule>
+            <b:BookedBuckets>
+              <b:PwsProjectRoleHoursBucket>
+                <b:BucketStartDate>2026-10-04T00:00:00Z</b:BucketStartDate>
+                <b:DailyMinutes xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                  <c:short>480</c:short>
+                  <c:short>0</c:short>
+                  <c:short>0</c:short>
+                  <c:short>0</c:short>
+                  <c:short>0</c:short>
+                  <c:short>0</c:short>
+                  <c:short>0</c:short>
+                </b:DailyMinutes>
+                <b:SchedulingMode>D</b:SchedulingMode>
+                <b:WeeklyMinutes i:nil="true"/>
+              </b:PwsProjectRoleHoursBucket>
+            </b:BookedBuckets>
+            <b:Candidates>
+              <b:PwsProjectRoleCandidate>
+                <b:AssignedCandidateFlag>true</b:AssignedCandidateFlag>
+                <b:ResourceIdentity>
+                  <b:ResourceDisplayName>Carol Jones</b:ResourceDisplayName>
+                  <b:ResourceReferenceSystemId>10049</b:ResourceReferenceSystemId>
+                  <b:ResourceUid>5764607523034685398</b:ResourceUid>
+                </b:ResourceIdentity>
+                <b:SelectedCandidateFlag>true</b:SelectedCandidateFlag>
+              </b:PwsProjectRoleCandidate>
+            </b:Candidates>
+            <b:ProjectIdentity>
+              <b:ProjectCode>P001234-001</b:ProjectCode>
+            </b:ProjectIdentity>
+            <b:ProjectName>Contoso - ERP Rollout Program 1</b:ProjectName>
+            <b:ProjectRoleIdentity>
+              <b:ProjectRoleUid>2200000000000000011</b:ProjectRoleUid>
+            </b:ProjectRoleIdentity>
+            <b:ProjectRoleName>PMO Oversight</b:ProjectRoleName>
+          </b:PwsProjectRoleSchedule>
+        </a:ProjectRoles>
+        <a:RequestOrScheduleMode>A</a:RequestOrScheduleMode>
+        <a:Resources xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <b:PwsResourceSchedule>
+            <b:EmailAddress>jane.doe@example.com</b:EmailAddress>
+            <b:ResourceIdentity>
+              <b:ResourceDisplayName>Jane Doe</b:ResourceDisplayName>
+              <b:ResourceReferenceSystemId>10007</b:ResourceReferenceSystemId>
+              <b:ResourceUid>5764607523034663490</b:ResourceUid>
+            </b:ResourceIdentity>
+          </b:PwsResourceSchedule>
+        </a:Resources>
+        <a:StartDate>2026-10-01T00:00:00Z</a:StartDate>
+        <a:WeekCount>5</a:WeekCount>
+      </PwsGetResourceSchedulingRoleDataResult>
+    </PwsGetResourceSchedulingRoleDataResponse>
+  </s:Body>
+</s:Envelope>

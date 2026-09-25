@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetProjectRolesResponse>
+      <pws:PwsGetProjectRolesResult>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <RolesByProject>
+          <PwsProjectProjectRoles>
+            <ProjectIdentity>
+              <ProjectCode>P001234-001</ProjectCode>
+            </ProjectIdentity>
+            <ProjectRoles>
+              <PwsProjectRoleElement>
+                <ProjectRoleDetail>
+                  <ProjectRoleUid>2200000000000000001</ProjectRoleUid>
+                  <RoleName>Application Specialist - Team 1</RoleName>
+                  <ResourceIdentity>
+                    <ResourceDisplayName>Dan Miller</ResourceDisplayName>
+                    <ResourceReferenceSystemId>10280</ResourceReferenceSystemId>
+                    <ResourceUid>5764607523034690385</ResourceUid>
+                  </ResourceIdentity>
+                </ProjectRoleDetail>
+                <ProjectIdentity>
+                  <ProjectCode>P001234-001</ProjectCode>
+                </ProjectIdentity>
+              </PwsProjectRoleElement>
+              <PwsProjectRoleElement>
+                <ProjectRoleDetail>
+                  <ProjectRoleUid>2200000000000000002</ProjectRoleUid>
+                  <RoleName>PMO Oversight</RoleName>
+                  <ResourceIdentity>
+                    <ResourceDisplayName>Carol Jones</ResourceDisplayName>
+                    <ResourceReferenceSystemId>10049</ResourceReferenceSystemId>
+                    <ResourceUid>5764607523034685398</ResourceUid>
+                  </ResourceIdentity>
+                </ProjectRoleDetail>
+                <ProjectIdentity>
+                  <ProjectCode>P001234-001</ProjectCode>
+                </ProjectIdentity>
+              </PwsProjectRoleElement>
+            </ProjectRoles>
+          </PwsProjectProjectRoles>
+        </RolesByProject>
+      </pws:PwsGetProjectRolesResult>
+    </pws:PwsGetProjectRolesResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

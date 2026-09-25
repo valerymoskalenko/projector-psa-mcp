@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:data="http://www.opsplanning.com/webservices/public/data">
+  <soapenv:Body>
+    <data:ExportResourcesResponse>
+      <data:ExportResourcesResult>
+        <data:Data>
+          <data:RowCount>4</data:RowCount>
+          <data:Resources>
+            <data:Resource>
+              <data:ResourceId>429750</data:ResourceId>
+              <data:ResourceHistoryId>1</data:ResourceHistoryId>
+              <data:BeginDate>2026-01-01T00:00:00</data:BeginDate>
+              <data:EndDate>2099-12-31T00:00:00</data:EndDate>
+              <data:DisplayName>Alice Example</data:DisplayName>
+              <data:EmployeeId>10101</data:EmployeeId>
+              <data:LocationName>US - United States</data:LocationName>
+              <data:ResourceInactiveFlag>false</data:ResourceInactiveFlag>
+            </data:Resource>
+            <data:Resource>
+              <data:ResourceId>429751</data:ResourceId>
+              <data:ResourceHistoryId>2</data:ResourceHistoryId>
+              <data:BeginDate>2026-01-01T00:00:00</data:BeginDate>
+              <data:EndDate>2099-12-31T00:00:00</data:EndDate>
+              <data:DisplayName>Bob Example</data:DisplayName>
+              <data:EmployeeId>10102</data:EmployeeId>
+              <data:LocationName>US - United States</data:LocationName>
+              <data:ResourceInactiveFlag>false</data:ResourceInactiveFlag>
+            </data:Resource>
+            <data:Resource>
+              <data:ResourceId>429752</data:ResourceId>
+              <data:ResourceHistoryId>3</data:ResourceHistoryId>
+              <data:BeginDate>2026-01-01T00:00:00</data:BeginDate>
+              <data:EndDate>2026-06-30T00:00:00</data:EndDate>
+              <data:DisplayName>Carol Example</data:DisplayName>
+              <data:EmployeeId>10103</data:EmployeeId>
+              <data:LocationName>LT - Lithuania</data:LocationName>
+              <data:ResourceInactiveFlag>false</data:ResourceInactiveFlag>
+            </data:Resource>
+            <data:Resource>
+              <data:ResourceId>429752</data:ResourceId>
+              <data:ResourceHistoryId>4</data:ResourceHistoryId>
+              <data:BeginDate>2026-07-01T00:00:00</data:BeginDate>
+              <data:EndDate>2099-12-31T00:00:00</data:EndDate>
+              <data:DisplayName>Carol Example</data:DisplayName>
+              <data:EmployeeId>10103</data:EmployeeId>
+              <data:LocationName>PT - Portugal</data:LocationName>
+              <data:ResourceInactiveFlag>false</data:ResourceInactiveFlag>
+            </data:Resource>
+            <data:Resource>
+              <data:ResourceId>429753</data:ResourceId>
+              <data:ResourceHistoryId>5</data:ResourceHistoryId>
+              <data:BeginDate>2026-01-01T00:00:00</data:BeginDate>
+              <data:EndDate>2099-12-31T00:00:00</data:EndDate>
+              <data:DisplayName>Dave Retired</data:DisplayName>
+              <data:EmployeeId>10104</data:EmployeeId>
+              <data:LocationName>US - United States</data:LocationName>
+              <data:ResourceInactiveFlag>true</data:ResourceInactiveFlag>
+            </data:Resource>
+          </data:Resources>
+        </data:Data>
+      </data:ExportResourcesResult>
+    </data:ExportResourcesResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

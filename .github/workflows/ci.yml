@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest   # DPAPI session store is Windows-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build Projector.Mcp.sln -c Release
+      - run: dotnet test tests/Projector.UnitTests -c Release --no-build --filter "Category!=Live"
+        env:
+          ASPNETCORE_ENVIRONMENT: Development

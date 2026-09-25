@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetUserListResponse>
+      <pws:PwsGetUserListResult>
+        <Users>
+          <PwsUserSummaryElement>
+            <UserSummary>
+              <UserUid>1000000000000000001</UserUid>
+              <UserReferenceSystemId>10101</UserReferenceSystemId>
+              <EmailAddress>alice@example.com</EmailAddress>
+              <FirstName>Alice</FirstName>
+              <LastName>Example</LastName>
+              <UserDisplayName>Alice Example</UserDisplayName>
+              <InactiveFlag>false</InactiveFlag>
+            </UserSummary>
+          </PwsUserSummaryElement>
+          <PwsUserSummaryElement>
+            <UserSummary>
+              <UserUid>1000000000000000002</UserUid>
+              <UserReferenceSystemId>10102</UserReferenceSystemId>
+              <EmailAddress>bob@example.com</EmailAddress>
+              <FirstName>Bob</FirstName>
+              <LastName>Example</LastName>
+              <UserDisplayName>Bob Example</UserDisplayName>
+              <InactiveFlag>true</InactiveFlag>
+            </UserSummary>
+          </PwsUserSummaryElement>
+        </Users>
+      </pws:PwsGetUserListResult>
+    </pws:PwsGetUserListResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

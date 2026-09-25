@@ -1,0 +1,10 @@
+{
+  "uri": "projector://reference/resource-types",
+  "name": "resource-types",
+  "description": "Projector resource type values. Sample values; replace with your own (see docs/deploy-azure.md, CatalogsPath).",
+  "items": [
+    "Project Contractor",
+    "Project FTE",
+    "Project Manager"
+  ]
+}

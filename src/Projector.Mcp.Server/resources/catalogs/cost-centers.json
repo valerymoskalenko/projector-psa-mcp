@@ -1,0 +1,10 @@
+{
+  "uri": "projector://reference/cost-centers",
+  "name": "cost-centers",
+  "description": "Projector cost center values. Sample values; replace with your own (see docs/deploy-azure.md, CatalogsPath).",
+  "items": [
+    "Contoso - CA",
+    "Contoso - UK",
+    "Contoso - US"
+  ]
+}

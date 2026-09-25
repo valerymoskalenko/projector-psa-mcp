@@ -1,0 +1,11 @@
+{
+  "uri": "projector://reference/udf-team-managers",
+  "name": "udf-team-managers",
+  "description": "Projector UDF Resource Team Manager values. Sample values; replace with your own (see docs/deploy-azure.md, CatalogsPath).",
+  "items": [
+    "Consulting - Team 1",
+    "Consulting - Team 2",
+    "Development - Team 1",
+    "PMO"
+  ]
+}

@@ -1,0 +1,534 @@
+{
+  "server": {
+    "name": "Projector PSA MCP Server",
+    "version": "0.5.0"
+  },
+  "defaultRequestedScopes": "allowFullPermissions",
+  "annotationsDefaults": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true
+  },
+  "agentTools": [
+    {
+      "name": "list_resources",
+      "aliases": [
+        "list_resources"
+      ],
+      "title": "List Projector resources",
+      "requiredScopes": [
+        "browseResources"
+      ],
+      "description": "Searches Projector resource summaries by optional query string (people catalog). Human “list users” maps here. Returns truncated lists with resource_links and searchCoverage (status full/partial; when partial, do not present as complete — follow suggestion). Does not return schedules or timecards.",
+      "whenNotToUse": "Do not use to resolve a single person by email/resource_id/full name; prefer get_resource with resource_id, full_name, or email.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "default": false
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      }
+    },
+    {
+      "name": "get_resource",
+      "aliases": [
+        "get_resource"
+      ],
+      "title": "Get Projector resource",
+      "requiredScopes": [
+        "browseResources"
+      ],
+      "description": "Gets one Projector resource. Provide exactly one of: resource_id (ResourceReferenceSystemId or ResourceUid, preferred/fastest), full_name (exact display name, preferred/fast), or email (slower — uses resource list search then detail). Optionally includes history and UDFs. Human “user” maps here. Does not return timecards.",
+      "whenNotToUse": "Do not use for timecards, schedules, or multi-person search lists (use list_resources / list_timecards).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "description": "Preferred. ResourceReferenceSystemId or ResourceUid. Fast single PwsGetResource call. Do not pass email or display name here."
+          },
+          "full_name": {
+            "type": "string",
+            "description": "Preferred. Exact ResourceDisplayName (e.g. \"Jane Doe\"). Fast single PwsGetResource call. Prefer over email."
+          },
+          "email": {
+            "type": "string",
+            "description": "Person email address. Slower than resource_id/full_name — resolves via PwsGetResourceList then PwsGetResource. Prefer resource_id or full_name when known."
+          },
+          "include_history": {
+            "type": "boolean",
+            "default": false
+          },
+          "include_udfs": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    },
+    {
+      "name": "list_timecards",
+      "aliases": [
+        "list_timecards"
+      ],
+      "title": "List Projector timecards",
+      "requiredScopes": [
+        "enterTime"
+      ],
+      "description": "Lists many work timecard rows for one resource in a date range, with optional status and project_code filters. Does not include time-off cards. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete).",
+      "whenNotToUse": "Do not use for capacity or bookings; use check_availability or get_schedule. Do not use for PTO cards; use list_time_off.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "resource_id",
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "description": "ResourceReferenceSystemId"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string"
+          },
+          "project_code": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_schedule",
+      "title": "Get Projector resource schedule",
+      "requiredScopes": [
+        "scheduleResources"
+      ],
+      "description": "Returns one resource’s schedule for a date window: working/utilization minutes and hours, holidays, PTO, roles (with engagement/client/managers/stage), bookings (dailyWeeklyFlag D/W plus schedulingMode daily/weekly, with notes), plus daily/weekly capacity summaries (state, booked/available minutes). Cap is eight weeks. Prefer check_availability for multi-person capacity questions.",
+      "whenNotToUse": "Do not use for multi-person availability comparisons. Do not use for historical time entry totals; use list_timecards. Do not use for a project team roster; use list_project_roles. Do not use for project booked hours across teammates; use list_proj_bookings.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "resource_id",
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "resource_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "aliases": [
+        "get_schedule"
+      ]
+    },
+    {
+      "name": "check_availability",
+      "aliases": [
+        "check_availability"
+      ],
+      "title": "Check Projector availability",
+      "requiredScopes": [
+        "browseResources",
+        "scheduleResources"
+      ],
+      "description": "Compares capacity and bookings for 1–20 people over a date window using utilization-basis minutes. Returns weekly available minutes/hours, project/role bookings, PTO/holidays, and whether each person can take the requested weekly hours. Daily availability.days is omitted unless show_availability_days is true. Includes searchCoverage (status partial when any person fails). Does not return resource history or actual timecards.",
+      "whenNotToUse": "Do not use for historical time entry totals; use list_timecards. Do not use to list assigned projects only; use get_schedule (or a bookings-shaped wrapper).",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "people": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            },
+            "description": "Emails, display names, or system ids"
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "Optional ResourceReferenceSystemId alias for people (merged into the people list)"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "required_hours_per_week": {
+            "type": "number"
+          },
+          "required_minutes_per_week": {
+            "type": "number"
+          },
+          "show_availability_days": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, include daily availability.days in addition to weeks. Default weekly only."
+          }
+        }
+      }
+    },
+    {
+      "name": "list_time_off",
+      "aliases": [
+        "list_time_off"
+      ],
+      "title": "List Projector time-off cards",
+      "requiredScopes": [
+        "enterTime"
+      ],
+      "description": "Lists many PwsGetTimeCards time-off card rows for one resource and date range. Holidays and bookings live on the schedule; company holiday calendars are list_holidays; company-wide ASMX scheduled-timeoff export is ops-only. Includes searchCoverage (status full/partial).",
+      "whenNotToUse": "Use list_upcoming_pto for a combined schedule+cards window. Use list_holidays for company-wide location holiday calendars. Do not use for work time entries; use list_timecards.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "resource_id",
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "resource_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_engagements",
+      "title": "List Projector engagements",
+      "requiredScopes": [
+        "viewProjects",
+        "scheduleEngagements"
+      ],
+      "description": "Lists engagements with engagement manager plus nested projects including project manager, stage, begin date, and end date. Query uses Projector’s fast server search for engagement, client, contract line item, and project fields. ManagerQuery searches engagement/project manager name or email and defaults to open engagements unless include_closed is set. has_more means page again with next_offset; searchCoverage.status=partial (complete=false) means Projector capped its own list, so count is only a lower bound — never present a capped manager search as someone’s complete project list; follow searchCoverage.suggestion. Includes execution duration. Does not return dollar budgets.",
+      "whenNotToUse": "Use get_engagement for one engagement’s billable/productive flags, cost center, and contracts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Fast server-side search across engagement, client, contract line item, and nested project code/name fields. If there are no server matches, it falls back to manager name/email search."
+          },
+          "manager_query": {
+            "type": "string",
+            "description": "Case-insensitive substring search over engagement manager display name/email and project manager display name. Combine with query to narrow candidates server-side. When set and include_closed is omitted, only open engagements are searched."
+          },
+          "manager_role": {
+            "type": "string",
+            "enum": [
+              "Any",
+              "Engagement",
+              "Project"
+            ],
+            "default": "Any",
+            "description": "Limits manager_query (or automatic manager fallback) to engagement managers, project managers, or either."
+          },
+          "include_closed": {
+            "type": "boolean",
+            "description": "Include closed engagements. Defaults to true for ordinary listing and to false when manager_query is set and this flag is omitted. Pass true to search closed history by manager."
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        }
+      },
+      "aliases": [
+        "list_engagements"
+      ]
+    },
+    {
+      "name": "get_engagement",
+      "title": "Get Projector engagement",
+      "requiredScopes": [
+        "viewProjects",
+        "scheduleEngagements"
+      ],
+      "description": "Gets one engagement by code with engagement manager, billable/productive flags, cost center, contracts, nested projects including project manager, and planned hour/money budgets when the signed-in user's Projector permissions include them. Money budget fields may be omitted (never treat missing money as $0). Does not compare actuals to budget.",
+      "whenNotToUse": "Do not use for resource schedules or timecards; use get_schedule or list_timecards. Do not use for company-wide over-budget lists.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "EngagementCode"
+          }
+        }
+      },
+      "aliases": [
+        "get_engagement"
+      ]
+    },
+    {
+      "name": "list_upcoming_pto",
+      "aliases": [
+        "list_upcoming_pto"
+      ],
+      "title": "List upcoming Projector PTO",
+      "requiredScopes": [
+        "scheduleResources",
+        "enterTime"
+      ],
+      "description": "Lists upcoming PTO for one resource by combining schedule holidays/PTO and time-off cards in a window up to 366 days (default today through about the third Friday). Each pto row includes minutes and hours (minutes / 60). Includes searchCoverage (status full/partial). Projector-only; no Bamboo or email.",
+      "whenNotToUse": "Do not use for company-wide holiday calendars; use list_holidays. Do not use for company-wide ASMX scheduled-timeoff exports. Prefer list_time_off when you only need cards for an explicit date range.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "resource_id"
+        ],
+        "properties": {
+          "resource_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_overview",
+      "title": "Get Projector resource overview",
+      "requiredScopes": [
+        "browseResources",
+        "enterTime",
+        "scheduleResources",
+        "viewProjects"
+      ],
+      "description": "Returns a bounded bundle of resource profile, timecards, schedule/bookings/roles, and time off for one resource. Prefer this instead of chaining four primitives.",
+      "whenNotToUse": "Do not use for simple availability checks; use check_availability.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "resource_id",
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "resource_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "aliases": [
+        "get_overview"
+      ]
+    },
+    {
+      "name": "list_holidays",
+      "title": "List Projector holiday calendars",
+      "requiredScopes": [
+        "V:exportData",
+        "enterTime"
+      ],
+      "description": "Lists company holiday calendars by location for an inclusive date range. Returns compact calendars (location + holiday dates/names), not per-person rows. end_date defaults to start_date plus three months when omitted. Optional location is a case-insensitive substring of Projector LocationName (Canada matches CA - Canada). Includes searchCoverage (status full/partial). Prefer get_schedule or list_upcoming_pto for one resource.",
+      "whenNotToUse": "Do not use for one person's holidays, PTO, or bookings; use get_schedule or list_upcoming_pto. Do not use for company-wide scheduled PTO cards; use ops list_scheduled_timeoff.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "start_date"
+        ],
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Inclusive end date. Defaults to start_date plus three months when omitted."
+          },
+          "location": {
+            "type": "string",
+            "description": "Optional case-insensitive substring of Projector LocationName (e.g. Canada matches CA - Canada)."
+          }
+        }
+      },
+      "aliases": [
+        "list_holidays"
+      ]
+    },
+    {
+      "name": "list_project_roles",
+      "aliases": [
+        "list_project_roles"
+      ],
+      "title": "List Projector project roles",
+      "requiredScopes": [
+        "viewProjects",
+        "scheduleEngagements"
+      ],
+      "description": "Lists many booked/assigned project role rows for one or more project codes (role name, resource id/name, optional email). Uses PwsGetProjectRoles Mode=A. Does not return date-window booked hours. Includes searchCoverage (status full/partial; when partial, do not present as complete).",
+      "whenNotToUse": "Do not use for October-style booked hours; use list_proj_bookings. Do not use for one person's assigned projects; use get_schedule. Do not use for capacity; use check_availability.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "project_code"
+        ],
+        "properties": {
+          "project_code": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 100
+              }
+            ],
+            "description": "One project code or 1–100 project codes (e.g. P001234-001)."
+          }
+        }
+      }
+    },
+    {
+      "name": "list_proj_bookings",
+      "aliases": [
+        "list_proj_bookings",
+        "list_project_bookings"
+      ],
+      "title": "List Projector project bookings",
+      "requiredScopes": [
+        "viewProjects",
+        "scheduleEngagements"
+      ],
+      "description": "Lists many booked-hour rows for one or more project codes in an inclusive date window (role, resource, date, scheduled minutes/hours). Uses PwsGetResourceSchedulingRoleData mode A; one SOAP call per project with bounded concurrency. Zero-hour buckets are omitted. Accepts many project_codes in one MCP call. Includes searchCoverage (status full/partial; honor partial coverage — do not invent missing projects).",
+      "whenNotToUse": "Do not use for assignment roster without hours; use list_project_roles. Do not use for one person's load; use get_schedule. Do not use for actual timecards; use list_timecards.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "project_code",
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "project_code": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 100
+              }
+            ],
+            "description": "One project code or 1–100 project codes."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
+    }
+  ],
+  "opsTools": [
+    {
+      "name": "list_scheduled_timeoff",
+      "title": "Export scheduled time off (ASMX)",
+      "requiredScopes": [
+        "V:exportData"
+      ],
+      "description": "Company-wide ASMX ExportScheduledTimeoff for an inclusive date range. Prefer list_time_off or list_upcoming_pto for one resource. Company holiday calendars are list_holidays.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date"
+        ],
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 10000
+          }
+        }
+      },
+      "defaultEnabled": false
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "uri": "projector://reference/locations",
+  "name": "locations",
+  "description": "Projector location values. Sample values; replace with your own (see docs/deploy-azure.md, CatalogsPath).",
+  "items": [
+    "CA - Canada",
+    "DE - Germany",
+    "UK - United Kingdom",
+    "US - United States"
+  ]
+}

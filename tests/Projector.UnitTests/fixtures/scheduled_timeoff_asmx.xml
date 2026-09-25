@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:data="http://www.opsplanning.com/webservices/public/data">
+  <soapenv:Body>
+    <data:ExportScheduledTimeoffResponse>
+      <data:ExportScheduledTimeoffResult>
+        <data:Data>
+          <data:ScheduledTimeoffList>
+            <data:ScheduledTimeoff>
+              <data:TimecardUid>5001</data:TimecardUid>
+              <data:EmployeeId>10101</data:EmployeeId>
+              <data:DisplayName>Alice Example</data:DisplayName>
+              <data:Date>2026-02-01</data:Date>
+              <data:TimeoffMinutes>480</data:TimeoffMinutes>
+              <data:Narrative>PTO</data:Narrative>
+              <data:TimeoffReasonName>PTO</data:TimeoffReasonName>
+              <data:ApprovalStatus>Approved</data:ApprovalStatus>
+            </data:ScheduledTimeoff>
+            <data:ScheduledTimeoff>
+              <data:TimecardUid>5002</data:TimecardUid>
+              <data:EmployeeId>10102</data:EmployeeId>
+              <data:DisplayName>Bob Example</data:DisplayName>
+              <data:Date>2026-02-02</data:Date>
+              <data:TimeoffMinutes>270</data:TimeoffMinutes>
+              <data:TimeoffReasonName>PTO</data:TimeoffReasonName>
+              <data:ApprovalStatus>Approved</data:ApprovalStatus>
+            </data:ScheduledTimeoff>
+          </data:ScheduledTimeoffList>
+        </data:Data>
+      </data:ExportScheduledTimeoffResult>
+    </data:ExportScheduledTimeoffResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

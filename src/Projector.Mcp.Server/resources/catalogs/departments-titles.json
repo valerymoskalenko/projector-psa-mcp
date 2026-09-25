@@ -1,0 +1,31 @@
+{
+  "uri": "projector://reference/departments-titles",
+  "name": "departments-titles",
+  "description": "Projector department and title pairs. Sample values; replace with your own (see docs/deploy-azure.md, CatalogsPath).",
+  "items": [
+    {
+      "department": "Administration",
+      "title": "Office Manager"
+    },
+    {
+      "department": "Professional Services",
+      "title": "Functional Consultant"
+    },
+    {
+      "department": "Professional Services",
+      "title": "Senior Functional Consultant"
+    },
+    {
+      "department": "Professional Services",
+      "title": "Solution Architect"
+    },
+    {
+      "department": "Professional Services",
+      "title": "Technical Consultant"
+    },
+    {
+      "department": "Project Management",
+      "title": "Project Manager"
+    }
+  ]
+}

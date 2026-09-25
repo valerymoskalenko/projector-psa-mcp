@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetResourceListResponse>
+      <pws:PwsGetResourceListResult>
+        <PwsResourceSummary>
+          <ResourceUid>2000000000000000001</ResourceUid>
+          <ResourceReferenceSystemId>10101</ResourceReferenceSystemId>
+          <ResourceDisplayName>Alice Example</ResourceDisplayName>
+          <EmailAddress>alice@example.com</EmailAddress>
+          <InactiveFlag>false</InactiveFlag>
+        </PwsResourceSummary>
+        <PwsResourceSummary>
+          <ResourceUid>2000000000000000002</ResourceUid>
+          <ResourceReferenceSystemId>10102</ResourceReferenceSystemId>
+          <ResourceDisplayName>Bob Example</ResourceDisplayName>
+          <EmailAddress>bob@example.com</EmailAddress>
+          <InactiveFlag>true</InactiveFlag>
+        </PwsResourceSummary>
+      </pws:PwsGetResourceListResult>
+    </pws:PwsGetResourceListResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetEngagementResponse>
+      <pws:PwsGetEngagementResult>
+        <Engagements>
+          <PwsEngagementElement>
+            <BillableFlag>true</BillableFlag>
+            <ProductiveFlag>true</ProductiveFlag>
+            <Manager>
+              <UserDisplayName>Betty Smith</UserDisplayName>
+              <EmailAddress>betty@example.com</EmailAddress>
+            </Manager>
+            <Client>
+              <ClientNumber>C000001</ClientNumber>
+              <ClientName>Contoso</ClientName>
+            </Client>
+            <EngagementDetail>
+              <EngagementCode>E100</EngagementCode>
+              <EngagementName>Sample Engagement</EngagementName>
+              <CostCenterIdentity><CostCenterName>Contoso - US</CostCenterName></CostCenterIdentity>
+              <WorkMinutesTimeBudgetAmount>4800</WorkMinutesTimeBudgetAmount>
+              <ChargeableMinutesTimeBudgetAmount>3600</ChargeableMinutesTimeBudgetAmount>
+            </EngagementDetail>
+            <ContractLineItems>
+              <PwsContractLineItemElement>
+                <ContractLineItemDetail>
+                  <ContractTypeIdentity><ContractTypeName>Time and Materials</ContractTypeName></ContractTypeIdentity>
+                </ContractLineItemDetail>
+                <Projects>
+                  <PwsProjectSummary>
+                    <ProjectCode>P005678-001</ProjectCode>
+                    <ProjectName>Sample Project</ProjectName>
+                  </PwsProjectSummary>
+                </Projects>
+              </PwsContractLineItemElement>
+            </ContractLineItems>
+          </PwsEngagementElement>
+        </Engagements>
+      </pws:PwsGetEngagementResult>
+    </pws:PwsGetEngagementResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

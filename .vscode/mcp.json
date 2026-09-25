@@ -1,0 +1,24 @@
+{
+  "servers": {
+    "projector-psa": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/src/Projector.Mcp.Server/Projector.Mcp.Server.csproj",
+        "--no-launch-profile",
+        "--verbosity",
+        "quiet",
+        "--",
+        "serve",
+        "--stdio"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_NOLOGO": "1"
+      }
+    }
+  }
+}

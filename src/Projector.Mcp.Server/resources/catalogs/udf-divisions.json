@@ -1,0 +1,11 @@
+{
+  "uri": "projector://reference/udf-divisions",
+  "name": "udf-divisions",
+  "description": "Projector UDF Resource Division values. Sample values; replace with your own (see docs/deploy-azure.md, CatalogsPath).",
+  "items": [
+    "Consulting Services",
+    "Finance",
+    "Sales & Marketing",
+    "Technical Services"
+  ]
+}

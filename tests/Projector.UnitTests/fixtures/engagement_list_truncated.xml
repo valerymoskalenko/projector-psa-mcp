@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:pws="http://projectorpsa.com/PwsProjectorServices/">
+  <soapenv:Body>
+    <pws:PwsGetEngagementListResponse>
+      <pws:PwsGetEngagementListResult>
+        <Messages>
+          <PwsMessage>
+            <ErrorNumber>104</ErrorNumber>
+            <ErrorCode>RowCountExceeded</ErrorCode>
+            <ErrorText>Not all data rows were returned by this request because the specified row count was smaller than the total number of rows available.</ErrorText>
+            <Severity>Warning</Severity>
+          </PwsMessage>
+        </Messages>
+        <Status>Ok</Status>
+        <Engagements>
+          <PwsEngagementSummary>
+            <EngagementCode>E100</EngagementCode>
+            <EngagementName>Sample Engagement</EngagementName>
+          </PwsEngagementSummary>
+        </Engagements>
+      </pws:PwsGetEngagementListResult>
+    </pws:PwsGetEngagementListResponse>
+  </soapenv:Body>
+</soapenv:Envelope>

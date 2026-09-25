@@ -1,0 +1,10 @@
+{
+  "uri": "projector://reference/udf-technologies",
+  "name": "udf-technologies",
+  "description": "Projector UDF Resource Technology values. Sample values; replace with your own (see docs/deploy-azure.md, CatalogsPath).",
+  "items": [
+    "Business Central",
+    "Dynamics 365 CE",
+    "Power Platform"
+  ]
+}
