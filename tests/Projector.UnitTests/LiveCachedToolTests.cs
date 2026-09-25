@@ -135,6 +135,23 @@ public class LiveCachedToolTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetResource_ByEmail_ResolvesToSameResource()
+    {
+        RequireLive();
+
+        var resources = _sp!.GetRequiredService<ResourceService>();
+        foreach (var (resourceId, email) in LiveSettings.Resources.Where(r => r.Email is not null))
+        {
+            var result = await resources.GetAsync(
+                _connectionId!,
+                new GetResourceRequest(email!, false, false),
+                CancellationToken.None);
+            result.Resource.ResourceReferenceSystemId.Should().Be(resourceId);
+            result.Resource.EmailAddress.Should().BeEquivalentTo(email);
+        }
+    }
+
+    [Fact]
     public async Task ListResources_HasSearchCoverageAndLinks()
     {
         RequireLive();

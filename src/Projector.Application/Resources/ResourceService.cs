@@ -124,22 +124,12 @@ public sealed class ResourceService
         ResourceDetail? detail;
         try
         {
-            detail = await _resources.GetResourceAsync(
-                connection,
-                request.Id,
-                request.IncludeHistory,
-                request.IncludeUdfs,
-                cancellationToken);
+            detail = await GetByIdOrEmailAsync(connection, request, cancellationToken);
         }
         catch (ProjectorApiException ex) when (IsAuthFailure(ex))
         {
             connection = await _connections.RefreshConnectionAsync(connection, cancellationToken);
-            detail = await _resources.GetResourceAsync(
-                connection,
-                request.Id,
-                request.IncludeHistory,
-                request.IncludeUdfs,
-                cancellationToken);
+            detail = await GetByIdOrEmailAsync(connection, request, cancellationToken);
         }
 
         if (detail is null)
@@ -162,6 +152,33 @@ public sealed class ResourceService
                 new ResourceLinkDto($"projector://resources/{resourceId}/history", "history"),
                 new ResourceLinkDto($"projector://resources/{resourceId}/udfs", "udfs")
             ]);
+    }
+
+    /// <summary>
+    /// PwsGetResource cannot take an email, so an email is resolved through the resource list
+    /// (<see cref="ResourceEmailResolver"/>) and the detail is then loaded by ResourceReferenceSystemId.
+    /// </summary>
+    private async Task<ResourceDetail?> GetByIdOrEmailAsync(
+        ProjectorConnection connection,
+        GetResourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var id = request.Id.Trim();
+        if (ResourceEmailResolver.LooksLikeEmail(id))
+        {
+            var match = await ResourceEmailResolver.FindAsync(_resources, connection, id, cancellationToken);
+            if (string.IsNullOrWhiteSpace(match?.ResourceReferenceSystemId))
+            {
+                throw new ProjectorApiException(
+                    $"No resource has the email '{id}'. Try full_name or list_resources.",
+                    "AtLeastOneItemNotFound");
+            }
+
+            id = match.ResourceReferenceSystemId;
+        }
+
+        return await _resources.GetResourceAsync(
+            connection, id, request.IncludeHistory, request.IncludeUdfs, cancellationToken);
     }
 
     private static bool IsAuthFailure(ProjectorApiException ex) =>

@@ -677,13 +677,10 @@ public sealed class ProjectorToolService
         CancellationToken ct)
     {
         var id = input.Trim();
-        if (id.Contains('@', StringComparison.Ordinal))
+        if (ResourceEmailResolver.LooksLikeEmail(id))
         {
-            var listed = await WithRefreshAsync(connection, c =>
-                _soap.ListResourcesAsync(c, id, includeInactive: false, maxRows: 10, ct), ct);
-            var match = listed.Resources.FirstOrDefault(r =>
-                string.Equals(r.EmailAddress, id, StringComparison.OrdinalIgnoreCase))
-                ?? listed.Resources.FirstOrDefault();
+            var match = await WithRefreshAsync(connection, c =>
+                ResourceEmailResolver.FindAsync(_soap, c, id, ct), ct);
             if (match?.ResourceReferenceSystemId is null)
             {
                 throw new ProjectorApiException($"Resource not found for email '{id}'.", "AtLeastOneItemNotFound");
