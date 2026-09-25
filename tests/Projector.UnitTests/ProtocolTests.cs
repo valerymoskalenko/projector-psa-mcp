@@ -4,6 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Projector.Domain.Exceptions;
 using Projector.Mcp.Server;
 using Projector.Mcp.Server.Cli;
@@ -100,6 +101,38 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
         var response = await client.PostAsync("/oauth/register", new StringContent(body, Encoding.UTF8, "application/json"));
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("invalid_redirect_uri");
+    }
+
+    [Fact]
+    public async Task Http_Initialize_AdvertisesTools_AndToolsListReturnsThem()
+    {
+        var client = _factory.CreateClient();
+        var token = _factory.Services.GetRequiredService<Projector.Mcp.Server.Auth.McpJwtIssuer>()
+            .CreateAccessToken("protocol-test-connection");
+
+        var init = await PostMcpAsync(client, token,
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"protocol-test","version":"1.0"}}}""");
+        init.GetProperty("result").GetProperty("capabilities").TryGetProperty("tools", out _)
+            .Should().BeTrue("clients such as VS Code only call tools/list when initialize advertises tools");
+
+        var list = await PostMcpAsync(client, token, """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""");
+        list.GetProperty("result").GetProperty("tools").GetArrayLength().Should().Be(13);
+    }
+
+    private static async Task<JsonElement> PostMcpAsync(HttpClient client, string token, string body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await client.SendAsync(request);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        // Streamable HTTP may answer as SSE ("data: {...}") or plain JSON.
+        var json = text.Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("data:", StringComparison.Ordinal))
+            .Select(l => l["data:".Length..].Trim()).LastOrDefault() ?? text;
+        return JsonDocument.Parse(json).RootElement.Clone();
     }
 
     [Fact]
