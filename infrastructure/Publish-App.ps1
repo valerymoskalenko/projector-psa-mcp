@@ -175,8 +175,17 @@ $pair = "$($creds.publishingUserName):$($creds.publishingPassword)"
 $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
 $scm = "https://$WebAppName.scm.azurewebsites.net/api/zipdeploy?isAsync=false"
 Write-Host "Kudu zipdeploy $scm"
-curl.exe -sS -X POST $scm -H "Authorization: Basic $b64" -H "Content-Type: application/octet-stream" --data-binary "@$deployZip" -f -w "\nHTTP:%{http_code}\n"
-if ($LASTEXITCODE -ne 0) { throw "Kudu zipdeploy failed" }
+# The settings merge above restarts the site (and Kudu), so the first upload can fail; retry.
+$deployed = $false
+for ($attempt = 1; $attempt -le 4 -and -not $deployed; $attempt++) {
+    curl.exe -sS -X POST $scm -H "Authorization: Basic $b64" -H "Content-Type: application/octet-stream" --data-binary "@$deployZip" -f -w "\nHTTP:%{http_code}\n"
+    if ($LASTEXITCODE -eq 0) { $deployed = $true }
+    elseif ($attempt -lt 4) {
+        Write-Warning "Kudu zipdeploy attempt $attempt failed; retrying in 20 s..."
+        Start-Sleep -Seconds 20
+    }
+}
+if (-not $deployed) { throw "Kudu zipdeploy failed" }
 
 Write-Host "Restarting web app..."
 az webapp restart --resource-group $ResourceGroup --name $WebAppName -o none
