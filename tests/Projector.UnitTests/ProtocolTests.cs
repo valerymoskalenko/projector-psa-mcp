@@ -116,7 +116,7 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
             .Should().BeTrue("clients such as VS Code only call tools/list when initialize advertises tools");
 
         var list = await PostMcpAsync(client, token, """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""");
-        list.GetProperty("result").GetProperty("tools").GetArrayLength().Should().Be(13);
+        list.GetProperty("result").GetProperty("tools").GetArrayLength().Should().Be(16);
     }
 
     private static async Task<JsonElement> PostMcpAsync(HttpClient client, string token, string body)

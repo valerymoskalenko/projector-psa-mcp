@@ -1,0 +1,29 @@
+<!-- PwsSaveTimeCards per-card error. Synthetic, built from the documented shape (ErrorDetail is a PwsMessage). -->
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsSaveTimeCardsResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsSaveTimeCardsResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <b:PwsMessage>
+            <b:ErrorCode>TimeCardErrors</b:ErrorCode>
+            <b:ErrorNumber>20028</b:ErrorNumber>
+            <b:ErrorText>One or more time cards could not be saved.</b:ErrorText>
+          </b:PwsMessage>
+        </Messages>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Error</Status>
+        <a:SubmittedFlag>false</a:SubmittedFlag>
+        <a:TimecardResults>
+          <a:PwsSaveTimecardResult>
+            <a:ErrorDetail xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:ErrorCode>TimecardHasBeenChanged</b:ErrorCode>
+              <b:ErrorNumber>64182</b:ErrorNumber>
+              <b:ErrorText>The time card has been changed by another user.</b:ErrorText>
+            </a:ErrorDetail>
+            <a:ReferenceId>1</a:ReferenceId>
+            <a:TimeCard i:nil="true" />
+          </a:PwsSaveTimecardResult>
+        </a:TimecardResults>
+      </PwsSaveTimeCardsResult>
+    </PwsSaveTimeCardsResponse>
+  </s:Body>
+</s:Envelope>

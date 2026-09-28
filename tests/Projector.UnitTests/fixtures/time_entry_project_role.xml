@@ -1,0 +1,96 @@
+<!-- PwsGetTimeEntryProjectRole, shape captured 2026-09-25; names and ids are invented.
+     Task 1 has a task type that allows only Billable; task 2 has no type (project rate types apply); task 3 is closed. -->
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetTimeEntryProjectRoleResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetTimeEntryProjectRoleResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <a:TimeEntryProject xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <a:AllowAssignmentFlag>true</a:AllowAssignmentFlag>
+          <a:AllowBookingFlag>false</a:AllowBookingFlag>
+          <a:DescriptionRequiredFlag>true</a:DescriptionRequiredFlag>
+          <a:OpenFlag>true</a:OpenFlag>
+          <a:ProjectDescriptor>
+            <ProjectCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P005678-001</ProjectCode>
+            <ProjectUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2000000000000000001</ProjectUid>
+            <a:EngagementDescriptor>
+              <EngagementCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P005678</EngagementCode>
+              <a:ClientDescriptor>
+                <a:ClientName>Contoso</a:ClientName>
+              </a:ClientDescriptor>
+              <a:EngagementName>Contoso - Development Services</a:EngagementName>
+              <a:EngagementTypeDescriptor>
+                <a:BillableFlag>true</a:BillableFlag>
+              </a:EngagementTypeDescriptor>
+            </a:EngagementDescriptor>
+            <a:ProjectName>Contoso - Development Services</a:ProjectName>
+            <a:ProjectRoles />
+          </a:ProjectDescriptor>
+          <a:ProjectRateTypes>
+            <b:PwsProjectRateTypeSummary>
+              <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+              <b:ProjectRateTypeName>Billable</b:ProjectRateTypeName>
+            </b:PwsProjectRateTypeSummary>
+            <b:PwsProjectRateTypeSummary>
+              <b:ProjectRateTypeUid>2300000000000000002</b:ProjectRateTypeUid>
+              <b:ProjectRateTypeName>Non-Chargeable</b:ProjectRateTypeName>
+            </b:PwsProjectRateTypeSummary>
+          </a:ProjectRateTypes>
+          <a:ProjectTaskTypes>
+            <a:PwsTaskType>
+              <ProjectTaskTypeUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2400000000000000001</ProjectTaskTypeUid>
+              <a:AllowedProjectRateTypes>
+                <b:PwsProjectRateTypeSummary>
+                  <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+                  <b:ProjectRateTypeName>Billable</b:ProjectRateTypeName>
+                </b:PwsProjectRateTypeSummary>
+              </a:AllowedProjectRateTypes>
+              <a:DefaultProjectRateTypeIdentity>
+                <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+              </a:DefaultProjectRateTypeIdentity>
+              <a:InactiveFlag>false</a:InactiveFlag>
+              <a:NarrativeRequiredFlag>false</a:NarrativeRequiredFlag>
+              <a:ProjectTaskTypeName>Development Services</a:ProjectTaskTypeName>
+            </a:PwsTaskType>
+          </a:ProjectTaskTypes>
+          <a:ProjectTasks>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000001</ProjectTaskUid>
+              <a:Description i:nil="true" />
+              <a:Name>Development</a:Name>
+              <a:OpenForTimeFlag>true</a:OpenForTimeFlag>
+              <a:ParentTaskName i:nil="true" />
+              <a:ProjectTaskTypeIdentity>
+                <b:ProjectTaskTypeUid>2400000000000000001</b:ProjectTaskTypeUid>
+              </a:ProjectTaskTypeIdentity>
+              <a:Roles>
+                <a:PwsProjectTaskRole>
+                  <ProjectRoleIdentity i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+                </a:PwsProjectTaskRole>
+              </a:Roles>
+              <a:WbsCode>1</a:WbsCode>
+            </a:PwsProjectTask>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000002</ProjectTaskUid>
+              <a:Name>Project Management</a:Name>
+              <a:OpenForTimeFlag>true</a:OpenForTimeFlag>
+              <a:ProjectTaskTypeIdentity i:nil="true" />
+              <a:WbsCode>2</a:WbsCode>
+            </a:PwsProjectTask>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000003</ProjectTaskUid>
+              <a:Name>Discovery</a:Name>
+              <a:OpenForTimeFlag>false</a:OpenForTimeFlag>
+              <a:WbsCode>3</a:WbsCode>
+            </a:PwsProjectTask>
+          </a:ProjectTasks>
+          <a:TimeCards />
+          <a:Udf1Treatment>A</a:Udf1Treatment>
+          <a:Udf2Treatment>D</a:Udf2Treatment>
+        </a:TimeEntryProject>
+      </PwsGetTimeEntryProjectRoleResult>
+    </PwsGetTimeEntryProjectRoleResponse>
+  </s:Body>
+</s:Envelope>

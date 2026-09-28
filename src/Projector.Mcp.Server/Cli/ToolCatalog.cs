@@ -46,7 +46,10 @@ public static class ToolCatalog
         "get_overview",
         "list_holidays",
         "list_project_roles",
-        "list_proj_bookings"
+        "list_proj_bookings",
+        "list_time_projects",
+        "get_timecard_options",
+        "save_timecard"
     ];
 
     public static string Canonicalize(string name)
@@ -90,6 +93,9 @@ public static class ToolCatalog
             "list_holidays" => await ListHolidaysAsync(services, connectionId, args, cancellationToken),
             "list_project_roles" => await ListProjectRolesAsync(services, connectionId, args, cancellationToken),
             "list_proj_bookings" => await ListProjectBookingsAsync(services, connectionId, args, cancellationToken),
+            "list_time_projects" => await ListTimeProjectsAsync(services, connectionId, args, cancellationToken),
+            "get_timecard_options" => await GetTimecardOptionsAsync(services, connectionId, args, cancellationToken),
+            "save_timecard" => await SaveTimecardAsync(services, connectionId, args, cancellationToken),
             _ => throw new ArgumentException(
                 $"Unknown tool '{canonical}'. Known: {string.Join(", ", CanonicalAgentTools)}")
         };
@@ -132,7 +138,7 @@ public static class ToolCatalog
         IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
     {
         var tools = services.GetRequiredService<ProjectorToolService>();
-        var resourceId = Require(args, "resource_id");
+        args.TryGetValue("resource_id", out var resourceId);
         var start = Require(args, "start_date");
         var end = Require(args, "end_date");
         args.TryGetValue("status", out var status);
@@ -144,16 +150,16 @@ public static class ToolCatalog
         IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
     {
         var tools = services.GetRequiredService<ProjectorToolService>();
-        return tools.ListTimeOffAsync(
-            connectionId, Require(args, "resource_id"), Require(args, "start_date"), Require(args, "end_date"), ct);
+        args.TryGetValue("resource_id", out var resourceId);
+        return tools.ListTimeOffAsync(connectionId, resourceId, Require(args, "start_date"), Require(args, "end_date"), ct);
     }
 
     private static Task<object> GetScheduleAsync(
         IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
     {
         var tools = services.GetRequiredService<ProjectorToolService>();
-        return tools.GetResourceScheduleAsync(
-            connectionId, Require(args, "resource_id"), Require(args, "start_date"), Require(args, "end_date"), ct);
+        args.TryGetValue("resource_id", out var resourceId);
+        return tools.GetResourceScheduleAsync(connectionId, resourceId, Require(args, "start_date"), Require(args, "end_date"), ct);
     }
 
     private static Task<object> CheckAvailabilityAsync(
@@ -211,7 +217,8 @@ public static class ToolCatalog
         var tools = services.GetRequiredService<ProjectorToolService>();
         args.TryGetValue("start_date", out var start);
         args.TryGetValue("end_date", out var end);
-        return tools.ListUpcomingPtoAsync(connectionId, Require(args, "resource_id"), start, end, ct);
+        args.TryGetValue("resource_id", out var resourceId);
+        return tools.ListUpcomingPtoAsync(connectionId, resourceId, start, end, ct);
     }
 
     private static Task<object> GetOverviewAsync(
@@ -247,6 +254,54 @@ public static class ToolCatalog
             ParseProjectCodes(args),
             Require(args, "start_date"),
             Require(args, "end_date"),
+            ct);
+    }
+
+    private static Task<object> ListTimeProjectsAsync(
+        IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
+    {
+        var svc = services.GetRequiredService<TimeEntryToolService>();
+        args.TryGetValue("query", out var query);
+        return svc.ListTimeProjectsAsync(
+            connectionId, Require(args, "work_date"), query, GetInt(args, "max_rows", 50), ct, GetInt(args, "offset", 0));
+    }
+
+    private static Task<object> GetTimecardOptionsAsync(
+        IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
+    {
+        var svc = services.GetRequiredService<TimeEntryToolService>();
+        args.TryGetValue("query", out var query);
+        return svc.GetTimecardOptionsAsync(
+            connectionId, Require(args, "project_code"), Require(args, "work_date"), ct, query,
+            GetInt(args, "max_tasks", TimeEntryToolService.DefaultMaxTasks), GetInt(args, "offset", 0));
+    }
+
+    private static Task<object> SaveTimecardAsync(
+        IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
+    {
+        var svc = services.GetRequiredService<TimeEntryToolService>();
+        var hours = double.TryParse(Require(args, "hours"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var h)
+            ? h
+            : throw new ArgumentException("--hours must be a number, e.g. 1.5");
+        args.TryGetValue("timecard_uid", out var timecardUid);
+        args.TryGetValue("location", out var location);
+        args.TryGetValue("udf1", out var udf1);
+        args.TryGetValue("udf2", out var udf2);
+        return svc.SaveTimecardAsync(
+            connectionId,
+            new SaveTimecardInput(
+                Require(args, "work_date"),
+                hours,
+                Require(args, "project_code"),
+                Require(args, "task"),
+                Require(args, "role"),
+                Require(args, "rate_type"),
+                Require(args, "narrative"),
+                timecardUid,
+                location,
+                udf1,
+                udf2),
             ct);
     }
 

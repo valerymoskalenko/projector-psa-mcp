@@ -25,7 +25,13 @@ public sealed record TimecardDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RejectedByEmail = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RejectedByUserReferenceSystemId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RejectedReason = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RejectedTimestamp = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RejectedTimestamp = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TimecardUid = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProjectTaskUid = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProjectRoleUid = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProjectRateTypeUid = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaskPath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaskWbsCode = null);
 
 public sealed record ListTimecardsResponse(
     int Count,

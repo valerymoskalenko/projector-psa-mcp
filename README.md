@@ -1,8 +1,8 @@
 # Projector PSA MCP Server
 
-A read-only [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Projector PSA](https://www.projectorpsa.com/). It lets AI assistants — VS Code (GitHub Copilot), Cursor, Claude, and Microsoft 365 Copilot — answer questions about people, schedules, availability, time off, timecards, engagements and project bookings using each user's own Projector permissions.
+A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Projector PSA](https://www.projectorpsa.com/). It lets AI assistants — VS Code (GitHub Copilot), Cursor, Claude, and Microsoft 365 Copilot — answer questions about people, schedules, availability, time off, timecards, engagements and project bookings, and log the user's own time as draft time cards, using each user's own Projector permissions.
 
-- **Read-only.** No tool changes data in Projector.
+- **One write tool, drafts only.** `save_timecard` creates a Draft work time card, or updates a Draft or Rejected one, on the signed-in user's own time sheet. It never submits, approves or deletes, and never writes for another person. Every other tool is read-only.
 - **Per-user sign-in.** Every user signs in to Projector with OAuth; the server never uses a shared service account.
 - **Runs in Azure** (App Service + Azure SQL + Key Vault + Application Insights), or locally for development.
 
@@ -23,6 +23,9 @@ A read-only [Model Context Protocol](https://modelcontextprotocol.io) (MCP) serv
 | `get_engagement` | One engagement with contracts, cost center and projects |
 | `list_project_roles` | Who is assigned to one or more projects |
 | `list_proj_bookings` | Booked hours on one or more projects in a date window |
+| `list_time_projects` | Projects I can enter time on for a date, with my roles |
+| `get_timecard_options` | One project's tasks, rate types and time-entry rules for me on a date |
+| `save_timecard` | **Write.** Create a Draft time card, or update my Draft/Rejected card. Never submits |
 
 The server also publishes MCP **prompts** (recipes such as `projector_availability`, `projector_project_bookings`) and **resources** (`projector://resources/{id}`, reference catalogs).
 

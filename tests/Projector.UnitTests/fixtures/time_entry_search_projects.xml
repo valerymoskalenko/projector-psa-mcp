@@ -1,0 +1,80 @@
+<!-- PwsSearchProjects ListType=T, shape captured 2026-09-25; names and ids are invented. -->
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsSearchProjectsResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsSearchProjectsResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <ServerTimestampUtc xmlns="http://projectorpsa.com/CommonServices/">2026-09-25T21:27:03Z</ServerTimestampUtc>
+        <a:Projects xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <a:PwsProjectDescriptor>
+            <ProjectCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P005678-001</ProjectCode>
+            <ProjectId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+            <ProjectUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2000000000000000001</ProjectUid>
+            <a:EngagementDescriptor>
+              <EngagementCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P005678</EngagementCode>
+              <EngagementId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+              <EngagementUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2000000000000000100</EngagementUid>
+              <a:ClientDescriptor>
+                <ClientId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+                <ClientNumber xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">C000100</ClientNumber>
+                <ClientUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2000000000000000200</ClientUid>
+                <a:ClientName>Contoso</a:ClientName>
+                <a:ParentClientDescriptor i:nil="true" />
+              </a:ClientDescriptor>
+              <a:EngagementManager>
+                <b:UserDisplayName>John Manager</b:UserDisplayName>
+                <b:UserId i:nil="true" />
+                <b:UserReferenceSystemId>20001</b:UserReferenceSystemId>
+                <b:UserUid>2000000000000000300</b:UserUid>
+              </a:EngagementManager>
+              <a:EngagementName>Contoso - Development Services</a:EngagementName>
+              <a:EngagementTypeDescriptor>
+                <EngagementTypeName xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">PS</EngagementTypeName>
+                <a:BillableFlag>true</a:BillableFlag>
+              </a:EngagementTypeDescriptor>
+            </a:EngagementDescriptor>
+            <a:LocationIdentity>
+              <b:LocationId i:nil="true" />
+              <b:LocationName>US - United States</b:LocationName>
+              <b:LocationUid>2000000000000000400</b:LocationUid>
+            </a:LocationIdentity>
+            <a:ProjectCloseDate>2026-12-31T00:00:00Z</a:ProjectCloseDate>
+            <a:ProjectName>Contoso - Development Services</a:ProjectName>
+            <a:ProjectOpenDate>2026-09-09T00:00:00Z</a:ProjectOpenDate>
+            <a:ProjectRoles>
+              <a:PwsRole>
+                <ExternalSystemIdentifier i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+                <ProjectRoleId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+                <ProjectRoleUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2200000000000000001</ProjectRoleUid>
+                <a:RoleEndDate>2026-12-31T00:00:00Z</a:RoleEndDate>
+                <a:RoleName>System Engineer</a:RoleName>
+                <a:RoleStartDate>2026-09-09T00:00:00Z</a:RoleStartDate>
+              </a:PwsRole>
+            </a:ProjectRoles>
+            <a:UnavailableReasonCode i:nil="true" />
+            <a:Udf1InactiveFlag>false</a:Udf1InactiveFlag>
+          </a:PwsProjectDescriptor>
+          <a:PwsProjectDescriptor>
+            <ProjectCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">C000900-002</ProjectCode>
+            <ProjectUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2000000000000000002</ProjectUid>
+            <a:EngagementDescriptor>
+              <EngagementCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">C000900</EngagementCode>
+              <a:ClientDescriptor>
+                <a:ClientName>Fabrikam Internal</a:ClientName>
+              </a:ClientDescriptor>
+              <a:EngagementName>Fabrikam - People Management</a:EngagementName>
+              <a:EngagementTypeDescriptor>
+                <a:BillableFlag>false</a:BillableFlag>
+              </a:EngagementTypeDescriptor>
+            </a:EngagementDescriptor>
+            <a:ProjectName>Fabrikam - People Management</a:ProjectName>
+            <a:ProjectRoles />
+            <a:UnavailableReasonCode i:nil="true" />
+          </a:PwsProjectDescriptor>
+        </a:Projects>
+      </PwsSearchProjectsResult>
+    </PwsSearchProjectsResponse>
+  </s:Body>
+</s:Envelope>

@@ -222,6 +222,8 @@ public static class ProjectorResponseParsers
             }
 
             var taskNameByUid = BuildLookup(project, "PwsProjectTask", "ProjectTaskUid", "Name");
+            var taskWbsByUid = BuildLookup(project, "PwsProjectTask", "ProjectTaskUid", "WbsCode");
+            var taskPathByUid = BuildTaskPaths(project);
             var roleNameByUid = BuildLookup(project, "PwsRole", "ProjectRoleUid", "RoleName");
             var rateNameByUid = BuildLookup(project, "PwsProjectRateTypeSummary", "ProjectRateTypeUid", "ProjectRateTypeName");
 
@@ -323,7 +325,13 @@ public static class ProjectorResponseParsers
                     RejectedByEmail = hasRejection ? rejectedByEmail : null,
                     RejectedByUserReferenceSystemId = hasRejection ? rejectedByUserReferenceSystemId : null,
                     RejectedReason = hasRejection ? rejectedReason : null,
-                    RejectedTimestamp = hasRejection ? rejectedTimestamp : null
+                    RejectedTimestamp = hasRejection ? rejectedTimestamp : null,
+                    TimecardUid = card.Elements().FirstOrDefault(e => e.Name.LocalName == "TimecardUid")?.Value,
+                    ProjectTaskUid = taskUid,
+                    TaskPath = taskUid is null ? null : taskPathByUid.GetValueOrDefault(taskUid),
+                    TaskWbsCode = taskUid is null ? null : taskWbsByUid.GetValueOrDefault(taskUid),
+                    ProjectRoleUid = roleUid,
+                    ProjectRateTypeUid = rateTypeUid
                 });
             }
         }
@@ -1115,6 +1123,16 @@ public static class ProjectorResponseParsers
             message,
             @"(?i)EntityRequired|AtLeastOneItemNotFound|User is required|UserNotFound|ItemNotFound");
     }
+
+    /// <summary>Task paths from the project's own task tree (the response carries every task, with parent UIDs).</summary>
+    private static IReadOnlyDictionary<string, string> BuildTaskPaths(XElement project) =>
+        TaskPaths.Build(XmlNodeHelpers.LocalNodes(project, "PwsProjectTask")
+            .Select(t => (
+                Uid: XmlNodeHelpers.Value(t, "ProjectTaskUid"),
+                Name: XmlNodeHelpers.Value(t, "Name"),
+                ParentUid: XmlNodeHelpers.NestedValue(t, "ParentProjectTaskIdentity", "ProjectTaskUid")))
+            .Where(t => !string.IsNullOrWhiteSpace(t.Uid))
+            .Select(t => (t.Uid!, t.Name, t.ParentUid)));
 
     private static Dictionary<string, string> BuildLookup(
         XElement project,

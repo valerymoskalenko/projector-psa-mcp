@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Projector.Application.Resources;
@@ -20,11 +21,13 @@ public sealed class ResourceTools
 
     private readonly ResourceService _resources;
     private readonly ConnectionResolver _connections;
+    private readonly ILogger<ResourceTools> _logger;
 
-    public ResourceTools(ResourceService resources, ConnectionResolver connections)
+    public ResourceTools(ResourceService resources, ConnectionResolver connections, ILogger<ResourceTools> logger)
     {
         _resources = resources;
         _connections = connections;
+        _logger = logger;
     }
 
     [McpServerTool(Name = "list_resources", Title = "List Projector resources",
@@ -58,7 +61,7 @@ public sealed class ResourceTools
         }
         catch (Exception ex)
         {
-            return AgentTools.ToError(ex);
+            return AgentTools.ToError(ex, _logger);
         }
     }
 
@@ -98,7 +101,7 @@ public sealed class ResourceTools
         }
         catch (Exception ex)
         {
-            return AgentTools.ToError(ex);
+            return AgentTools.ToError(ex, _logger);
         }
     }
 

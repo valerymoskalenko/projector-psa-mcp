@@ -1,0 +1,31 @@
+<!-- PwsGetTimeEntryParameters, shape captured 2026-09-25; UDF name and ids are invented. -->
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetTimeEntryParametersResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetTimeEntryParametersResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" />
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <a:Parameters>
+          <a:FirstDayOfWeek>Sunday</a:FirstDayOfWeek>
+          <a:ReportingTimeIncrement>15</a:ReportingTimeIncrement>
+          <a:RequireLocationFlag>false</a:RequireLocationFlag>
+          <a:RequireNotificationFlag>true</a:RequireNotificationFlag>
+          <a:TimeEntryFormat>Decimal</a:TimeEntryFormat>
+          <a:Udf1>
+            <a:UdfDatatype>T</a:UdfDatatype>
+            <a:UdfRequiredFlag>false</a:UdfRequiredFlag>
+            <a:UdfValues xmlns:b="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+            <a:UdfIdentity xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:UdfId i:nil="true" />
+              <b:UdfName>Reason if Non Billable</b:UdfName>
+              <b:UdfUid>2500000000000000001</b:UdfUid>
+            </a:UdfIdentity>
+          </a:Udf1>
+          <a:Udf2 i:nil="true" />
+          <a:Enforce24HourDailyLimitFlag>true</a:Enforce24HourDailyLimitFlag>
+          <a:OboPermissionFlag>true</a:OboPermissionFlag>
+        </a:Parameters>
+      </PwsGetTimeEntryParametersResult>
+    </PwsGetTimeEntryParametersResponse>
+  </s:Body>
+</s:Envelope>

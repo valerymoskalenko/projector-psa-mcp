@@ -42,7 +42,7 @@ public sealed class ProjectorToolService
 
     public async Task<object> ListTimecardsAsync(
         string connectionId,
-        string resourceId,
+        string? resource,
         string startDate,
         string endDate,
         string? status,
@@ -51,6 +51,7 @@ public sealed class ProjectorToolService
     {
         var sw = Stopwatch.StartNew();
         var connection = await RequireAsync(connectionId, ct);
+        var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
         var listed = await WithRefreshAsync(connection, c =>
             _soap.ListTimecardsAsync(c, resourceId, startDate, endDate, projectCode, status, ct), ct);
         var start = Short(startDate);
@@ -68,7 +69,7 @@ public sealed class ProjectorToolService
 
         var filterSuffix = filterBits.Count == 0 ? string.Empty : $"; filtered to {string.Join(" and ", filterBits)}";
         var searchedScope =
-            $"work timecards for resource {resourceId} from {start} through {end}{filterSuffix}";
+            $"work timecards for resource {resourceLabel} from {start} through {end}{filterSuffix}";
         var coverage = SearchCoverage.FromTruncation(
             listed.ServerTruncated,
             searchedScope,
@@ -79,7 +80,7 @@ public sealed class ProjectorToolService
 
         return AttachDuration(new
         {
-            resource_id = resourceId,
+            resource_id = resourceLabel,
             start_date = start,
             end_date = end,
             count = listed.Timecards.Count,
@@ -90,18 +91,19 @@ public sealed class ProjectorToolService
 
     public async Task<object> ListTimeOffAsync(
         string connectionId,
-        string resourceId,
+        string? resource,
         string startDate,
         string endDate,
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var connection = await RequireAsync(connectionId, ct);
+        var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
         var listed = await WithRefreshAsync(connection, c =>
             _soap.ListTimeOffCardsAsync(c, resourceId, startDate, endDate, ct), ct);
         var start = Short(startDate);
         var end = Short(endDate);
-        var searchedScope = $"time-off cards for resource {resourceId} from {start} through {end}";
+        var searchedScope = $"time-off cards for resource {resourceLabel} from {start} through {end}";
         var coverage = SearchCoverage.FromTruncation(
             listed.ServerTruncated,
             searchedScope,
@@ -112,7 +114,7 @@ public sealed class ProjectorToolService
 
         return AttachDuration(new
         {
-            resource_id = resourceId,
+            resource_id = resourceLabel,
             start_date = start,
             end_date = end,
             count = listed.Cards.Count,
@@ -123,19 +125,20 @@ public sealed class ProjectorToolService
 
     public async Task<object> GetResourceScheduleAsync(
         string connectionId,
-        string resourceId,
+        string? resource,
         string startDate,
         string endDate,
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var connection = await RequireAsync(connectionId, ct);
+        var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
         var schedule = await WithRefreshAsync(connection, c =>
             _soap.GetResourceScheduleAsync(c, resourceId, startDate, endDate, ct), ct);
-        var availability = AvailabilityCalculatorShim.Summarize(schedule, resourceId, requiredMinutesPerWeek: 0);
+        var availability = AvailabilityCalculatorShim.Summarize(schedule, resourceLabel, requiredMinutesPerWeek: 0);
         return AttachDuration(new
         {
-            resource_id = resourceId,
+            resource_id = resourceLabel,
             start_date = Short(startDate),
             end_date = Short(endDate),
             state = availability.State,
@@ -371,7 +374,7 @@ public sealed class ProjectorToolService
 
     public async Task<object> ListUpcomingPtoAsync(
         string connectionId,
-        string resourceId,
+        string? resource,
         string? startDate,
         string? endDate,
         CancellationToken ct)
@@ -384,6 +387,7 @@ public sealed class ProjectorToolService
         ProjectorDateHelpersAssert(start, end, ProjectorDateWindows.TimecardsDays);
 
         var connection = await RequireAsync(connectionId, ct);
+        var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
         var scheduleChunks = await FetchScheduleChunksAsync(connection, resourceId, start, end, ct);
         var listed = await WithRefreshAsync(connection, c =>
             _soap.ListTimeOffCardsAsync(c, resourceId, start, end, ct), ct);
@@ -416,7 +420,7 @@ public sealed class ProjectorToolService
 
         var pto = merged.Values.ToList();
         var searchedScope =
-            $"upcoming PTO for resource {resourceId} from {Short(start)} through {Short(end)} " +
+            $"upcoming PTO for resource {resourceLabel} from {Short(start)} through {Short(end)} " +
             "(schedule holidays/PTO plus time-off cards)";
         var coverage = SearchCoverage.FromTruncation(
             listed.ServerTruncated,
@@ -428,7 +432,7 @@ public sealed class ProjectorToolService
 
         return AttachDuration(new
         {
-            resource_id = resourceId,
+            resource_id = resourceLabel,
             start_date = Short(start),
             end_date = Short(end),
             count = pto.Count,
@@ -439,7 +443,7 @@ public sealed class ProjectorToolService
 
     public async Task<object> GetResourceOverviewAsync(
         string connectionId,
-        string resourceId,
+        string resource,
         string startDate,
         string endDate,
         CancellationToken ct)
@@ -448,8 +452,11 @@ public sealed class ProjectorToolService
         // Schedule is fetched in 56-day chunks (stricter than a single PS PwsGetResourceSchedule call).
         ProjectorDateHelpersAssert(startDate, endDate, ProjectorDateWindows.OverviewDays);
         var connection = await RequireAsync(connectionId, ct);
+        var (resolvedId, _) = await ResolveResourceArgAsync(connection, resource, ct);
+        var resourceId = resolvedId ?? throw new ArgumentException(
+            "get_overview needs a person: pass a resource id, full name or e-mail (for yourself, your own name or e-mail).");
 
-        var resource = await WithRefreshAsync(connection, c =>
+        var detail = await WithRefreshAsync(connection, c =>
             _soap.GetResourceAsync(c, resourceId, includeHistory: false, includeUdfs: true, ct), ct)
             ?? throw new ProjectorApiException($"Resource '{resourceId}' was not found.", "AtLeastOneItemNotFound");
         var timecardsListed = await WithRefreshAsync(connection, c =>
@@ -459,7 +466,7 @@ public sealed class ProjectorToolService
             _soap.ListTimeOffCardsAsync(c, resourceId, startDate, endDate, ct), ct);
 
         var schedule = MergeSchedules(scheduleChunks);
-        var resourceDto = ResourceService.Map(resource, includeHistory: false, includeUdfs: true);
+        var resourceDto = ResourceService.Map(detail, includeHistory: false, includeUdfs: true);
 
         return AttachDuration(new
         {
@@ -639,7 +646,7 @@ public sealed class ProjectorToolService
 
     private async Task<List<ResourceSchedule>> FetchScheduleChunksAsync(
         ProjectorConnection connection,
-        string resourceId,
+        string? resourceId,
         string startDate,
         string endDate,
         CancellationToken ct)
@@ -668,6 +675,34 @@ public sealed class ProjectorToolService
         }
 
         return chunks;
+    }
+
+    /// <summary>Label shown as resource_id when the call ran for the signed-in user.</summary>
+    public const string SignedInUser = "me";
+
+    /// <summary>
+    /// Turns a tool's person argument into a Projector resource id. Empty or "me" = the signed-in user: returns
+    /// a null id, and Projector applies the call to the caller. A numeric id is used as is (no extra call);
+    /// a name or e-mail is looked up. Label is what the result shows as resource_id.
+    /// </summary>
+    internal async Task<(string? ResourceId, string Label)> ResolveResourceArgAsync(
+        ProjectorConnection connection,
+        string? input,
+        CancellationToken ct)
+    {
+        var text = input?.Trim();
+        if (string.IsNullOrEmpty(text) || string.Equals(text, SignedInUser, StringComparison.OrdinalIgnoreCase))
+        {
+            return (null, SignedInUser);
+        }
+
+        if (text.All(char.IsAsciiDigit))
+        {
+            return (text, text);
+        }
+
+        var person = await ResolvePersonAsync(connection, text, includeHistory: false, ct);
+        return (person.ResourceId, person.ResourceId);
     }
 
     private async Task<(string ResourceId, string? DisplayName, string? Email, ResourceDetail? Detail)> ResolvePersonAsync(
@@ -1103,7 +1138,8 @@ public sealed class ProjectorToolService
             t.Billable, t.ProjectStageName, t.WorkDate, t.WorkMinutes, t.WorkHours, t.Status, t.CardStatusCode,
             t.RateTypeName, t.TaskName, t.RoleName, t.Description, t.LocationName,
             t.RejectedByDisplayName, t.RejectedByEmail, t.RejectedByUserReferenceSystemId,
-            t.RejectedReason, t.RejectedTimestamp);
+            t.RejectedReason, t.RejectedTimestamp,
+            t.TimecardUid, t.ProjectTaskUid, t.ProjectRoleUid, t.ProjectRateTypeUid, t.TaskPath, t.TaskWbsCode);
 
     private static TimeOffCardDto MapTimeOff(TimeOffCard t) =>
         new(t.TimeOffReason, t.TimeOffDate, t.TimeOffMinutes, t.TimeOffHours, t.Narrative,

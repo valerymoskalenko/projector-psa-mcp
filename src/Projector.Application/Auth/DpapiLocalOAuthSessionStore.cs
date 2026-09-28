@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -19,7 +20,8 @@ public sealed class DpapiLocalOAuthSessionStore : ILocalOAuthSessionStore
     };
 
     private readonly string? _overrideDirectory;
-    private readonly Dictionary<string, OAuthCachePayload> _memory = new(StringComparer.Ordinal);
+    // Concurrent: an MCP client can send several tool calls at once, and the first ones all load the session.
+    private readonly ConcurrentDictionary<string, OAuthCachePayload> _memory = new(StringComparer.Ordinal);
 
     public DpapiLocalOAuthSessionStore(string? overrideDirectory = null)
     {
@@ -169,7 +171,7 @@ public sealed class DpapiLocalOAuthSessionStore : ILocalOAuthSessionStore
     public bool Clear(string accountCode, string? requestedScope = null)
     {
         var key = ProjectorScopes.CacheKey(accountCode, requestedScope);
-        _memory.Remove(key);
+        _memory.TryRemove(key, out _);
         var path = GetFilePath(key);
         if (!File.Exists(path))
         {

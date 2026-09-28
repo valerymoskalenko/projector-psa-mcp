@@ -9,6 +9,8 @@ namespace Projector.ApiClient;
 
 public static class ApiClientServiceCollectionExtensions
 {
+    public static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(45);
+
     /// <summary>
     /// Registers live HTTP clients for Projector OAuth + XML PWS.
     /// </summary>
@@ -29,6 +31,11 @@ public static class ApiClientServiceCollectionExtensions
             .AddStandardResilienceHandler(ConfigureSoapRetry);
         services.AddTransient<IProjectorSoapClient>(sp => sp.GetRequiredService<ProjectorSoapClient>());
         services.AddTransient<IProjectorUserClient>(sp => sp.GetRequiredService<ProjectorSoapClient>());
+
+        // Writes: no resilience handler, so a save is never retried (a timed-out save may have committed).
+        // One attempt, bounded below Copilot's own tool timeout.
+        services.AddHttpClient<ProjectorSoapWriteHttp>(client => client.Timeout = WriteTimeout);
+        services.AddTransient<IProjectorTimeEntryClient, ProjectorTimeEntryClient>();
 
         return services;
     }

@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.5.1"
+    "version": "0.6.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -87,19 +87,18 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many work timecard rows for one resource in a date range, with optional status and project_code filters. Does not include time-off cards. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete).",
+      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, with optional status and project_code filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete).",
       "whenNotToUse": "Do not use for capacity or bookings; use check_availability or get_schedule. Do not use for PTO cards; use list_time_off.",
       "inputSchema": {
         "type": "object",
         "required": [
-          "resource_id",
           "start_date",
           "end_date"
         ],
         "properties": {
           "resource_id": {
             "type": "string",
-            "description": "ResourceReferenceSystemId"
+            "description": "Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user."
           },
           "start_date": {
             "type": "string",
@@ -124,18 +123,18 @@
       "requiredScopes": [
         "scheduleResources"
       ],
-      "description": "Returns one resource’s schedule for a date window: working/utilization minutes and hours, holidays, PTO, roles (with engagement/client/managers/stage), bookings (dailyWeeklyFlag D/W plus schedulingMode daily/weekly, with notes), plus daily/weekly capacity summaries (state, booked/available minutes). Cap is eight weeks. Prefer check_availability for multi-person capacity questions.",
+      "description": "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes and hours, holidays, PTO, roles (with engagement/client/managers/stage), bookings (dailyWeeklyFlag D/W plus schedulingMode daily/weekly, with notes), plus daily/weekly capacity summaries (state, booked/available minutes). Cap is eight weeks. Prefer check_availability for multi-person capacity questions.",
       "whenNotToUse": "Do not use for multi-person availability comparisons. Do not use for historical time entry totals; use list_timecards. Do not use for a project team roster; use list_project_roles. Do not use for project booked hours across teammates; use list_proj_bookings.",
       "inputSchema": {
         "type": "object",
         "required": [
-          "resource_id",
           "start_date",
           "end_date"
         ],
         "properties": {
           "resource_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user."
           },
           "start_date": {
             "type": "string",
@@ -214,18 +213,18 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many PwsGetTimeCards time-off card rows for one resource and date range. Holidays and bookings live on the schedule; company holiday calendars are list_holidays; company-wide ASMX scheduled-timeoff export is ops-only. Includes searchCoverage (status full/partial).",
+      "description": "Lists many PwsGetTimeCards time-off card rows for one person (default: the signed-in user) and date range. Holidays and bookings live on the schedule; company holiday calendars are list_holidays; company-wide ASMX scheduled-timeoff export is ops-only. Includes searchCoverage (status full/partial).",
       "whenNotToUse": "Use list_upcoming_pto for a combined schedule+cards window. Use list_holidays for company-wide location holiday calendars. Do not use for work time entries; use list_timecards.",
       "inputSchema": {
         "type": "object",
         "required": [
-          "resource_id",
           "start_date",
           "end_date"
         ],
         "properties": {
           "resource_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user."
           },
           "start_date": {
             "type": "string",
@@ -319,16 +318,15 @@
         "scheduleResources",
         "enterTime"
       ],
-      "description": "Lists upcoming PTO for one resource by combining schedule holidays/PTO and time-off cards in a window up to 366 days (default today through about the third Friday). Each pto row includes minutes and hours (minutes / 60). Includes searchCoverage (status full/partial). Projector-only; no Bamboo or email.",
+      "description": "Lists upcoming PTO for one person (default: the signed-in user) by combining schedule holidays/PTO and time-off cards in a window up to 366 days (default today through about the third Friday). Each pto row includes minutes and hours (minutes / 60). Includes searchCoverage (status full/partial). Projector-only; no Bamboo or email.",
       "whenNotToUse": "Do not use for company-wide holiday calendars; use list_holidays. Do not use for company-wide ASMX scheduled-timeoff exports. Prefer list_time_off when you only need cards for an explicit date range.",
       "inputSchema": {
         "type": "object",
-        "required": [
-          "resource_id"
-        ],
+        "required": [],
         "properties": {
           "resource_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user."
           },
           "start_date": {
             "type": "string",
@@ -361,7 +359,8 @@
         ],
         "properties": {
           "resource_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Person: resource id, full name or e-mail"
           },
           "start_date": {
             "type": "string",
@@ -492,6 +491,171 @@
           "end_date": {
             "type": "string",
             "format": "date"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_time_projects",
+      "aliases": [
+        "list_time_projects"
+      ],
+      "title": "List projects I can enter time on",
+      "requiredScopes": [
+        "enterTime"
+      ],
+      "description": "Lists many projects the signed-in user can enter time on for one work_date (PwsSearchProjects, ListType=T, available projects only), with the user's roles on each. Always the signed-in user's own time sheet; no resource parameter. Optional query filters by project, engagement or client text. The query filters the user's full project list in memory (cached per user for a few minutes); page with offset. chargeable is false where the user has no role on the project (Projector refuses time there).",
+      "whenNotToUse": "Do not use to browse engagements or a manager's projects; use list_engagements. Do not use for who is staffed on a project; use list_project_roles.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "work_date"
+        ],
+        "properties": {
+          "work_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Work date (yyyy-MM-dd) the time is for"
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional text to match project, engagement or client"
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip; use next_offset from the previous page"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_timecard_options",
+      "aliases": [
+        "get_timecard_options"
+      ],
+      "title": "Get time entry options for a project",
+      "requiredScopes": [
+        "enterTime"
+      ],
+      "description": "Gets one project's time-entry options for the signed-in user on one work_date (PwsGetTimeEntryProjectRole + PwsSearchProjects + PwsGetTimeEntryParameters, cached per user for a few minutes): only tasks open for time, each with task_path (parent tasks > task) and WBS code, the user's roles, and entry rules (time increment, location, UDFs). The rate types most tasks allow are listed once as rate_types; a task lists its own rate_types only when they differ. Task names repeat under different parents, so filter with query (task name, WBS code or parent name) and page with max_tasks/offset. Call before save_timecard.",
+      "whenNotToUse": "Do not use to find the user's projects; use list_time_projects. Do not use for a project's staffing roster; use list_project_roles.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "project_code",
+          "work_date"
+        ],
+        "properties": {
+          "project_code": {
+            "type": "string",
+            "description": "Project code, e.g. P001234-001"
+          },
+          "work_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Work date (yyyy-MM-dd) the time is for"
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional text to match task name, task path (parent names) or WBS code"
+          },
+          "max_tasks": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "Maximum tasks to return"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Tasks to skip; use tasks_next_offset from the previous page"
+          }
+        }
+      }
+    },
+    {
+      "name": "save_timecard",
+      "aliases": [
+        "save_timecard"
+      ],
+      "title": "Save my Projector time card (draft)",
+      "requiredScopes": [
+        "enterTime"
+      ],
+      "requiredWebServicesAccess": "U",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Creates one work time card as Draft on the signed-in user's own time sheet, or updates one of the user's own Draft or Rejected cards when timecard_uid is given (PwsSaveTimeCards with SubmitFlag=false, no ResourceIdentity). Never submits, approves or deletes. The agent must confirm the card with the user first. task accepts the UID, the full task_path, the WBS code or a unique name; role and rate_type accept the UID or the exact name. The result includes the day's total hours and card count, and a warning when a card with the same date, project and task and a similar narrative already exists; the card is still saved. The save is sent once and never retried; on write_outcome_unknown check list_timecards before retrying. On web_services_access_view_only nothing was saved: the user's Projector Web Services Access is V (View), not U (Update), and they must ask their Projector PSA administrator to change it.",
+      "whenNotToUse": "Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "work_date",
+          "hours",
+          "project_code",
+          "task",
+          "role",
+          "rate_type",
+          "narrative"
+        ],
+        "properties": {
+          "work_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Work date (yyyy-MM-dd). On update, the card's current work date."
+          },
+          "hours": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 24,
+            "description": "Hours worked, in the account's time increment (e.g. 0.25 steps)"
+          },
+          "project_code": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string",
+            "description": "Task UID, task_path, WBS code or unique task name"
+          },
+          "role": {
+            "type": "string",
+            "description": "Role UID or exact role name"
+          },
+          "rate_type": {
+            "type": "string",
+            "description": "Rate type UID or exact name allowed for the task"
+          },
+          "narrative": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "timecard_uid": {
+            "type": "string",
+            "description": "Only to update: timecardUid from list_timecards"
+          },
+          "location": {
+            "type": "string"
+          },
+          "udf1": {
+            "type": "string"
+          },
+          "udf2": {
+            "type": "string"
           }
         }
       }

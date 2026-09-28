@@ -31,6 +31,23 @@ public sealed class ProjectorPrompts
             $"Resolve me with get_resource email={email}, then list_timecards. " +
             "Sum workMinutes; do not invent dollar budgets.");
 
+    [McpServerPrompt(Name = "projector_log_time"), Description(
+        "Logs the signed-in user's own work time as a Draft time card (never submits). Finds project, task, role and rate type, then confirms before saving.")]
+    public static ChatMessage LogTime(
+        [Description("Work date yyyy-MM-dd")] string work_date,
+        [Description("Hours worked, e.g. 1.5")] double hours,
+        [Description("Project name or code, as the user said it")] string project,
+        [Description("What was done (the time card narrative)")] string narrative)
+        => new(ChatRole.User,
+            $"Log {hours} hours on {work_date} for '{project}': {narrative}. " +
+            "Steps: (1) list_time_projects with work_date (query = the project words) to find the project_code and my role; " +
+            "(2) get_timecard_options with project_code and work_date (add query with task words, a WBS code or the parent's name " +
+            "on big projects) to pick an open task by its task_path and a rate type allowed for that task; " +
+            "if several fit, ask me; (3) show me date, hours, project, task path, role, rate type and narrative and wait for my yes; " +
+            "(4) save_timecard with the task_path; then tell me the day's total hours and any warnings from the result. " +
+            "It saves a Draft only; tell me to submit in Projector. " +
+            "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and pass the full card to save_timecard.");
+
     [McpServerPrompt(Name = "projector_timecards_for_project"), Description(
         "Returns a person's timecards for a named project/engagement in a week or month.")]
     public static ChatMessage TimecardsForProject(

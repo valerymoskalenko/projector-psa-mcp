@@ -62,9 +62,10 @@ public static class ProjectorEnvelopeBuilders
     }
 
     /// <summary>Work cards only (IncludeTimeCards=true, IncludeTimeOffCards=false).</summary>
+    /// <summary>Work and/or time-off cards. A null resource sends no ResourceIdentity: Projector uses the caller.</summary>
     public static string BuildGetTimeCards(
         string sessionTicket,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         bool includeTimeCards = true,
@@ -87,17 +88,22 @@ public static class ProjectorEnvelopeBuilders
                 new XElement(SoapNamespaces.Tim + "EndDate", end),
                 new XElement(SoapNamespaces.Tim + "IncludeTimeCardsFlag", includeTimeCards ? "true" : "false"),
                 new XElement(SoapNamespaces.Tim + "IncludeTimeOffCardsFlag", includeTimeOffCards ? "true" : "false"),
-                new XElement(SoapNamespaces.Tim + "ResourceIdentity",
-                    new XElement(SoapNamespaces.Com + "ResourceReferenceSystemId", resourceReferenceSystemId)),
+                ResourceIdentity(resourceReferenceSystemId),
                 new XElement(SoapNamespaces.Tim + "StartDate", start),
                 identityXml));
         return EnvelopeString(body, includeTim: true);
     }
 
+    private static XElement? ResourceIdentity(string? resourceReferenceSystemId) =>
+        string.IsNullOrWhiteSpace(resourceReferenceSystemId)
+            ? null
+            : new XElement(SoapNamespaces.Tim + "ResourceIdentity",
+                new XElement(SoapNamespaces.Com + "ResourceReferenceSystemId", resourceReferenceSystemId));
+
     /// <summary>PTO-only cards via PwsGetTimeCards (never PwsGetTimeEntryTimeOff).</summary>
     public static string BuildGetTimeOffCards(
         string sessionTicket,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate) =>
         BuildGetTimeCards(
@@ -108,9 +114,157 @@ public static class ProjectorEnvelopeBuilders
             includeTimeCards: false,
             includeTimeOffCards: true);
 
+    /// <summary>
+    /// Projects the caller can enter time on for one day (ListType=T). No ResourceIdentity: Projector uses the caller.
+    /// Element order follows PwsSearchProjectsRq (WCF rejects out-of-order elements).
+    /// </summary>
+    public static string BuildSearchTimeEntryProjects(
+        string sessionTicket,
+        string workDate,
+        string? query = null,
+        string? projectCode = null)
+    {
+        var date = ProjectorDateHelpers.ToSoapDate(workDate);
+        var body = new XElement(SoapNamespaces.Pws + "PwsSearchProjects",
+            new XElement(SoapNamespaces.Pws + "serviceRequest",
+                new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
+                new XElement(SoapNamespaces.Tim + "AvailableProjectsOnlyFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "EndDate", date),
+                new XElement(SoapNamespaces.Tim + "ListType", "T"),
+                string.IsNullOrWhiteSpace(projectCode)
+                    ? null
+                    : new XElement(SoapNamespaces.Tim + "ProjectIdentity",
+                        new XElement(SoapNamespaces.Com + "ProjectCode", projectCode.Trim())),
+                string.IsNullOrWhiteSpace(query)
+                    ? null
+                    : new XElement(SoapNamespaces.Tim + "SearchString", query.Trim()),
+                new XElement(SoapNamespaces.Tim + "StartDate", date)));
+        return EnvelopeString(body, includeTim: true);
+    }
+
+    /// <summary>One project's tasks, task types, rate types and time-entry flags for the caller on one day.</summary>
+    public static string BuildGetTimeEntryProjectRole(
+        string sessionTicket,
+        string projectCode,
+        string workDate)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectCode);
+        var date = ProjectorDateHelpers.ToSoapDate(workDate);
+        var body = new XElement(SoapNamespaces.Pws + "PwsGetTimeEntryProjectRole",
+            new XElement(SoapNamespaces.Pws + "serviceRequest",
+                new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
+                new XElement(SoapNamespaces.Tim + "EndDate", date),
+                new XElement(SoapNamespaces.Tim + "ProjectIdentity",
+                    new XElement(SoapNamespaces.Com + "ProjectCode", projectCode.Trim())),
+                new XElement(SoapNamespaces.Tim + "StartDate", date)));
+        return EnvelopeString(body, includeTim: true);
+    }
+
+    public static string BuildGetTimeEntryParameters(string sessionTicket)
+    {
+        var body = new XElement(SoapNamespaces.Pws + "PwsGetTimeEntryParameters",
+            new XElement(SoapNamespaces.Pws + "serviceRequest",
+                new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket)));
+        return EnvelopeString(body, includeTim: true);
+    }
+
+    /// <summary>
+    /// One of the caller's own work cards by UID on its work date, any status. No ResourceIdentity, so a card
+    /// that belongs to someone else is simply not found.
+    /// </summary>
+    public static string BuildGetOwnTimecard(string sessionTicket, string timecardUid, string workDate)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(timecardUid);
+        var date = ProjectorDateHelpers.ToSoapDate(workDate);
+        var body = new XElement(SoapNamespaces.Pws + "PwsGetTimeCards",
+            new XElement(SoapNamespaces.Pws + "serviceRequest",
+                new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
+                new XElement(SoapNamespaces.Tim + "EndDate", date),
+                new XElement(SoapNamespaces.Tim + "IncludeApprovedFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeDraftFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeReferencedTasksOnlyFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeRejectedFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeSubmittedFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeTimeCardsFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeTimeOffCardsFlag", "false"),
+                new XElement(SoapNamespaces.Tim + "StartDate", date),
+                new XElement(SoapNamespaces.Tim + "TimeCardIdentity",
+                    new XElement(SoapNamespaces.Com + "TimecardUid", timecardUid.Trim()))));
+        return EnvelopeString(body, includeTim: true);
+    }
+
+    /// <summary>
+    /// PwsSaveTimeCards for exactly one of the caller's work cards. Always SubmitFlag=false and
+    /// SendNotificationEmailFlag=false; never sends ResourceIdentity, DeleteTimeCards or any submit element.
+    /// Create sends CardStatus=D; update sends TimecardUid + Timestamp and no CardStatus (Projector itself saves an
+    /// updated card as Draft, including a Rejected one).
+    /// WorkDate and ProjectIdentity are sent on update too (Projector rejects an update without WorkDate); the caller
+    /// passes the card's current values, since this tool does not move cards.
+    /// Element order follows PwsSaveTimeCardsRq and PwsTimeCardDetail (base members first).
+    /// </summary>
+    public static string BuildSaveTimecard(string sessionTicket, Domain.Timecards.TimecardSaveRequest card)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        var date = ProjectorDateHelpers.ToSoapDate(card.WorkDate);
+        var isUpdate = !string.IsNullOrWhiteSpace(card.TimecardUid);
+
+        var detail = new XElement(SoapNamespaces.Tim + "PwsTimecardDetail",
+            new XElement(SoapNamespaces.Com + "ReferenceId", "1"),
+            new XElement(SoapNamespaces.Com + "TimecardType", "T"),
+            isUpdate ? new XElement(SoapNamespaces.Com + "TimecardUid", card.TimecardUid!.Trim()) : null,
+            new XElement(SoapNamespaces.Tim + "Description", card.Description),
+            new XElement(SoapNamespaces.Tim + "WorkDate", date),
+            new XElement(SoapNamespaces.Tim + "WorkMinutes", card.WorkMinutes),
+            isUpdate && !string.IsNullOrWhiteSpace(card.Timestamp)
+                ? new XElement(SoapNamespaces.Tim + "Timestamp", card.Timestamp)
+                : null,
+            isUpdate ? null : new XElement(SoapNamespaces.Tim + "CardStatus", "D"),
+            string.IsNullOrWhiteSpace(card.LocationName)
+                ? null
+                : new XElement(SoapNamespaces.Tim + "LocationIdentity",
+                    new XElement(SoapNamespaces.Com + "LocationName", card.LocationName.Trim())),
+            new XElement(SoapNamespaces.Tim + "ProjectIdentity",
+                new XElement(SoapNamespaces.Com + "ProjectCode", card.ProjectCode.Trim())),
+            new XElement(SoapNamespaces.Tim + "ProjectRateTypeIdentity",
+                new XElement(SoapNamespaces.Com + "ProjectRateTypeUid", card.RateTypeUid)),
+            new XElement(SoapNamespaces.Tim + "ProjectTaskIdentity",
+                new XElement(SoapNamespaces.Com + "ProjectTaskUid", card.TaskUid)),
+            new XElement(SoapNamespaces.Tim + "RoleIdentity",
+                new XElement(SoapNamespaces.Com + "ProjectRoleUid", card.RoleUid)),
+            BuildUdf("Udf1", card.Udf1),
+            BuildUdf("Udf2", card.Udf2));
+
+        var body = new XElement(SoapNamespaces.Pws + "PwsSaveTimeCards",
+            new XElement(SoapNamespaces.Pws + "serviceRequest",
+                new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
+                new XElement(SoapNamespaces.Tim + "EndDate", date),
+                isUpdate ? new XElement(SoapNamespaces.Tim + "InsertIfNotFoundOnUpdateFlag", "false") : null,
+                new XElement(SoapNamespaces.Tim + "SaveTimeCards", detail),
+                new XElement(SoapNamespaces.Tim + "SendNotificationEmailFlag", "false"),
+                new XElement(SoapNamespaces.Tim + "StartDate", date),
+                new XElement(SoapNamespaces.Tim + "SubmitFlag", "false")));
+        return EnvelopeString(body, includeTim: true);
+    }
+
+    private static XElement? BuildUdf(string elementName, Domain.Timecards.TimecardUdfValue? udf)
+    {
+        if (udf is null)
+        {
+            return null;
+        }
+
+        // Identify the UDF by UID when known, else by name (as in the PwsSaveTimeCards update example).
+        return new XElement(SoapNamespaces.Tim + elementName,
+            string.IsNullOrWhiteSpace(udf.UdfUid)
+                ? new XElement(SoapNamespaces.Com + "UdfName", udf.UdfName)
+                : new XElement(SoapNamespaces.Com + "UdfUid", udf.UdfUid),
+            new XElement(SoapNamespaces.Com + "TextValue", udf.TextValue));
+    }
+
+    /// <summary>A null resource sends no ResourceIdentity: Projector returns the caller's schedule.</summary>
     public static string BuildGetResourceSchedule(
         string sessionTicket,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate)
     {
@@ -122,8 +276,7 @@ public static class ProjectorEnvelopeBuilders
                 new XElement(SoapNamespaces.Tim + "EndDate", end),
                 new XElement(SoapNamespaces.Tim + "IncludeScheduledTimeFlag", "true"),
                 new XElement(SoapNamespaces.Tim + "IncludeTimeOffFlag", "true"),
-                new XElement(SoapNamespaces.Tim + "ResourceIdentity",
-                    new XElement(SoapNamespaces.Com + "ResourceReferenceSystemId", resourceReferenceSystemId)),
+                ResourceIdentity(resourceReferenceSystemId),
                 new XElement(SoapNamespaces.Tim + "StartDate", start)));
         return EnvelopeString(body, includeTim: true);
     }

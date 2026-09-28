@@ -70,6 +70,23 @@ toolCommand.SetAction(async (parseResult, ct) =>
 });
 root.Subcommands.Add(toolCommand);
 
+var pwsCommand = new Command("pws", "Dev only: POST a raw PWS request body (file) with the local OAuth session and print the response XML");
+var pwsMethodArg = new Argument<string>("method") { Description = "PWS method, e.g. PwsSearchProjects" };
+var pwsBodyArg = new Argument<string>("body-file") { Description = "XML file with <pws:Method>…</pws:Method>; {{ticket}} is replaced by the session ticket" };
+pwsCommand.Arguments.Add(pwsMethodArg);
+pwsCommand.Arguments.Add(pwsBodyArg);
+pwsCommand.SetAction(async (parseResult, ct) =>
+{
+    var method = parseResult.GetValue(pwsMethodArg)!;
+    var bodyFile = parseResult.GetValue(pwsBodyArg)!;
+    return await RunWithHostAsync(async sp =>
+    {
+        var runner = sp.GetRequiredService<PwsCliRunner>();
+        return await runner.RunAsync(method, bodyFile, ct);
+    }, ct);
+});
+root.Subcommands.Add(pwsCommand);
+
 var serveCommand = new Command("serve", "Run the MCP server");
 var stdioOption = new Option<bool>("--stdio") { Description = "Serve over stdio (logs on stderr)" };
 var httpOption = new Option<bool>("--http") { Description = "Serve Streamable HTTP on 127.0.0.1:5180" };
@@ -137,7 +154,7 @@ static async Task<int> RunStdioAsync(CancellationToken ct)
     builder.Services
         .AddMcpServer(options =>
         {
-            options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.5.1" };
+            options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.0" };
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()

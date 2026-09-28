@@ -75,4 +75,4 @@ Optional: `PROJECTOR_LIVE_RESOURCE_SEARCH`, `PROJECTOR_LIVE_PTO_COUNT`, `PROJECT
 
 ## Build locks
 
-If a local MCP session (stdio) is running from your editor, `dotnet build` can fail with "file is locked by Projector.Mcp.Server". Stop the MCP server in the editor, or build to another folder: `dotnet test --artifacts-path <folder>`.
+If a local MCP session (stdio) is running from your editor, `dotnet build` can fail with "file is locked by Projector.Mcp.Server". Stop the MCP server in the editor, or build to the git-ignored `artifacts` folder inside the repository: `dotnet test tests/Projector.UnitTests --artifacts-path artifacts --filter "Category!=Live"`. Keep the folder inside the repository: the tests find `fixtures/` by walking up from the test binary.

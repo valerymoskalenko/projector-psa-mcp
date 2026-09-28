@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Projector.Application.Tools;
@@ -29,25 +30,28 @@ public sealed class AgentTools
 
     private readonly ProjectorToolService _tools;
     private readonly ConnectionResolver _connections;
+    private readonly ILogger<AgentTools> _logger;
 
-    public AgentTools(ProjectorToolService tools, ConnectionResolver connections)
+    public AgentTools(ProjectorToolService tools, ConnectionResolver connections, ILogger<AgentTools> logger)
     {
         _tools = tools;
         _connections = connections;
+        _logger = logger;
     }
 
     [McpServerTool(Name = "list_timecards", Title = "List Projector timecards",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
-        "Lists many work timecard rows for one resource in a date range, with optional status and project_code filters. " +
+        "Lists many work timecard rows for one person (default: the signed-in user) in a date range, with optional " +
+        "status and project_code filters. Each row has the task name, full task_path (parent tasks) and WBS code. " +
         "Does not include time-off cards. " +
         ToolOutputSchemas.TimecardsSchemaHint + " " +
         "WhenNotToUse: Do not use for capacity or bookings; use check_availability or get_schedule. " +
         "Do not use for PTO cards; use list_time_off.")]
     public Task<CallToolResult> ListTimecards(
-        [Description("ResourceReferenceSystemId")] string resource_id,
         [Description("Inclusive start date (yyyy-MM-dd)")] string start_date,
         [Description("Inclusive end date (yyyy-MM-dd)")] string end_date,
+        [Description("Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user.")] string? resource_id = null,
         [Description("Optional card status filter")] string? status = null,
         [Description("Optional project code filter")] string? project_code = null,
         CancellationToken cancellationToken = default) =>
@@ -57,15 +61,15 @@ public sealed class AgentTools
     [McpServerTool(Name = "list_time_off", Title = "List Projector time-off cards",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
-        "Lists many PwsGetTimeCards time-off card rows for one resource and date range. " +
+        "Lists many PwsGetTimeCards time-off card rows for one person (default: the signed-in user) and date range. " +
         ToolOutputSchemas.TimeOffSchemaHint + " " +
         "WhenNotToUse: Use list_upcoming_pto for a combined schedule+cards window. " +
         "Use list_holidays for company-wide location holiday calendars. " +
         "Do not use for work time entries; use list_timecards.")]
     public Task<CallToolResult> ListTimeOff(
-        [Description("ResourceReferenceSystemId")] string resource_id,
         [Description("Inclusive start date")] string start_date,
         [Description("Inclusive end date")] string end_date,
+        [Description("Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user.")] string? resource_id = null,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _tools.ListTimeOffAsync(
             ct.ConnectionId, resource_id, start_date, end_date, ct.Token), cancellationToken);
@@ -73,16 +77,17 @@ public sealed class AgentTools
     [McpServerTool(Name = "get_schedule", Title = "Get Projector resource schedule",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
-        "Returns one resource’s schedule for a date window: working/utilization minutes and hours, holidays, PTO, " +
-        "roles, bookings, plus daily/weekly capacity summaries. Cap is eight weeks. " +
+        "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes " +
+        "and hours (expected hours), holidays, PTO, roles, bookings, plus daily/weekly capacity summaries. " +
+        "Cap is eight weeks. " +
         "WhenNotToUse: Do not use for multi-person availability comparisons. " +
         "Do not use for historical time entry totals; use list_timecards. " +
         "Do not use for a project team roster; use list_project_roles. " +
         "Do not use for project booked hours across teammates; use list_proj_bookings.")]
     public Task<CallToolResult> GetResourceSchedule(
-        [Description("ResourceReferenceSystemId")] string resource_id,
         [Description("Inclusive start date")] string start_date,
         [Description("Inclusive end date")] string end_date,
+        [Description("Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user.")] string? resource_id = null,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _tools.GetResourceScheduleAsync(
             ct.ConnectionId, resource_id, start_date, end_date, ct.Token), cancellationToken);
@@ -168,12 +173,13 @@ public sealed class AgentTools
     [McpServerTool(Name = "list_upcoming_pto", Title = "List upcoming Projector PTO",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
-        "Lists upcoming PTO for one resource by combining schedule holidays/PTO and time-off cards. " +
+        "Lists upcoming PTO for one person (default: the signed-in user) by combining schedule holidays/PTO and " +
+        "time-off cards. " +
         "Each pto row includes minutes and hours (minutes / 60). " +
         ToolOutputSchemas.UpcomingPtoSchemaHint + " " +
         "WhenNotToUse: Do not use for company-wide holiday calendars; use list_holidays.")]
     public Task<CallToolResult> ListUpcomingPto(
-        [Description("ResourceReferenceSystemId")] string resource_id,
+        [Description("Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user.")] string? resource_id = null,
         [Description("Optional start date")] string? start_date = null,
         [Description("Optional end date")] string? end_date = null,
         CancellationToken cancellationToken = default) =>
@@ -186,7 +192,7 @@ public sealed class AgentTools
         "Returns a bounded bundle of resource profile, timecards, schedule/bookings/roles, and time off for one resource. " +
         "WhenNotToUse: Do not use for simple availability checks; use check_availability.")]
     public Task<CallToolResult> GetResourceOverview(
-        [Description("ResourceReferenceSystemId")] string resource_id,
+        [Description("Person: resource id, full name or e-mail")] string resource_id,
         [Description("Inclusive start date")] string start_date,
         [Description("Inclusive end date")] string end_date,
         CancellationToken cancellationToken = default) =>
@@ -294,11 +300,15 @@ public sealed class AgentTools
         }
         catch (Exception ex)
         {
-            return ToError(ex);
+            return ToError(ex, _logger);
         }
     }
 
-    internal static CallToolResult ToError(Exception ex)
+    /// <summary>
+    /// Maps an exception to the agent-facing error. Unexpected exceptions become a generic message for the agent
+    /// and are logged (type, message, stack) so the cause shows in App Insights / stderr.
+    /// </summary>
+    internal static CallToolResult ToError(Exception ex, ILogger? logger = null)
     {
         var (code, message) = ex switch
         {
@@ -309,6 +319,11 @@ public sealed class AgentTools
             OperationCanceledException => ("cancelled", "The operation was cancelled."),
             _ => ("error", "An unexpected error occurred.")
         };
+
+        if (code == "error")
+        {
+            logger?.LogError(ex, "Tool call failed with an unexpected {ExceptionType}", ex.GetType().FullName);
+        }
 
         var body = JsonSerializer.Serialize(new { error = code, message }, JsonOptions);
         return new CallToolResult

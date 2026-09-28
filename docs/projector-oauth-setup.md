@@ -45,8 +45,10 @@ On top of their current permissions, each user needs the global permission **Web
 
 | Level | Meaning | Needed for |
 |-------|---------|------------|
-| **V** (View) | Read data through web services | **Enough for this server** — all tools are read-only |
-| **U** (Update) | Read and write through web services | Not needed today; reserved for future write tools |
+| **V** (View) | Read data through web services | All read tools |
+| **U** (Update) | Read and write through web services | `save_timecard` (create or update the user's own draft time cards) |
+
+With **V** only, `save_timecard` fails: Projector returns `UpdatePermissionDenied` ("You do not have permission to update this item."), and the tool returns the error `web_services_access_view_only` with a message telling the user that their Web Services Access is V (View), not U (Update), and to ask their Projector PSA administrator to change it. Nothing is saved. Entering your own time also needs the usual Projector time-entry rights (a resource profile and a role on the project).
 
 Notes:
 
@@ -59,4 +61,4 @@ Notes:
 - [ ] OAuth app registered, redirect URL points at your deployed server
 - [ ] Client ID and secret stored in Key Vault
 - [ ] `AccountCode` set in your deployment settings
-- [ ] Users (or their permission profiles) have **Web Services Access = V**
+- [ ] Users (or their permission profiles) have **Web Services Access = V**, or **U** for users who log time with `save_timecard`

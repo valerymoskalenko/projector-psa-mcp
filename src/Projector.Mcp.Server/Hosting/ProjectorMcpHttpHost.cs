@@ -111,7 +111,7 @@ public static class ProjectorMcpHttpHost
 
         builder.Services.AddMcpServer(options =>
             {
-                options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.5.1" };
+                options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.0" };
             })
             .WithHttpTransport(options =>
             {
@@ -236,6 +236,7 @@ public static class ProjectorMcpHttpHost
         services.AddProjectorApplication(configuration);
         services.AddProjectorApiClient();
         services.AddSingleton<ToolCliRunner>();
+        services.AddSingleton<PwsCliRunner>();
         services.AddSingleton<ConnectionResolver>();
         services.AddSingleton<Projector.Mcp.Server.Resources.ProjectorLiveResources>();
         services.AddHttpContextAccessor();

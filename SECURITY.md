@@ -6,7 +6,7 @@ Please report vulnerabilities privately through [GitHub Security Advisories](htt
 
 ## Design summary
 
-- **Read-only tools.** No tool writes to Projector PSA.
+- **One write tool, drafts only.** `save_timecard` is the only tool that writes. It saves one work time card on the signed-in user's own time sheet (it never sends a resource, so Projector applies it to the caller), creates cards as Draft, updates only Draft or Rejected cards, and never submits, approves or deletes. A save is sent once and never retried automatically. All other tools are read-only.
 - **User-scoped access.** Each user signs in to Projector with OAuth; Projector enforces that user's permissions on every call. The `allowFullPermissions` scope never exceeds what the user already has.
 - **Tokens stay on the server.** Projector session tickets are stored server-side, encrypted with AES (`ProjectorTokenEncryptionKey`) in Azure SQL. MCP clients receive only the server's own JWTs (1-hour lifetime) and refresh tokens.
 - **Redirect allowlist.** The OAuth broker redirects only to allowlisted client callbacks and loopback addresses. Dynamic Client Registration rejects any other redirect URI. PKCE (S256) is supported and required by the MCP clients this server targets.
@@ -17,5 +17,5 @@ Please report vulnerabilities privately through [GitHub Security Advisories](htt
 ## Operator checklist
 
 - Keep secrets in Key Vault only. Never commit `deploy.settings.psd1` values that are secret, `.env` files, tokens or session caches.
-- Grant users **Web Services Access = V** (view) unless a future write tool requires **U**.
+- Grant users **Web Services Access = V** (view) for the read tools. Users who should log time with `save_timecard` need **U** (update); with V the save fails with `web_services_access_view_only` (Projector: `UpdatePermissionDenied`).
 - Rotate `ProjectorMcpJwtSigningKey` to invalidate all issued MCP tokens (users must reconnect).

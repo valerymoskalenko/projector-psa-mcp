@@ -58,11 +58,12 @@ public interface IProjectorSoapClient :
 {
 }
 
+/// <summary>A null resource means the signed-in user (Projector applies the call to the caller).</summary>
 public interface IProjectorTimecardClient
 {
     Task<TimecardListResult> ListTimecardsAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         string? projectCode = null,
@@ -71,9 +72,51 @@ public interface IProjectorTimecardClient
 
     Task<TimeOffListResult> ListTimeOffCardsAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Time entry for the signed-in user only: no method takes a resource, so Projector falls back to the caller.
+/// The only write is <see cref="SaveTimecardAsync"/>, which never submits.
+/// </summary>
+public interface IProjectorTimeEntryClient
+{
+    Task<IReadOnlyList<TimeEntryProjectSummary>> SearchTimeEntryProjectsAsync(
+        ProjectorConnection connection,
+        string workDate,
+        string? query = null,
+        string? projectCode = null,
+        CancellationToken cancellationToken = default);
+
+    Task<TimeEntryProjectSetup?> GetTimeEntryProjectAsync(
+        ProjectorConnection connection,
+        string projectCode,
+        string workDate,
+        CancellationToken cancellationToken = default);
+
+    Task<TimeEntryParameters> GetTimeEntryParametersAsync(
+        ProjectorConnection connection,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The caller's own work cards (any status) on one date.</summary>
+    Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
+        ProjectorConnection connection,
+        string workDate,
+        CancellationToken cancellationToken = default);
+
+    Task<OwnTimecard?> GetOwnTimecardAsync(
+        ProjectorConnection connection,
+        string timecardUid,
+        string workDate,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Not retried: a timeout or transport error throws <c>write_outcome_unknown</c>.</summary>
+    Task<TimecardSaveResult> SaveTimecardAsync(
+        ProjectorConnection connection,
+        TimecardSaveRequest request,
         CancellationToken cancellationToken = default);
 }
 
@@ -81,7 +124,7 @@ public interface IProjectorScheduleClient
 {
     Task<ResourceSchedule> GetResourceScheduleAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         CancellationToken cancellationToken = default);

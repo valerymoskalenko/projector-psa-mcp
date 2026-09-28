@@ -47,4 +47,17 @@ public sealed class Timecard
     public string? RejectedReason { get; init; }
 
     public string? RejectedTimestamp { get; init; }
+
+    public string? TimecardUid { get; init; }
+
+    public string? ProjectTaskUid { get; init; }
+
+    /// <summary>Parent task names and the task name joined with " > ".</summary>
+    public string? TaskPath { get; init; }
+
+    public string? TaskWbsCode { get; init; }
+
+    public string? ProjectRoleUid { get; init; }
+
+    public string? ProjectRateTypeUid { get; init; }
 }

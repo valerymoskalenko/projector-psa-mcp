@@ -99,7 +99,7 @@ public sealed class ProjectorSoapClient :
 
     public async Task<TimecardListResult> ListTimecardsAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         string? projectCode = null,
@@ -120,7 +120,7 @@ public sealed class ProjectorSoapClient :
 
     public async Task<TimeOffListResult> ListTimeOffCardsAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         CancellationToken cancellationToken = default)
@@ -139,7 +139,7 @@ public sealed class ProjectorSoapClient :
 
     public async Task<ResourceSchedule> GetResourceScheduleAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         CancellationToken cancellationToken = default)
@@ -169,7 +169,7 @@ public sealed class ProjectorSoapClient :
 
     private async Task<ResourceSchedule> GetResourceScheduleCoreAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         CancellationToken cancellationToken)
@@ -487,9 +487,9 @@ public sealed class ProjectorSoapClient :
         return await _soap.PostWcfAsync(connection, method, body, cancellationToken);
     }
 
-    private static void RejectEmailAsResourceId(string resourceReferenceSystemId)
+    private static void RejectEmailAsResourceId(string? resourceReferenceSystemId)
     {
-        if (resourceReferenceSystemId.Contains('@', StringComparison.Ordinal))
+        if (resourceReferenceSystemId is not null && resourceReferenceSystemId.Contains('@', StringComparison.Ordinal))
         {
             ProjectorIdentityRefs.BuildResourceRef(resourceReferenceSystemId);
         }

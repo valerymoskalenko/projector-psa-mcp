@@ -23,6 +23,8 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<LocalOAuthLoginService>();
         services.AddSingleton<ResourceService>();
         services.AddSingleton<ProjectorToolService>();
+        services.AddSingleton<TimeEntryCache>();
+        services.AddSingleton<TimeEntryToolService>();
         services.AddSingleton<IValidator<Contracts.Resources.ListResourcesRequest>, ListResourcesValidator>();
         services.AddSingleton<IValidator<Contracts.Resources.GetResourceRequest>, GetResourceValidator>();
 

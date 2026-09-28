@@ -9,7 +9,7 @@ User asks what hours or dollars are **budgeted** (planned) on a named project/en
 
 ## Tools
 
-1. **`list_engagements`** with `query` when only a name is known (e.g. Boyer – AWP). Honor `searchCoverage` — if partial, say so.
+1. **`list_engagements`** with `query` when only a name is known (e.g. Contoso – ERP Rollout). Honor `searchCoverage` — if partial, say so.
 2. **`get_engagement`** with `code` = `engagementCode` from the list (never pass a display name as code).
 
 ## How to answer
@@ -21,8 +21,8 @@ User asks what hours or dollars are **budgeted** (planned) on a named project/en
 
 ## Example user prompts
 
-1. How many hours are budgeted on Boyer – AWP?
+1. How many hours are budgeted on Contoso – ERP Rollout?
 2. How many hours are budgeted on engagement E00xxxx?
-3. What is the contract revenue time budget for Boyer – AWP?
-4. What cost budget does Boyer – AWP use?
-5. How do my hours last month on Boyer – AWP compare to the hour budget? (pair with `list_timecards` for actual hours vs planned hours — not $ over-budget)
+3. What is the contract revenue time budget for Contoso – ERP Rollout?
+4. What cost budget does Contoso – ERP Rollout use?
+5. How do my hours last month on Contoso – ERP Rollout compare to the hour budget? (pair with `list_timecards` for actual hours vs planned hours — not $ over-budget)

@@ -1,0 +1,161 @@
+<!-- PwsGetTimeEntryProjectRole with a task tree, shape captured 2026-09-26 (parent UID, ParentTaskName, ParentTaskWbsCode, dotted WBS); names and ids are invented.
+     Two user stories (closed for time) each have an open "Analysis & Design" and "Development" task. -->
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetTimeEntryProjectRoleResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetTimeEntryProjectRoleResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <a:TimeEntryProject xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <a:AllowAssignmentFlag>true</a:AllowAssignmentFlag>
+          <a:AllowBookingFlag>false</a:AllowBookingFlag>
+          <a:DescriptionRequiredFlag>true</a:DescriptionRequiredFlag>
+          <a:OpenFlag>true</a:OpenFlag>
+          <a:ProjectDescriptor>
+            <ProjectCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P005678-001</ProjectCode>
+            <ProjectUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2000000000000000001</ProjectUid>
+            <a:EngagementDescriptor>
+              <EngagementCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P005678</EngagementCode>
+              <a:ClientDescriptor>
+                <a:ClientName>Contoso</a:ClientName>
+              </a:ClientDescriptor>
+              <a:EngagementName>Contoso - Development Services</a:EngagementName>
+              <a:EngagementTypeDescriptor>
+                <a:BillableFlag>true</a:BillableFlag>
+              </a:EngagementTypeDescriptor>
+            </a:EngagementDescriptor>
+            <a:ProjectName>Contoso - Development Services</a:ProjectName>
+            <a:ProjectRoles />
+          </a:ProjectDescriptor>
+          <a:ProjectRateTypes>
+            <b:PwsProjectRateTypeSummary>
+              <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+              <b:ProjectRateTypeName>Billable</b:ProjectRateTypeName>
+            </b:PwsProjectRateTypeSummary>
+            <b:PwsProjectRateTypeSummary>
+              <b:ProjectRateTypeUid>2300000000000000002</b:ProjectRateTypeUid>
+              <b:ProjectRateTypeName>Non-Chargeable</b:ProjectRateTypeName>
+            </b:PwsProjectRateTypeSummary>
+          </a:ProjectRateTypes>
+          <a:ProjectTaskTypes>
+            <a:PwsTaskType>
+              <ProjectTaskTypeUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2400000000000000001</ProjectTaskTypeUid>
+              <a:AllowedProjectRateTypes>
+                <b:PwsProjectRateTypeSummary>
+                  <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+                  <b:ProjectRateTypeName>Billable</b:ProjectRateTypeName>
+                </b:PwsProjectRateTypeSummary>
+              </a:AllowedProjectRateTypes>
+              <a:DefaultProjectRateTypeIdentity>
+                <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+              </a:DefaultProjectRateTypeIdentity>
+              <a:InactiveFlag>false</a:InactiveFlag>
+              <a:NarrativeRequiredFlag>false</a:NarrativeRequiredFlag>
+              <a:ProjectTaskTypeName>Development Services</a:ProjectTaskTypeName>
+            </a:PwsTaskType>
+          </a:ProjectTaskTypes>
+          <a:ProjectTasks>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000011</ProjectTaskUid>
+              <a:Name>User Story 101: Export totals do not match</a:Name>
+              <a:OpenForTimeFlag>false</a:OpenForTimeFlag>
+              <a:ParentProjectTaskIdentity i:nil="true" />
+              <a:ParentTaskName i:nil="true" />
+              <a:ProjectTaskTypeIdentity>
+                <b:ProjectTaskTypeUid>2400000000000000001</b:ProjectTaskTypeUid>
+              </a:ProjectTaskTypeIdentity>
+              <a:Roles />
+              <a:WbsCode>1</a:WbsCode>
+              <a:ParentTaskWbsCode i:nil="true" />
+            </a:PwsProjectTask>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000012</ProjectTaskUid>
+              <a:Name>Analysis &amp; Design</a:Name>
+              <a:OpenForTimeFlag>true</a:OpenForTimeFlag>
+              <a:ParentProjectTaskIdentity>
+                <b:ExternalSystemIdentifier i:nil="true" />
+                <b:ProjectTaskId i:nil="true" />
+                <b:ProjectTaskUid>2100000000000000011</b:ProjectTaskUid>
+              </a:ParentProjectTaskIdentity>
+              <a:ParentTaskName>User Story 101: Export totals do not match</a:ParentTaskName>
+              <a:ProjectTaskTypeIdentity>
+                <b:ProjectTaskTypeUid>2400000000000000001</b:ProjectTaskTypeUid>
+              </a:ProjectTaskTypeIdentity>
+              <a:Roles />
+              <a:WbsCode>1.1</a:WbsCode>
+              <a:ParentTaskWbsCode>1</a:ParentTaskWbsCode>
+            </a:PwsProjectTask>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000013</ProjectTaskUid>
+              <a:Name>Development</a:Name>
+              <a:OpenForTimeFlag>true</a:OpenForTimeFlag>
+              <a:ParentProjectTaskIdentity>
+                <b:ExternalSystemIdentifier i:nil="true" />
+                <b:ProjectTaskId i:nil="true" />
+                <b:ProjectTaskUid>2100000000000000011</b:ProjectTaskUid>
+              </a:ParentProjectTaskIdentity>
+              <a:ParentTaskName>User Story 101: Export totals do not match</a:ParentTaskName>
+              <a:ProjectTaskTypeIdentity>
+                <b:ProjectTaskTypeUid>2400000000000000001</b:ProjectTaskTypeUid>
+              </a:ProjectTaskTypeIdentity>
+              <a:Roles />
+              <a:WbsCode>1.2</a:WbsCode>
+              <a:ParentTaskWbsCode>1</a:ParentTaskWbsCode>
+            </a:PwsProjectTask>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000021</ProjectTaskUid>
+              <a:Name>User Story 202: Invoice layout</a:Name>
+              <a:OpenForTimeFlag>false</a:OpenForTimeFlag>
+              <a:ParentProjectTaskIdentity i:nil="true" />
+              <a:ParentTaskName i:nil="true" />
+              <a:ProjectTaskTypeIdentity>
+                <b:ProjectTaskTypeUid>2400000000000000001</b:ProjectTaskTypeUid>
+              </a:ProjectTaskTypeIdentity>
+              <a:Roles />
+              <a:WbsCode>2</a:WbsCode>
+              <a:ParentTaskWbsCode i:nil="true" />
+            </a:PwsProjectTask>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000022</ProjectTaskUid>
+              <a:Name>Analysis &amp; Design</a:Name>
+              <a:OpenForTimeFlag>true</a:OpenForTimeFlag>
+              <a:ParentProjectTaskIdentity>
+                <b:ExternalSystemIdentifier i:nil="true" />
+                <b:ProjectTaskId i:nil="true" />
+                <b:ProjectTaskUid>2100000000000000021</b:ProjectTaskUid>
+              </a:ParentProjectTaskIdentity>
+              <a:ParentTaskName>User Story 202: Invoice layout</a:ParentTaskName>
+              <a:ProjectTaskTypeIdentity>
+                <b:ProjectTaskTypeUid>2400000000000000001</b:ProjectTaskTypeUid>
+              </a:ProjectTaskTypeIdentity>
+              <a:Roles />
+              <a:WbsCode>2.1</a:WbsCode>
+              <a:ParentTaskWbsCode>2</a:ParentTaskWbsCode>
+            </a:PwsProjectTask>
+            <a:PwsProjectTask>
+              <ProjectTaskUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">2100000000000000023</ProjectTaskUid>
+              <a:Name>Development</a:Name>
+              <a:OpenForTimeFlag>true</a:OpenForTimeFlag>
+              <a:ParentProjectTaskIdentity>
+                <b:ExternalSystemIdentifier i:nil="true" />
+                <b:ProjectTaskId i:nil="true" />
+                <b:ProjectTaskUid>2100000000000000021</b:ProjectTaskUid>
+              </a:ParentProjectTaskIdentity>
+              <a:ParentTaskName>User Story 202: Invoice layout</a:ParentTaskName>
+              <a:ProjectTaskTypeIdentity>
+                <b:ProjectTaskTypeUid>2400000000000000001</b:ProjectTaskTypeUid>
+              </a:ProjectTaskTypeIdentity>
+              <a:Roles />
+              <a:WbsCode>2.2</a:WbsCode>
+              <a:ParentTaskWbsCode>2</a:ParentTaskWbsCode>
+            </a:PwsProjectTask>
+          </a:ProjectTasks>
+          <a:TimeCards />
+          <a:Udf1Treatment>A</a:Udf1Treatment>
+          <a:Udf2Treatment>D</a:Udf2Treatment>
+        </a:TimeEntryProject>
+      </PwsGetTimeEntryProjectRoleResult>
+    </PwsGetTimeEntryProjectRoleResponse>
+  </s:Body>
+</s:Envelope>

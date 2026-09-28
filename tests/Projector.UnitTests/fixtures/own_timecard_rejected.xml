@@ -1,0 +1,53 @@
+<!-- PwsGetTimeCards with TimeCardIdentity, one Rejected card; shape captured 2026-09-25, values invented. -->
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetTimeCardsResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetTimeCardsResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" />
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <a:TimeEntryProjects xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <a:PwsTimeEntryProject>
+            <a:ProjectDescriptor>
+              <ProjectCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P005678-001</ProjectCode>
+            </a:ProjectDescriptor>
+            <a:TimeCards>
+              <a:PwsTimecardDetail>
+                <ReferenceId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+                <TimecardId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+                <TimecardType xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">T</TimecardType>
+                <TimecardUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">3000000000000000009</TimecardUid>
+                <a:Description>Fix build pipeline</a:Description>
+                <a:DescriptionClearFlag>false</a:DescriptionClearFlag>
+                <a:RejectedByUser>
+                  <b:UserDisplayName>John Manager</b:UserDisplayName>
+                  <b:UserReferenceSystemId>20001</b:UserReferenceSystemId>
+                </a:RejectedByUser>
+                <a:RejectedReason>Please use the TEST project</a:RejectedReason>
+                <a:RejectedTimestamp>2026-09-25T21:37:14.33Z</a:RejectedTimestamp>
+                <a:Status>Rejected</a:Status>
+                <a:WorkDate>2026-09-25T00:00:00Z</a:WorkDate>
+                <a:WorkMinutes>75</a:WorkMinutes>
+                <a:Timestamp>AAAAADAghmM=</a:Timestamp>
+                <a:CardStatus>R</a:CardStatus>
+                <a:LocationIdentity i:nil="true" />
+                <a:ProjectIdentity>
+                  <b:ProjectCode>P005678-001</b:ProjectCode>
+                  <b:ProjectUid>2000000000000000001</b:ProjectUid>
+                </a:ProjectIdentity>
+                <a:ProjectRateTypeIdentity>
+                  <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+                </a:ProjectRateTypeIdentity>
+                <a:ProjectTaskIdentity>
+                  <b:ProjectTaskUid>2100000000000000001</b:ProjectTaskUid>
+                </a:ProjectTaskIdentity>
+                <a:RoleIdentity>
+                  <b:ProjectRoleUid>2200000000000000001</b:ProjectRoleUid>
+                </a:RoleIdentity>
+              </a:PwsTimecardDetail>
+            </a:TimeCards>
+          </a:PwsTimeEntryProject>
+        </a:TimeEntryProjects>
+      </PwsGetTimeCardsResult>
+    </PwsGetTimeCardsResponse>
+  </s:Body>
+</s:Envelope>

@@ -1,0 +1,58 @@
+<!-- PwsSaveTimeCards success, shape captured 2026-09-25 (UDF and nil elements trimmed); names and ids are invented. -->
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsSaveTimeCardsResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsSaveTimeCardsResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <ServerTimestampUtc xmlns="http://projectorpsa.com/CommonServices/">2026-09-25T23:43:21.5720936Z</ServerTimestampUtc>
+        <a:EstimateResults />
+        <a:Locations xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+        <a:SubmittedFlag>false</a:SubmittedFlag>
+        <a:TaskNoteResults />
+        <a:TimeOffCardResults />
+        <a:TimecardResults>
+          <a:PwsSaveTimecardResult>
+            <a:ErrorDetail i:nil="true" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+            <a:ReferenceId>1</a:ReferenceId>
+            <a:TimeCard xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <ReferenceId xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">1</ReferenceId>
+              <TimecardId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+              <TimecardType xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">T</TimecardType>
+              <TimecardUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">3000000000000000042</TimecardUid>
+              <a:Description>Fix build pipeline</a:Description>
+              <a:DescriptionClearFlag>false</a:DescriptionClearFlag>
+              <a:RejectedByUser i:nil="true" />
+              <a:RejectedReason i:nil="true" />
+              <a:RejectedTimestamp i:nil="true" />
+              <a:Status>Draft</a:Status>
+              <a:WorkDate>2026-09-24T00:00:00Z</a:WorkDate>
+              <a:WorkMinutes>90</a:WorkMinutes>
+              <a:Timestamp>AAAAADAgvXU=</a:Timestamp>
+              <a:CardStatus>D</a:CardStatus>
+              <a:LocationClearFlag>false</a:LocationClearFlag>
+              <a:LocationIdentity i:nil="true" />
+              <a:ProjectIdentity>
+                <b:ProjectCode>P005678-001</b:ProjectCode>
+                <b:ProjectId i:nil="true" />
+                <b:ProjectUid>2000000000000000001</b:ProjectUid>
+              </a:ProjectIdentity>
+              <a:ProjectRateTypeIdentity>
+                <b:ProjectRateTypeUid>2300000000000000001</b:ProjectRateTypeUid>
+              </a:ProjectRateTypeIdentity>
+              <a:ProjectTaskIdentity>
+                <b:ProjectTaskUid>2100000000000000001</b:ProjectTaskUid>
+              </a:ProjectTaskIdentity>
+              <a:RoleClearFlag>false</a:RoleClearFlag>
+              <a:RoleIdentity>
+                <b:ProjectRoleUid>2200000000000000001</b:ProjectRoleUid>
+              </a:RoleIdentity>
+              <a:Udf2 i:nil="true" />
+            </a:TimeCard>
+          </a:PwsSaveTimecardResult>
+        </a:TimecardResults>
+      </PwsSaveTimeCardsResult>
+    </PwsSaveTimeCardsResponse>
+  </s:Body>
+</s:Envelope>
