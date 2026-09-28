@@ -127,7 +127,7 @@
       "requiredScopes": [
         "scheduleResources"
       ],
-      "description": "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes and hours, holidays, PTO, roles (with engagement/client/managers/stage), bookings (dailyWeeklyFlag D/W plus schedulingMode daily/weekly, with notes), plus daily/weekly capacity summaries (state, booked/available minutes). Cap is eight weeks. Prefer check_availability for multi-person capacity questions.",
+      "description": "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes and hours, holidays, PTO, roles (with engagement/client/managers/stage), bookings (dailyWeeklyFlag D/W plus schedulingMode daily/weekly, with notes), plus daily/weekly capacity summaries (state, booked/available minutes). Cap is eight weeks. Prefer check_availability for multi-person capacity questions. Booked minutes are planned resource bookings (the resource plan), not time posted on timecards; use list_timecards for posted hours.",
       "whenNotToUse": "Do not use for multi-person availability comparisons. Do not use for historical time entry totals; use list_timecards. Do not use for a project team roster; use list_project_roles. Do not use for project booked hours across teammates; use list_proj_bookings.",
       "inputSchema": {
         "type": "object",

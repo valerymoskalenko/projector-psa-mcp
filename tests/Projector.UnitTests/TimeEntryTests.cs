@@ -977,6 +977,43 @@ public class TimeEntryTests
         handler.Calls.Should().Be(1);
     }
 
+    [Fact]
+    public void ResolveTask_AcceptsTheTailOfTheFullPath_AsListTimecardsShowsIt()
+    {
+        TimeEntryTask Task(string uid, string path, string wbs) => new() { Uid = uid, Name = path.Split(" > ")[^1], Path = path, WbsCode = wbs, OpenForTime = true };
+        var tasks = new List<TimeEntryTask>
+        {
+            Task("1", "Build > Validation > Auth flow > Validate sign-in", "3.2.1.1"),
+            Task("2", "Build > Validation > Claims > Validate sign-in", "3.2.2.1"),
+        };
+
+        TimeEntryToolService.ResolveTask(tasks, "Auth flow > Validate sign-in", "P005678-001").Uid.Should().Be("1");
+        TimeEntryToolService.ResolveTask(tasks, "Validation > Claims > Validate sign-in", "P005678-001").Uid.Should().Be("2");
+
+        var act = () => TimeEntryToolService.ResolveTask(tasks, "Validate sign-in", "P005678-001");
+        act.Should().Throw<ProjectorApiException>().Which.ErrorCode.Should().Be("ambiguous_task");
+    }
+
+    [Fact]
+    public void ToolArguments_NullsAreDropped_WholeNumbersBind_BadValuesAreNamed()
+    {
+        var schema = JsonDocument.Parse("""
+            {"type":"object","properties":{
+              "max_rows":{"type":"integer"},"hours":{"type":"number"},"flag":{"type":"boolean"},"query":{"type":["string","null"]}}}
+            """).RootElement;
+        JsonElement J(string json) => JsonDocument.Parse(json).RootElement;
+
+        var args = new Dictionary<string, JsonElement> { ["max_rows"] = J("20.0"), ["query"] = J("null"), ["hours"] = J("\"1.5\""), ["flag"] = J("\"true\"") };
+        Projector.Mcp.Server.Tools.ToolArgumentFilter.Normalize(args, schema).Should().BeNull();
+        args.Should().NotContainKey("query");
+        args["max_rows"].GetInt32().Should().Be(20);
+        args["hours"].GetDouble().Should().Be(1.5);
+        args["flag"].GetBoolean().Should().BeTrue();
+
+        Projector.Mcp.Server.Tools.ToolArgumentFilter.Normalize(new Dictionary<string, JsonElement> { ["max_rows"] = J("2.5") }, schema)
+            .Should().Contain("max_rows must be a whole number");
+    }
+
     private static HttpResponseMessage OkResponse() => new(HttpStatusCode.OK)
     {
         Content = new StringContent("<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><R/></s:Body></s:Envelope>")

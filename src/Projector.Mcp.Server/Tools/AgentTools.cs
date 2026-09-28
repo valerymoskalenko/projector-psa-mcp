@@ -81,7 +81,8 @@ public sealed class AgentTools
     [Description(
         "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes " +
         "and hours (expected hours), holidays, PTO, roles, bookings, plus daily/weekly capacity summaries. " +
-        "Cap is eight weeks. " +
+        "Cap is eight weeks. Booked minutes are planned resource bookings (the resource plan), not time posted on " +
+        "timecards; use list_timecards for posted hours. " +
         "WhenNotToUse: Do not use for multi-person availability comparisons. " +
         "Do not use for historical time entry totals; use list_timecards. " +
         "Do not use for a project team roster; use list_project_roles. " +

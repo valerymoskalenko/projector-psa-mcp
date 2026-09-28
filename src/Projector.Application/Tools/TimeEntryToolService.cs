@@ -484,6 +484,21 @@ public sealed class TimeEntryToolService
             return byPath[0];
         }
 
+        // A path from list_timecards may start below the top level (card reads carry only the task and its parent's
+        // name), so accept the tail of the full path when exactly one task ends that way.
+        if (byPath.Count == 0 && wantedPath.Contains(TaskPaths.Separator, StringComparison.Ordinal))
+        {
+            var byTail = tasks.Where(t => t.Path is not null
+                    && NormalizePath(t.Path).EndsWith(TaskPaths.Separator + wantedPath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (byTail.Count == 1)
+            {
+                return byTail[0];
+            }
+
+            byPath = byTail;
+        }
+
         var byWbs = tasks.Where(t => string.Equals(t.WbsCode?.Trim(), wanted, StringComparison.OrdinalIgnoreCase)).ToList();
         if (byWbs.Count == 1)
         {
@@ -513,8 +528,9 @@ public sealed class TimeEntryToolService
         }
 
         throw new ProjectorApiException(
-            $"Unknown task '{wanted}' on project {projectCode}. Call get_timecard_options with project_code " +
-            $"{projectCode} and query set to part of the task name, its WBS code or its parent's name.",
+            $"Unknown task '{wanted}' on project {projectCode}. Pass the WBS code instead (taskWbsCode in list_timecards), " +
+            $"or call get_timecard_options with project_code {projectCode} and query set to part of the task name, its WBS " +
+            "code or its parent's name.",
             "invalid_task");
     }
 

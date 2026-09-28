@@ -158,7 +158,7 @@ static async Task<int> RunStdioAsync(CancellationToken ct)
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()
-        .WithRequestFilters(filters => filters.AddCallToolFilter(CopilotToolNameFilter.Filter))
+        .WithRequestFilters(filters => filters.AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ToolArgumentFilter.Filter))
         .WithResourcesFromAssembly()
         .WithPromptsFromAssembly();
 
