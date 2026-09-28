@@ -56,10 +56,10 @@ public sealed class TimeEntryTools
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
         "Gets one project's time-entry options for the signed-in user on one work_date: only tasks open for time " +
-        "(name, full task_path with parent tasks, WBS code, rate types), the user's roles, and entry rules " +
-        "(time increment, location, UDFs). The rate types most tasks allow are listed once at the top; a task lists " +
-        "its own only when they differ. Task names " +
-        "repeat under different parents, so use query (part of a task name, WBS code or parent name) to find the " +
+        "(name, full task_path with parent tasks, WBS code, default_rate_type), the user's roles, and entry rules " +
+        "(time increment, location, UDFs). Rate types are listed for information only (the ones most tasks allow once " +
+        "at the top; a task lists its own only when they differ): save_timecard always uses the task's " +
+        "default_rate_type, so don't offer rate type choices to the user. Task names repeat under different parents, so use query (part of a task name, WBS code or parent name) to find the " +
         "right one; results are paged (max_tasks, offset). Call before save_timecard. " +
         ToolOutputSchemas.TimecardOptionsSchemaHint + " " +
         "WhenNotToUse: Do not use to find the user's projects; use list_time_projects. " +
@@ -80,11 +80,12 @@ public sealed class TimeEntryTools
     [Description(
         "Creates one work time card as Draft on the signed-in user's own time sheet, or updates one of the user's own " +
         "Draft or Rejected cards when timecard_uid is given (from list_timecards). Never submits, approves or deletes; " +
-        "the user submits in Projector. Before calling, show the user the date, hours, project, task, role, rate type " +
+        "the user submits in Projector. Before calling, show the user the date, hours, project, task, role " +
         "and narrative and get explicit confirmation. Find the values with list_time_projects, then get_timecard_options; " +
-        "task accepts the UID, the full task_path, the WBS code or a unique name; role and rate_type accept the UID or " +
-        "the exact name. On an update send the full card, not just the changes. The result includes the day's total " +
-        "hours and warns about a likely duplicate card (same date, project and task, similar narrative); relay warnings to the user. " +
+        "task accepts the UID, the full task_path, the WBS code or a unique name; role accepts the UID or the exact name. " +
+        "The rate type is not a parameter: the server always uses the task's default rate type (on update too; moving a " +
+        "card to another task gives it that task's default). On an update send the full card, not just the changes. " +
+        "The result includes the day's total hours and warns about a likely duplicate card (same date, project and task, similar narrative); relay warnings to the user. " +
         ToolOutputSchemas.SaveTimecardSchemaHint + " " +
         "WhenNotToUse: Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.")]
     public Task<CallToolResult> SaveTimecard(
@@ -93,7 +94,6 @@ public sealed class TimeEntryTools
         [Description("Project code, e.g. P001234-001")] string project_code,
         [Description("Task UID, task_path, WBS code or unique task name (get_timecard_options)")] string task,
         [Description("Role UID or exact role name (get_timecard_options)")] string role,
-        [Description("Rate type UID or exact name allowed for the task (get_timecard_options)")] string rate_type,
         [Description("What was done; required, at most 1000 characters")] string narrative,
         [Description("Only to update: the card's timecardUid from list_timecards. Omit to create a new Draft card.")] string? timecard_uid = null,
         [Description("Location name; only when get_timecard_options says location_required")] string? location = null,
@@ -102,7 +102,7 @@ public sealed class TimeEntryTools
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _timeEntry.SaveTimecardAsync(
                 ct.ConnectionId,
-                new SaveTimecardInput(work_date, hours, project_code, task, role, rate_type, narrative,
+                new SaveTimecardInput(work_date, hours, project_code, task, role, narrative,
                     timecard_uid, location, udf1, udf2),
                 ct.Token),
             cancellationToken);

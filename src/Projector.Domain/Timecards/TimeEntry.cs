@@ -46,6 +46,15 @@ public sealed class TimeEntryTask
 
     public bool OpenForTime { get; init; }
 
+    /// <summary>
+    /// True for a summary task (another task names it as parent). Projector still reports OpenForTimeFlag=true
+    /// for these, but rejects time on them at submit ("time cannot be entered for this task").
+    /// </summary>
+    public bool HasChildren { get; set; }
+
+    /// <summary>Open for time and not a summary task.</summary>
+    public bool AcceptsTime => OpenForTime && !HasChildren;
+
     public string? TaskTypeName { get; init; }
 
     public bool NarrativeRequired { get; init; }
@@ -73,6 +82,12 @@ public sealed class TimeEntryProjectSetup
 
     public bool DescriptionRequired { get; init; }
 
+    /// <summary>
+    /// Project AllowAssignmentFlag. False on projects where only roles assigned to a task may post time to it
+    /// (PwsGetProject TimeEntryRestrictedToRolesAssignedToTasksFlag); then see <see cref="TaskAssignments"/>.
+    /// </summary>
+    public bool AllowAssignment { get; init; } = true;
+
     /// <summary>R = required, A = allowed, anything else = not used.</summary>
     public string? Udf1Treatment { get; init; }
 
@@ -81,6 +96,22 @@ public sealed class TimeEntryProjectSetup
     public IReadOnlyList<TimeEntryRateType> RateTypes { get; init; } = [];
 
     public IReadOnlyList<TimeEntryTask> Tasks { get; init; } = [];
+
+    /// <summary>
+    /// The default rate type UIDs of the project's task types (distinct). When they all agree, that is the
+    /// project's common default, used for tasks that have no task type.
+    /// </summary>
+    public IReadOnlyList<string> TaskTypeDefaultRateTypeUids { get; init; } = [];
+}
+
+/// <summary>
+/// Which roles are assigned to which tasks on one project (PwsGetProject). When <paramref name="Restricted"/> is true,
+/// Projector rejects time at submit from a role that is not assigned to the task.
+/// </summary>
+public sealed record TaskAssignments(bool Restricted, IReadOnlyDictionary<string, IReadOnlySet<string>> RolesByTask)
+{
+    public bool IsAssigned(string taskUid, IEnumerable<string> roleUids) =>
+        RolesByTask.TryGetValue(taskUid, out var roles) && roleUids.Any(roles.Contains);
 }
 
 public sealed record TimeEntryUdf(string? Uid, string? Name, string? DataType, bool Required, IReadOnlyList<string> Values);

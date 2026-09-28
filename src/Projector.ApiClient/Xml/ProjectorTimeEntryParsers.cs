@@ -101,11 +101,47 @@ public static class ProjectorTimeEntryParsers
             Billable = ParseBool(XmlNodeHelpers.NestedValue(descriptor, "EngagementDescriptor", "EngagementTypeDescriptor", "BillableFlag")),
             OpenForTime = ParseBool(ChildValue(p, "OpenFlag")) == true,
             DescriptionRequired = ParseBool(ChildValue(p, "DescriptionRequiredFlag")) == true,
+            AllowAssignment = ParseBool(ChildValue(p, "AllowAssignmentFlag")) != false,
             Udf1Treatment = ChildValue(p, "Udf1Treatment"),
             Udf2Treatment = ChildValue(p, "Udf2Treatment"),
             RateTypes = ParseRateTypes(Child(p, "ProjectRateTypes")),
-            Tasks = WithPaths(tasks)
+            Tasks = WithPaths(tasks),
+            TaskTypeDefaultRateTypeUids = taskTypes.Values
+                .Select(type => ChildValue(Child(type, "DefaultProjectRateTypeIdentity"), "ProjectRateTypeUid"))
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToList()
         };
+    }
+
+    /// <summary>
+    /// Task → assigned role UIDs from PwsGetProject (Mode R), and whether the project restricts time entry to roles
+    /// assigned to the task (TimeEntryRestrictedToRolesAssignedToTasksFlag).
+    /// </summary>
+    public static TaskAssignments ParseTaskAssignments(XDocument response)
+    {
+        var restricted = ParseBool(XmlNodeHelpers.Value(response.Root!, "TimeEntryRestrictedToRolesAssignedToTasksFlag")) == true;
+        var byTask = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var detail in XmlNodeHelpers.LocalNodes(response, "ProjectTaskRoleDetail"))
+        {
+            var task = ChildValue(Child(detail, "ProjectTaskIdentity"), "ProjectTaskUid");
+            var role = ChildValue(Child(detail, "ProjectRoleIdentity"), "ProjectRoleUid");
+            if (task is null || role is null)
+            {
+                continue;
+            }
+
+            if (!byTask.TryGetValue(task, out var roles))
+            {
+                byTask[task] = roles = new HashSet<string>(StringComparer.Ordinal);
+            }
+
+            roles.Add(role);
+        }
+
+        return new TaskAssignments(
+            restricted,
+            byTask.ToDictionary(kv => kv.Key, kv => (IReadOnlySet<string>)kv.Value, StringComparer.Ordinal));
     }
 
     public static TimeEntryParameters ParseTimeEntryParameters(XDocument response)
@@ -237,9 +273,11 @@ public static class ProjectorTimeEntryParsers
     private static IReadOnlyList<TimeEntryTask> WithPaths(List<TimeEntryTask> tasks)
     {
         var paths = TaskPaths.Build(tasks.Select(t => (t.Uid, t.Name, t.ParentTaskUid)));
+        var parents = tasks.Select(t => t.ParentTaskUid).OfType<string>().ToHashSet(StringComparer.Ordinal);
         foreach (var task in tasks)
         {
             task.Path = paths.GetValueOrDefault(task.Uid);
+            task.HasChildren = parents.Contains(task.Uid);
         }
 
         return tasks;

@@ -30,7 +30,9 @@ public static class ToolOutputSchemas
     public const string TimecardsSchemaHint =
         "Output keys: resource_id (\"me\" for the signed-in user), start_date, end_date, count, timecards[], searchCoverage. "
         + "Each card has taskName, taskPath (parent tasks > task), taskWbsCode, timecardUid, projectTaskUid, projectRoleUid "
-        + "and projectRateTypeUid (use them with save_timecard). "
+        + "and projectRateTypeUid (use them with save_timecard). Every status is listed, Rejected included (with the "
+        + "rejection reason when Projector gives one). The signed-in user's own cards have editable: true = Draft or "
+        + "Rejected (save_timecard with timecard_uid can fix it), false = fix it in Projector. "
         + SearchCoverageRule;
 
     public const string TimeOffSchemaHint =
@@ -66,7 +68,10 @@ public static class ToolOutputSchemas
         "Output keys: work_date, project (open_for_time, narrative_required), roles[] (role_uid, role_name), "
         + "rate_types[] (the set most tasks allow), task_query, "
         + "tasks[] (task_uid, task_name, task_path, wbs_code, task_type, rate_types[] only when that task differs from the top-level set, "
-        + "default_rate_type), tasks_count, tasks_total, tasks_has_more, tasks_next_offset, "
+        + "default_rate_type, assigned), tasks_count, tasks_total, tasks_has_more, tasks_next_offset, "
+        + "tasks_summary_hidden (summary tasks with sub-tasks are never listed: Projector rejects time on them), "
+        + "assignment_note (on projects where only assigned people can post time: tasks with assigned = false are "
+        + "rejected at submit, so prefer assigned = true), "
         + "rules (time_increment_minutes, max_hours_per_day, location_required, udf1, udf2), next_step.";
 
     public const string SaveTimecardSchemaHint =
@@ -76,7 +81,10 @@ public static class ToolOutputSchemas
         + "them to the user). "
         + "On error write_outcome_unknown the save may or may not have happened: check list_timecards before retrying. "
         + "On error web_services_access_view_only nothing was saved: tell the user their Projector Web Services Access is "
-        + "V (View), not U (Update), and to ask their Projector PSA administrator to change it; do not retry.";
+        + "V (View), not U (Update), and to ask their Projector PSA administrator to change it; do not retry. "
+        + "On error summary_task or not_assigned_to_task nothing was saved: pick one of the sub-tasks the message lists, "
+        + "or a task with assigned = true, or ask the user. "
+        + "On error projector_busy nothing was saved: retry once after a few seconds.";
 
     private static readonly JsonSerializerOptions SchemaOptions = new(JsonSerializerOptions.Default)
     {

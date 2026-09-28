@@ -14,7 +14,6 @@ public sealed record SaveTimecardInput(
     string ProjectCode,
     string Task,
     string Role,
-    string RateType,
     string Narrative,
     string? TimecardUid = null,
     string? Location = null,
@@ -49,6 +48,7 @@ public sealed class TimeEntryToolService
     private const string ProjectsKind = "projects";
     private const string SetupKind = "setup";
     private const string DayCardsKind = "day_cards";
+    private const string AssignmentsKind = "assignments";
     private static readonly HashSet<string> EditableStatuses = new(StringComparer.OrdinalIgnoreCase) { "D", "R" };
 
     private readonly ProjectorConnectionService _connections;
@@ -87,8 +87,7 @@ public sealed class TimeEntryToolService
         var text = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
         var matches = text is null
             ? all
-            : all.Where(p => ContainsAny(text, p.ProjectCode, p.ProjectName, p.EngagementCode, p.EngagementName, p.ClientName))
-                .ToList();
+            : Ranked(all, p => TextMatch.Score(text, p.ProjectCode, p.ProjectName, p.EngagementCode, p.EngagementName, p.ClientName));
         var page = matches.Skip(offset).Take(maxRows).ToList();
         var hasMore = offset + page.Count < matches.Count;
         return new
@@ -112,8 +111,12 @@ public sealed class TimeEntryToolService
                 roles = p.Roles.Select(r => new { role_uid = r.Uid, role_name = r.Name }).ToList(),
                 unavailable_reason = p.UnavailableReasonCode
             }).ToList(),
-            next_step = "Call get_timecard_options with a project_code where chargeable is true and the same work_date " +
-                "(add query to find a task by name, WBS or parent)."
+            next_step = text is not null && matches.Count == 0
+                ? $"No project you can enter time on matches '{text}'. Projector lists only projects where you have a role: " +
+                  "check the name with list_engagements, and ask the project manager to add you if it exists. The words may " +
+                  "also be a task inside another project (e.g. a presale opportunity): try get_timecard_options with query."
+                : "Call get_timecard_options with a project_code where chargeable is true and the same work_date " +
+                  "(add query to find a task by name, WBS or parent)."
         };
     }
 
@@ -137,12 +140,18 @@ public sealed class TimeEntryToolService
         var rules = await GetRulesAsync(connection, ct);
 
         var text = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
-        var openTasks = setup.Tasks.Where(t => t.OpenForTime).ToList();
+        // Summary tasks report OpenForTimeFlag=true but Projector rejects their time at submit: never offer them.
+        var openTasks = setup.Tasks.Where(t => t.AcceptsTime).ToList();
+        var summaryHidden = setup.Tasks.Count(t => t.OpenForTime && t.HasChildren);
         var matches = text is null
             ? openTasks
-            : openTasks.Where(t => ContainsAny(text, t.Name, t.Path, t.WbsCode)).ToList();
+            : Ranked(openTasks, t => TextMatch.Score(text, t.WbsCode, t.Name, t.Path));
         var page = matches.Skip(offset).Take(maxTasks).ToList();
         var hasMore = offset + page.Count < matches.Count;
+
+        var (assignments, assignmentNote) = await TryGetAssignmentsAsync(connection, setup, ct);
+        var roleUids = roles.Select(r => r.Uid).ToList();
+        bool? Assigned(TimeEntryTask t) => assignments?.Restricted == true ? assignments.IsAssigned(t.Uid, roleUids) : null;
 
         // Most tasks share one set of rate types: list it once, and on a task only when that task differs.
         var commonRateTypes = CommonRateTypes(openTasks, setup);
@@ -172,7 +181,8 @@ public sealed class TimeEntryToolService
                 rate_types = SameRateTypes(RateTypesFor(t, setup), commonRateTypes)
                     ? null
                     : RateTypesFor(t, setup).Select(r => new { rate_type_uid = r.Uid, rate_type_name = r.Name }).ToList(),
-                default_rate_type = RateTypesFor(t, setup).FirstOrDefault(r => r.Uid == t.DefaultRateTypeUid)?.Name
+                default_rate_type = TryDefaultRateType(t, setup)?.Name,
+                assigned = Assigned(t)
             }).ToList(),
             tasks_count = page.Count,
             tasks_total = matches.Count,
@@ -180,7 +190,9 @@ public sealed class TimeEntryToolService
             tasks_has_more = hasMore,
             tasks_next_offset = hasMore ? offset + page.Count : (int?)null,
             tasks_open_count = openTasks.Count,
-            tasks_closed_count = setup.Tasks.Count - openTasks.Count,
+            tasks_closed_count = setup.Tasks.Count - openTasks.Count - summaryHidden,
+            tasks_summary_hidden = summaryHidden,
+            assignment_note = assignmentNote,
             rules = new
             {
                 time_increment_minutes = rules.ReportingTimeIncrementMinutes,
@@ -189,9 +201,10 @@ public sealed class TimeEntryToolService
                 udf1 = DescribeUdf(rules.Udf1, setup.Udf1Treatment),
                 udf2 = DescribeUdf(rules.Udf2, setup.Udf2Treatment)
             },
+            rate_type_note = "Rate types are listed for information only: save_timecard always uses the task's default_rate_type.",
             next_step = hasMore
                 ? "More tasks match: narrow with query (task name, WBS or parent) or page with offset = tasks_next_offset."
-                : "Confirm the card with the user (date, hours, project, task path, role, rate type, narrative), then call save_timecard."
+                : "Confirm the card with the user (date, hours, project, task path, role, narrative), then call save_timecard."
         };
     }
 
@@ -204,7 +217,6 @@ public sealed class TimeEntryToolService
         var projectCode = RequireText(input.ProjectCode, "project_code");
         var taskInput = RequireText(input.Task, "task");
         var roleInput = RequireText(input.Role, "role");
-        var rateInput = RequireText(input.RateType, "rate_type");
         var narrative = RequireText(input.Narrative, "narrative");
         if (narrative.Length > MaxNarrativeLength)
         {
@@ -264,6 +276,22 @@ public sealed class TimeEntryToolService
                 $"Task '{task.Path ?? task.Name}' on project {projectCode} is not open for time entry.", "task_closed");
         }
 
+        if (task.HasChildren)
+        {
+            var children = setup.Tasks
+                .Where(t => string.Equals(t.ParentTaskUid, task.Uid, StringComparison.Ordinal) && t.OpenForTime)
+                .Take(MaxListedNames)
+                .Select(t => $"{t.Path ?? t.Name} (WBS {t.WbsCode})")
+                .ToList();
+            throw new ProjectorApiException(
+                $"Task '{task.Path ?? task.Name}' (WBS {task.WbsCode}) on project {projectCode} is a summary task with " +
+                "sub-tasks; Projector rejects time on it when the time sheet is submitted. Nothing was saved. " +
+                (children.Count > 0
+                    ? $"Pick one of its sub-tasks: {string.Join("; ", children)}."
+                    : "None of its sub-tasks is open for time: ask the project manager which task to use, or pick another task."),
+                "summary_task");
+        }
+
         var roles = await GetRolesAsync(connection, projectCode, date, ct);
         if (roles.Count == 0)
         {
@@ -274,7 +302,17 @@ public sealed class TimeEntryToolService
         }
 
         var role = Resolve(roles, roleInput, r => r.Uid, r => r.Name, "role", projectCode);
-        var rateType = Resolve(RateTypesFor(task, setup), rateInput, r => r.Uid, r => r.Name, "rate_type", projectCode);
+        var (assignments, _) = await TryGetAssignmentsAsync(connection, setup, ct);
+        if (assignments?.Restricted == true && !assignments.IsAssigned(task.Uid, [role.Uid]))
+        {
+            throw new ProjectorApiException(
+                $"On project {projectCode} only people assigned to a task can submit time on it, and your role " +
+                $"'{role.Name}' is not assigned to '{task.Path ?? task.Name}' (WBS {task.WbsCode}). Nothing was saved. " +
+                "Pick a task with assigned = true in get_timecard_options, or ask the project manager to assign you.",
+                "not_assigned_to_task");
+        }
+
+        var rateType = DefaultRateType(task, setup, projectCode);
 
         if (rules.RequireLocation && string.IsNullOrWhiteSpace(input.Location))
         {
@@ -453,7 +491,7 @@ public sealed class TimeEntryToolService
         }
 
         var byName = tasks.Where(t => string.Equals(t.Name?.Trim(), wanted, StringComparison.OrdinalIgnoreCase)).ToList();
-        var openByName = byName.Where(t => t.OpenForTime).ToList();
+        var openByName = byName.Where(t => t.AcceptsTime).ToList();
         if (byName.Count == 1)
         {
             return byName[0];
@@ -521,8 +559,14 @@ public sealed class TimeEntryToolService
     private static string Shorten(string? text) =>
         text is null ? string.Empty : text.Length <= 80 ? text : text[..77] + "...";
 
-    private static bool ContainsAny(string text, params string?[] values) =>
-        values.Any(v => v is not null && v.Contains(text, StringComparison.OrdinalIgnoreCase));
+    /// <summary>Items that match (score > 0), best match first, otherwise in their original order.</summary>
+    private static List<T> Ranked<T>(IEnumerable<T> items, Func<T, int> score) =>
+        items.Select((item, index) => (item, index, score: score(item)))
+            .Where(x => x.score > 0)
+            .OrderByDescending(x => x.score)
+            .ThenBy(x => x.index)
+            .Select(x => x.item)
+            .ToList();
 
     /// <summary>The set of rate types most open tasks allow; null when there are no tasks.</summary>
     private static IReadOnlyList<TimeEntryRateType>? CommonRateTypes(IReadOnlyList<TimeEntryTask> tasks, TimeEntryProjectSetup setup) =>
@@ -605,6 +649,54 @@ public sealed class TimeEntryToolService
             (valid.Count == 0 ? "There are none to choose from." : $"Valid values: {string.Join("; ", valid)}.") +
             " See get_timecard_options.",
             $"invalid_{kind}");
+    }
+
+    /// <summary>
+    /// The rate type a card on this task gets, never the agent's or user's choice (a changed rate type changes
+    /// billing): the task's default; else the only allowed rate type; else the project's common default (every
+    /// task type on the project defaults to the same one), for tasks without a task type. Otherwise nothing is saved.
+    /// </summary>
+    internal static TimeEntryRateType DefaultRateType(TimeEntryTask task, TimeEntryProjectSetup setup, string projectCode)
+    {
+        var allowed = RateTypesFor(task, setup);
+        var byDefault = allowed.FirstOrDefault(r => string.Equals(r.Uid, task.DefaultRateTypeUid, StringComparison.Ordinal));
+        if (byDefault is not null)
+        {
+            return byDefault;
+        }
+
+        if (allowed.Count == 1)
+        {
+            return allowed[0];
+        }
+
+        if (setup.TaskTypeDefaultRateTypeUids.Count == 1)
+        {
+            var common = allowed.FirstOrDefault(r => string.Equals(r.Uid, setup.TaskTypeDefaultRateTypeUids[0], StringComparison.Ordinal));
+            if (common is not null)
+            {
+                return common;
+            }
+        }
+
+        throw new ProjectorApiException(
+            $"Task '{task.Path ?? task.Name}' on project {projectCode} has no default rate type in Projector" +
+            (allowed.Count == 0 ? " and no rate types" : $" and {allowed.Count} possible ones") +
+            ", so save_timecard can't pick one. Nothing was saved; enter this card in Projector.",
+            "no_default_rate_type");
+    }
+
+    /// <summary>What save_timecard will use for this task, or null when it would refuse.</summary>
+    private static TimeEntryRateType? TryDefaultRateType(TimeEntryTask task, TimeEntryProjectSetup setup)
+    {
+        try
+        {
+            return DefaultRateType(task, setup, setup.ProjectCode);
+        }
+        catch (ProjectorApiException)
+        {
+            return null;
+        }
     }
 
     internal static IReadOnlyList<TimeEntryRateType> RateTypesFor(TimeEntryTask task, TimeEntryProjectSetup setup) =>
@@ -729,6 +821,39 @@ public sealed class TimeEntryToolService
         }
 
         return setup;
+    }
+
+    /// <summary>
+    /// Task assignments, read only for projects whose AllowAssignmentFlag is false (the ones that restrict time entry to
+    /// assigned roles). A failed read never blocks: the result is null with a note, and Projector still checks at submit.
+    /// </summary>
+    private async Task<(TaskAssignments? Assignments, string? Note)> TryGetAssignmentsAsync(
+        ProjectorConnection connection,
+        TimeEntryProjectSetup setup,
+        CancellationToken ct)
+    {
+        if (setup.AllowAssignment)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var assignments = await _cache.GetOrLoadAsync(
+                connection, AssignmentsKind, setup.ProjectCode.ToUpperInvariant(), TimeEntryCache.LookupTtl, () =>
+                    WithRefreshAsync(connection, c => _timeEntry.GetTaskAssignmentsAsync(c, setup.ProjectCode, ct), ct));
+            return (assignments, assignments.Restricted
+                ? "Only people assigned to a task can submit time on it here: tasks with assigned = false are rejected " +
+                  "at submit unless the project manager assigns you. save_timecard refuses them."
+                : null);
+        }
+        catch (Exception ex) when (ex is ProjectorApiException or HttpRequestException or TaskCanceledException
+            && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Could not read task assignments for {ProjectCode}", setup.ProjectCode);
+            return (null, "This project may accept time only on tasks you are assigned to, and the assignments could " +
+                "not be read. Prefer tasks you have posted to before; Projector checks it when the time sheet is submitted.");
+        }
     }
 
     private async Task<IReadOnlyList<TimeEntryRole>> GetRolesAsync(

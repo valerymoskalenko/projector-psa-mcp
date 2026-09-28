@@ -42,9 +42,10 @@ public sealed class AgentTools
     [McpServerTool(Name = "list_timecards", Title = "List Projector timecards",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
-        "Lists many work timecard rows for one person (default: the signed-in user) in a date range, with optional " +
-        "status and project_code filters. Each row has the task name, full task_path (parent tasks) and WBS code. " +
-        "Does not include time-off cards. " +
+        "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status " +
+        "including Rejected, with optional status, project_code and query filters. Each row has the task name, task_path " +
+        "and WBS code. The signed-in user's own cards have editable (true = Draft or Rejected, which save_timecard can " +
+        "change; false = fix in Projector). Does not include time-off cards. " +
         ToolOutputSchemas.TimecardsSchemaHint + " " +
         "WhenNotToUse: Do not use for capacity or bookings; use check_availability or get_schedule. " +
         "Do not use for PTO cards; use list_time_off.")]
@@ -54,9 +55,10 @@ public sealed class AgentTools
         [Description("Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user.")] string? resource_id = null,
         [Description("Optional card status filter")] string? status = null,
         [Description("Optional project code filter")] string? project_code = null,
+        [Description("Optional words to find in the card description, project, client, task path or WBS (whole words or word starts, e.g. \"invoice export\" or a ticket number)")] string? query = null,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _tools.ListTimecardsAsync(
-            ct.ConnectionId, resource_id, start_date, end_date, status, project_code, ct.Token), cancellationToken);
+            ct.ConnectionId, resource_id, start_date, end_date, status, project_code, ct.Token, query), cancellationToken);
 
     [McpServerTool(Name = "list_time_off", Title = "List Projector time-off cards",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]

@@ -23,15 +23,18 @@ public sealed class ProjectorSoapClient :
     private readonly ProjectorSoapHttp _soap;
     private readonly HttpClient _http;
     private readonly ILogger<ProjectorSoapClient> _logger;
+    private readonly ProjectorCallLimiter? _limiter;
 
     public ProjectorSoapClient(
         ProjectorSoapHttp soap,
         HttpClient http,
-        ILogger<ProjectorSoapClient> logger)
+        ILogger<ProjectorSoapClient> logger,
+        ProjectorCallLimiter? limiter = null)
     {
         _soap = soap;
         _http = http;
         _logger = logger;
+        _limiter = limiter;
     }
 
     public async Task<ResourceListResult> ListResourcesAsync(
@@ -351,7 +354,7 @@ public sealed class ProjectorSoapClient :
                 XDocument.Parse(envelopeXml));
         }).ToList();
 
-        var responses = await ProjectorSoapConcurrent.PostAsync(_http, requests, cancellationToken: cancellationToken);
+        var responses = await ProjectorSoapConcurrent.PostAsync(_http, requests, cancellationToken: cancellationToken, limiter: _limiter, userKey: connection.UserKey);
         var rows = new List<ProjectBookingRow>();
         var failed = new List<string>();
         var truncated = false;
@@ -436,7 +439,7 @@ public sealed class ProjectorSoapClient :
                 XDocument.Parse(envelopeXml));
         }).ToList();
 
-        var responses = await ProjectorSoapConcurrent.PostAsync(_http, requests, cancellationToken: cancellationToken);
+        var responses = await ProjectorSoapConcurrent.PostAsync(_http, requests, cancellationToken: cancellationToken, limiter: _limiter, userKey: connection.UserKey);
         var holidaysByLocation = new Dictionary<string, IReadOnlyList<HolidayEntry>>(StringComparer.Ordinal);
         foreach (var response in responses)
         {

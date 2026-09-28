@@ -11,9 +11,9 @@ namespace Projector.ApiClient.Xml;
 /// </summary>
 public sealed class ProjectorSoapWriteHttp
 {
-    public ProjectorSoapWriteHttp(HttpClient http, ILogger<ProjectorSoapHttp> logger)
+    public ProjectorSoapWriteHttp(HttpClient http, ILogger<ProjectorSoapHttp> logger, ProjectorCallLimiter? limiter = null)
     {
-        Soap = new ProjectorSoapHttp(http, logger);
+        Soap = new ProjectorSoapHttp(http, logger, limiter, isWrite: true);
     }
 
     public ProjectorSoapHttp Soap { get; }
@@ -66,6 +66,17 @@ public sealed class ProjectorTimeEntryClient : IProjectorTimeEntryClient
         var doc = await PostAsync(_read, connection, "PwsGetTimeEntryProjectRole", xml, cancellationToken);
         ProjectorSoapHttp.ThrowIfResultError(XmlNodeHelpers.LocalNode(doc, "PwsGetTimeEntryProjectRoleResult"));
         return ProjectorTimeEntryParsers.ParseTimeEntryProject(doc);
+    }
+
+    public async Task<TaskAssignments> GetTaskAssignmentsAsync(
+        ProjectorConnection connection,
+        string projectCode,
+        CancellationToken cancellationToken = default)
+    {
+        var xml = ProjectorEnvelopeBuilders.BuildGetProjectWithTasks(connection.SessionTicket, projectCode);
+        var doc = await PostAsync(_read, connection, "PwsGetProject", xml, cancellationToken);
+        ProjectorSoapHttp.ThrowIfResultError(XmlNodeHelpers.LocalNode(doc, "PwsGetProjectResult"));
+        return ProjectorTimeEntryParsers.ParseTaskAssignments(doc);
     }
 
     public async Task<TimeEntryParameters> GetTimeEntryParametersAsync(

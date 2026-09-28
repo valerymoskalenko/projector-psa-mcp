@@ -101,6 +101,12 @@ public interface IProjectorTimeEntryClient
         ProjectorConnection connection,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Task → assigned roles for one project (PwsGetProject with sub-entities; large on big projects).</summary>
+    Task<TaskAssignments> GetTaskAssignmentsAsync(
+        ProjectorConnection connection,
+        string projectCode,
+        CancellationToken cancellationToken = default);
+
     /// <summary>The caller's own work cards (any status) on one date.</summary>
     Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
         ProjectorConnection connection,

@@ -14,13 +14,29 @@ public sealed class ProjectorSoapHttp
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
+    /// <summary>Wait before the one retry of a read that Projector refused as busy.</summary>
+    internal static TimeSpan BusyRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+
     private readonly HttpClient _http;
     private readonly ILogger<ProjectorSoapHttp> _logger;
+    private readonly ProjectorCallLimiter? _limiter;
+    private readonly bool _isWrite;
 
-    public ProjectorSoapHttp(HttpClient http, ILogger<ProjectorSoapHttp> logger)
+    /// <param name="limiter">Per-user cap on concurrent calls (see <see cref="ProjectorCallLimiter"/>); none when null.</param>
+    /// <param name="isWrite">
+    /// Write transport: a call Projector refused as busy is never retried (reads are retried once), and the error
+    /// says nothing was saved.
+    /// </param>
+    public ProjectorSoapHttp(
+        HttpClient http,
+        ILogger<ProjectorSoapHttp> logger,
+        ProjectorCallLimiter? limiter = null,
+        bool isWrite = false)
     {
         _http = http;
         _logger = logger;
+        _limiter = limiter;
+        _isWrite = isWrite;
     }
 
     public static string GetWcfUrl(ProjectorConnection connection) =>
@@ -51,7 +67,7 @@ public sealed class ProjectorSoapHttp
         var url = GetWcfUrl(connection);
         var soapAction = SoapNamespaces.WcfSoapActionPrefix + method;
         var envelope = BuildWcfEnvelope(body);
-        return PostAsync(url, soapAction, envelope, method, connection.SessionTicket.Length, cancellationToken);
+        return SendAsync(url, soapAction, envelope, method, connection.SessionTicket.Length, connection.UserKey, cancellationToken);
     }
 
     public Task<XDocument> PostAsmxAsync(
@@ -62,16 +78,83 @@ public sealed class ProjectorSoapHttp
         CancellationToken cancellationToken = default)
     {
         var url = GetAsmxUrl(connection);
-        return PostAsync(url, soapAction, envelope, context, connection.SessionTicket.Length, cancellationToken);
+        return SendAsync(url, soapAction, envelope, context, connection.SessionTicket.Length, connection.UserKey, cancellationToken);
     }
 
-    public async Task<XDocument> PostAsync(
+    /// <summary>One call without a user (no per-user limit).</summary>
+    public Task<XDocument> PostAsync(
         string url,
         string soapAction,
         XDocument envelope,
         string context,
         int sessionTicketLen,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SendAsync(url, soapAction, envelope, context, sessionTicketLen, userKey: null, cancellationToken);
+
+    private async Task<XDocument> SendAsync(
+        string url,
+        string soapAction,
+        XDocument envelope,
+        string context,
+        int sessionTicketLen,
+        string? userKey,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SendLimitedAsync(url, soapAction, envelope, context, sessionTicketLen, userKey, cancellationToken);
+        }
+        catch (ProjectorApiException ex) when (ProjectorCallLimiter.IsBusy(ex))
+        {
+            if (_isWrite)
+            {
+                throw new ProjectorApiException(
+                    "Nothing was saved: Projector refused the save because you have too many requests running at once " +
+                    "(its limit is 4 per user, including your Projector browser session). Retry the save in a few seconds.",
+                    ProjectorCallLimiter.BusyErrorCode,
+                    ex);
+            }
+
+            _logger.LogWarning("PWS {Context}: Projector busy ({Message}); retrying once", context, ex.Message);
+        }
+
+        await Task.Delay(BusyRetryDelay, cancellationToken);
+        try
+        {
+            return await SendLimitedAsync(url, soapAction, envelope, context, sessionTicketLen, userKey, cancellationToken);
+        }
+        catch (ProjectorApiException ex) when (ProjectorCallLimiter.IsBusy(ex))
+        {
+            throw new ProjectorApiException(
+                "Projector is busy with your other requests (its limit is 4 at a time per user, including your Projector " +
+                "browser session). Retry this call in a few seconds.",
+                ProjectorCallLimiter.BusyErrorCode,
+                ex);
+        }
+    }
+
+    private async Task<XDocument> SendLimitedAsync(
+        string url,
+        string soapAction,
+        XDocument envelope,
+        string context,
+        int sessionTicketLen,
+        string? userKey,
+        CancellationToken cancellationToken)
+    {
+        using var slot = _limiter is null || userKey is null
+            ? null
+            : await _limiter.EnterAsync(userKey, cancellationToken);
+        return await SendOnceAsync(url, soapAction, envelope, context, sessionTicketLen, cancellationToken);
+    }
+
+    private async Task<XDocument> SendOnceAsync(
+        string url,
+        string soapAction,
+        XDocument envelope,
+        string context,
+        int sessionTicketLen,
+        CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.TryAddWithoutValidation("SOAPAction", soapAction);
@@ -118,7 +201,22 @@ public sealed class ProjectorSoapHttp
 
         var doc = XDocument.Parse(xml);
         AssertNoSoapFault(doc, context);
+        ThrowIfBusy(doc);
         return doc;
+    }
+
+    /// <summary>Projector can also refuse a call for too many active requests with a message in a normal result.</summary>
+    private static void ThrowIfBusy(XDocument doc)
+    {
+        foreach (var message in XmlNodeHelpers.LocalNodes(doc, "PwsMessage"))
+        {
+            var code = XmlNodeHelpers.Value(message, "ErrorCode");
+            var text = XmlNodeHelpers.Value(message, "ErrorText") ?? XmlNodeHelpers.Value(message, "MessageText");
+            if (ProjectorCallLimiter.IsBusyText(code) || ProjectorCallLimiter.IsBusyText(text))
+            {
+                throw new ProjectorApiException(text ?? code ?? "Too many requests.", "TooManyRequests");
+            }
+        }
     }
 
     public static XDocument BuildWcfEnvelope(XElement body) =>

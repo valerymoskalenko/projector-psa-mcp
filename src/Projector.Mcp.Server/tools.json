@@ -87,7 +87,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, with optional status and project_code filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete).",
+      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector.",
       "whenNotToUse": "Do not use for capacity or bookings; use check_availability or get_schedule. Do not use for PTO cards; use list_time_off.",
       "inputSchema": {
         "type": "object",
@@ -113,6 +113,10 @@
           },
           "project_code": {
             "type": "string"
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional words to find in the card description, project, client, task path or WBS (whole words or word starts, e.g. \"invoice export\" or a ticket number)"
           }
         }
       }
@@ -504,7 +508,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many projects the signed-in user can enter time on for one work_date (PwsSearchProjects, ListType=T, available projects only), with the user's roles on each. Always the signed-in user's own time sheet; no resource parameter. Optional query filters by project, engagement or client text. The query filters the user's full project list in memory (cached per user for a few minutes); page with offset. chargeable is false where the user has no role on the project (Projector refuses time there).",
+      "description": "Lists many projects the signed-in user can enter time on for one work_date (PwsSearchProjects, ListType=T, available projects only), with the user's roles on each. Always the signed-in user's own time sheet; no resource parameter. Optional query matches whole words or word starts of the project, engagement or client (best match first). The query filters the user's full project list in memory (cached per user for a few minutes); page with offset. chargeable is false where the user has no role on the project (Projector refuses time there).",
       "whenNotToUse": "Do not use to browse engagements or a manager's projects; use list_engagements. Do not use for who is staffed on a project; use list_project_roles.",
       "inputSchema": {
         "type": "object",
@@ -519,7 +523,7 @@
           },
           "query": {
             "type": "string",
-            "description": "Optional text to match project, engagement or client"
+            "description": "Optional text to match project, engagement or client (whole words or word starts)"
           },
           "max_rows": {
             "type": "integer",
@@ -545,7 +549,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Gets one project's time-entry options for the signed-in user on one work_date (PwsGetTimeEntryProjectRole + PwsSearchProjects + PwsGetTimeEntryParameters, cached per user for a few minutes): only tasks open for time, each with task_path (parent tasks > task) and WBS code, the user's roles, and entry rules (time increment, location, UDFs). The rate types most tasks allow are listed once as rate_types; a task lists its own rate_types only when they differ. Task names repeat under different parents, so filter with query (task name, WBS code or parent name) and page with max_tasks/offset. Call before save_timecard.",
+      "description": "Gets one project's time-entry options for the signed-in user on one work_date (PwsGetTimeEntryProjectRole + PwsSearchProjects + PwsGetTimeEntryParameters, cached per user for a few minutes): only tasks open for time, each with task_path (parent tasks > task) and WBS code, the user's roles, and entry rules (time increment, location, UDFs). Rate types are for information only (the ones most tasks allow are listed once as rate_types; a task lists its own only when they differ): save_timecard always uses the task's default_rate_type, so don't offer rate type choices. Task names repeat under different parents, so filter with query (task name, WBS code or parent name) and page with max_tasks/offset. Call before save_timecard. Summary tasks (tasks with sub-tasks) are never listed, because Projector rejects time on them at submit (tasks_summary_hidden counts them). On projects where only people assigned to a task may post time, each task has assigned (true/false) and assignment_note explains it; save_timecard refuses assigned = false.",
       "whenNotToUse": "Do not use to find the user's projects; use list_time_projects. Do not use for a project's staffing roster; use list_project_roles.",
       "inputSchema": {
         "type": "object",
@@ -565,7 +569,7 @@
           },
           "query": {
             "type": "string",
-            "description": "Optional text to match task name, task path (parent names) or WBS code"
+            "description": "Optional text to match task name, task path (parent names) or WBS code (whole words or word starts)"
           },
           "max_tasks": {
             "type": "integer",
@@ -599,7 +603,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Creates one work time card as Draft on the signed-in user's own time sheet, or updates one of the user's own Draft or Rejected cards when timecard_uid is given (PwsSaveTimeCards with SubmitFlag=false, no ResourceIdentity). Never submits, approves or deletes. The agent must confirm the card with the user first. task accepts the UID, the full task_path, the WBS code or a unique name; role and rate_type accept the UID or the exact name. The result includes the day's total hours and card count, and a warning when a card with the same date, project and task and a similar narrative already exists; the card is still saved. The save is sent once and never retried; on write_outcome_unknown check list_timecards before retrying. On web_services_access_view_only nothing was saved: the user's Projector Web Services Access is V (View), not U (Update), and they must ask their Projector PSA administrator to change it.",
+      "description": "Creates one work time card as Draft on the signed-in user's own time sheet, or updates one of the user's own Draft or Rejected cards when timecard_uid is given (PwsSaveTimeCards with SubmitFlag=false, no ResourceIdentity). Never submits, approves or deletes. The agent must confirm the card with the user first. task accepts the UID, the full task_path, the WBS code or a unique name; role accepts the UID or the exact name. There is no rate_type parameter: the server always uses the task's default rate type, on create and on update (moving a card to another task gives it that task's default); a task without a default uses its only allowed rate type, otherwise error no_default_rate_type. The result includes the day's total hours and card count, and a warning when a card with the same date, project and task and a similar narrative already exists; the card is still saved. The save is sent once and never retried; on write_outcome_unknown check list_timecards before retrying. On web_services_access_view_only nothing was saved: the user's Projector Web Services Access is V (View), not U (Update), and they must ask their Projector PSA administrator to change it. Refuses, with nothing saved, the two cases Projector would auto-reject at submit: a summary task with sub-tasks (error summary_task, lists the sub-tasks) and, on projects that restrict time to assigned people, a task the user's role is not assigned to (error not_assigned_to_task). Error projector_busy: too many parallel requests; retry in a few seconds.",
       "whenNotToUse": "Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.",
       "inputSchema": {
         "type": "object",
@@ -609,7 +613,6 @@
           "project_code",
           "task",
           "role",
-          "rate_type",
           "narrative"
         ],
         "properties": {
@@ -634,10 +637,6 @@
           "role": {
             "type": "string",
             "description": "Role UID or exact role name"
-          },
-          "rate_type": {
-            "type": "string",
-            "description": "Rate type UID or exact name allowed for the task"
           },
           "narrative": {
             "type": "string",

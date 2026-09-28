@@ -15,7 +15,9 @@ public static class ProjectorSoapConcurrent
         HttpClient http,
         IReadOnlyList<SoapRequestItem> requests,
         int maxConcurrency = MaxAllowedConcurrency,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ProjectorCallLimiter? limiter = null,
+        string? userKey = null)
     {
         if (maxConcurrency is < 1 or > MaxAllowedConcurrency)
         {
@@ -35,6 +37,10 @@ public static class ProjectorSoapConcurrent
             var batch = requests.Skip(offset).Take(maxConcurrency).ToList();
             var tasks = batch.Select(async req =>
             {
+                // The per-user limit also counts calls from other tools running at the same time.
+                using var slot = limiter is null || userKey is null
+                    ? null
+                    : await limiter.EnterAsync(userKey, cancellationToken);
                 using var message = new HttpRequestMessage(HttpMethod.Post, req.Url);
                 message.Headers.TryAddWithoutValidation("SOAPAction", req.SoapAction);
                 var payload = req.Envelope.ToString(SaveOptions.DisableFormatting);

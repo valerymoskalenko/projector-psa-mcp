@@ -1124,15 +1124,19 @@ public static class ProjectorResponseParsers
             @"(?i)EntityRequired|AtLeastOneItemNotFound|User is required|UserNotFound|ItemNotFound");
     }
 
-    /// <summary>Task paths from the project's own task tree (the response carries every task, with parent UIDs).</summary>
+    /// <summary>
+    /// Task paths from the tasks in the response. Card reads ask for the referenced tasks only, so a parent may be
+    /// missing; then the path starts at its ParentTaskName.
+    /// </summary>
     private static IReadOnlyDictionary<string, string> BuildTaskPaths(XElement project) =>
         TaskPaths.Build(XmlNodeHelpers.LocalNodes(project, "PwsProjectTask")
             .Select(t => (
                 Uid: XmlNodeHelpers.Value(t, "ProjectTaskUid"),
                 Name: XmlNodeHelpers.Value(t, "Name"),
-                ParentUid: XmlNodeHelpers.NestedValue(t, "ParentProjectTaskIdentity", "ProjectTaskUid")))
+                ParentUid: XmlNodeHelpers.NestedValue(t, "ParentProjectTaskIdentity", "ProjectTaskUid"),
+                ParentName: XmlNodeHelpers.Value(t, "ParentTaskName")))
             .Where(t => !string.IsNullOrWhiteSpace(t.Uid))
-            .Select(t => (t.Uid!, t.Name, t.ParentUid)));
+            .Select(t => (t.Uid!, t.Name, t.ParentUid, t.ParentName)));
 
     private static Dictionary<string, string> BuildLookup(
         XElement project,

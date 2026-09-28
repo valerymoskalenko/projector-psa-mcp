@@ -29,14 +29,8 @@ public sealed class TimeEntryCache : IDisposable
     private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = MaxEntries });
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _userTokens = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Tenant + Entra object id + Projector account when known (hosted), else the connection id (local session).
-    /// A connection belongs to exactly one user, so either identifies the user.
-    /// </summary>
-    public static string UserKey(ProjectorConnection connection) =>
-        !string.IsNullOrWhiteSpace(connection.TenantId) && !string.IsNullOrWhiteSpace(connection.EntraObjectId)
-            ? $"{connection.TenantId}|{connection.EntraObjectId}|{connection.ProjectorAccountCode}"
-            : $"conn|{connection.ConnectionId}";
+    /// <summary>See <see cref="ProjectorConnection.UserKey"/>.</summary>
+    public static string UserKey(ProjectorConnection connection) => connection.UserKey;
 
     public async Task<T> GetOrLoadAsync<T>(
         ProjectorConnection connection,

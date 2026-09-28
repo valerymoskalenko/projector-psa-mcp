@@ -47,7 +47,8 @@ public sealed class ProjectorToolService
         string endDate,
         string? status,
         string? projectCode,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? query = null)
     {
         var sw = Stopwatch.StartNew();
         var connection = await RequireAsync(connectionId, ct);
@@ -67,6 +68,20 @@ public sealed class ProjectorToolService
             filterBits.Add($"status '{status.Trim()}'");
         }
 
+        // Filtered after the read (whole words / word starts), so a topic search needs no extra Projector call.
+        var text = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
+        var cards = text is null
+            ? listed.Timecards
+            : listed.Timecards.Where(t => TextMatch.Matches(
+                text, t.Description, t.ProjectCode, t.ProjectName, t.EngagementName, t.ClientName, t.TaskPath ?? t.TaskName, t.TaskWbsCode))
+                .ToList();
+        if (text is not null)
+        {
+            filterBits.Add($"query '{text}'");
+        }
+
+        var ownCards = resourceId is null;
+
         var filterSuffix = filterBits.Count == 0 ? string.Empty : $"; filtered to {string.Join(" and ", filterBits)}";
         var searchedScope =
             $"work timecards for resource {resourceLabel} from {start} through {end}{filterSuffix}";
@@ -76,15 +91,15 @@ public sealed class ProjectorToolService
             truncationReason:
             "Projector hit its row cap while listing timecards, so cards beyond that cap were never examined.",
             truncationSuggestion: "Narrow the date window or project_code filter so the full card set fits under the Projector row cap.",
-            returned: listed.Timecards.Count);
+            returned: cards.Count);
 
         return AttachDuration(new
         {
             resource_id = resourceLabel,
             start_date = start,
             end_date = end,
-            count = listed.Timecards.Count,
-            timecards = listed.Timecards.Select(MapTimecard).ToList(),
+            count = cards.Count,
+            timecards = cards.Select(t => MapTimecard(t, ownCards)).ToList(),
             searchCoverage = SearchCoverageDto.From(coverage)
         }, sw);
     }
@@ -1133,13 +1148,20 @@ public sealed class ProjectorToolService
 
     private static object MapSchedule(ResourceSchedule schedule) => schedule;
 
-    private static TimecardDto MapTimecard(Timecard t) =>
+    private static TimecardDto MapTimecard(Timecard t) => MapTimecard(t, ownCards: false);
+
+    /// <summary>
+    /// <paramref name="ownCards"/>: the signed-in user's own cards, which get <c>editable</c> (save_timecard can change
+    /// Draft and Rejected cards only; anything else is fixed in Projector).
+    /// </summary>
+    private static TimecardDto MapTimecard(Timecard t, bool ownCards) =>
         new(t.ProjectCode, t.ProjectName, t.EngagementCode, t.EngagementName, t.ClientName, t.ClientNumber,
             t.Billable, t.ProjectStageName, t.WorkDate, t.WorkMinutes, t.WorkHours, t.Status, t.CardStatusCode,
             t.RateTypeName, t.TaskName, t.RoleName, t.Description, t.LocationName,
             t.RejectedByDisplayName, t.RejectedByEmail, t.RejectedByUserReferenceSystemId,
             t.RejectedReason, t.RejectedTimestamp,
-            t.TimecardUid, t.ProjectTaskUid, t.ProjectRoleUid, t.ProjectRateTypeUid, t.TaskPath, t.TaskWbsCode);
+            t.TimecardUid, t.ProjectTaskUid, t.ProjectRoleUid, t.ProjectRateTypeUid, t.TaskPath, t.TaskWbsCode,
+            ownCards ? t.CardStatusCode?.Trim().ToUpperInvariant() is "D" or "R" : null);
 
     private static TimeOffCardDto MapTimeOff(TimeOffCard t) =>
         new(t.TimeOffReason, t.TimeOffDate, t.TimeOffMinutes, t.TimeOffHours, t.Narrative,

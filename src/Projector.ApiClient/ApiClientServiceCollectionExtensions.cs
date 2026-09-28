@@ -19,6 +19,9 @@ public static class ApiClientServiceCollectionExtensions
         services.AddHttpClient<IProjectorTokenClient, ProjectorTokenClient>()
             .AddStandardResilienceHandler();
 
+        // Per-user cap on concurrent Projector calls, shared by every SOAP transport.
+        services.AddSingleton<ProjectorCallLimiter>();
+
         // Shared SOAP transport.
         services.AddHttpClient<ProjectorSoapHttp>()
             .AddStandardResilienceHandler(ConfigureSoapRetry);

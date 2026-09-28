@@ -61,8 +61,12 @@ public static class ProjectorEnvelopeBuilders
         return EnvelopeString(body);
     }
 
-    /// <summary>Work cards only (IncludeTimeCards=true, IncludeTimeOffCards=false).</summary>
-    /// <summary>Work and/or time-off cards. A null resource sends no ResourceIdentity: Projector uses the caller.</summary>
+    /// <summary>
+    /// Work and/or time-off cards in every status (Projector leaves Rejected out unless asked). A null resource sends no
+    /// ResourceIdentity: Projector uses the caller. IncludeReferencedTasksOnlyFlag keeps only the tasks the cards use
+    /// instead of each project's whole task tree (one day: 2.8 MB / 9.8 s → 0.5 MB / 3.3 s, measured 2026-09-28).
+    /// Element order follows the WCF contract (alphabetical).
+    /// </summary>
     public static string BuildGetTimeCards(
         string sessionTicket,
         string? resourceReferenceSystemId,
@@ -86,6 +90,11 @@ public static class ProjectorEnvelopeBuilders
             new XElement(SoapNamespaces.Pws + "serviceRequest",
                 new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
                 new XElement(SoapNamespaces.Tim + "EndDate", end),
+                new XElement(SoapNamespaces.Tim + "IncludeApprovedFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeDraftFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeReferencedTasksOnlyFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeRejectedFlag", "true"),
+                new XElement(SoapNamespaces.Tim + "IncludeSubmittedFlag", "true"),
                 new XElement(SoapNamespaces.Tim + "IncludeTimeCardsFlag", includeTimeCards ? "true" : "false"),
                 new XElement(SoapNamespaces.Tim + "IncludeTimeOffCardsFlag", includeTimeOffCards ? "true" : "false"),
                 ResourceIdentity(resourceReferenceSystemId),
@@ -341,6 +350,19 @@ public static class ProjectorEnvelopeBuilders
                 new XElement(SoapNamespaces.Sch + "Mode", "R"),
                 new XElement(SoapNamespaces.Sch + "ProjectIdentities", identities),
                 new XElement(SoapNamespaces.Sch + "ExcludeSubEntityElementsFlag", "true")));
+        return EnvelopeString(body, includeSch: true);
+    }
+
+    /// <summary>One project with its sub-entities (tasks and their role assignments). Large on big projects.</summary>
+    public static string BuildGetProjectWithTasks(string sessionTicket, string projectCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectCode);
+        var body = new XElement(SoapNamespaces.Pws + "PwsGetProject",
+            new XElement(SoapNamespaces.Pws + "serviceRequest",
+                new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
+                new XElement(SoapNamespaces.Sch + "Mode", "R"),
+                new XElement(SoapNamespaces.Sch + "ProjectIdentities", ProjectorIdentityRefs.BuildProjectRef(projectCode.Trim())),
+                new XElement(SoapNamespaces.Sch + "ExcludeSubEntityElementsFlag", "false")));
         return EnvelopeString(body, includeSch: true);
     }
 

@@ -42,8 +42,8 @@ public sealed class ProjectorPrompts
             $"Log {hours} hours on {work_date} for '{project}': {narrative}. " +
             "Steps: (1) list_time_projects with work_date (query = the project words) to find the project_code and my role; " +
             "(2) get_timecard_options with project_code and work_date (add query with task words, a WBS code or the parent's name " +
-            "on big projects) to pick an open task by its task_path and a rate type allowed for that task; " +
-            "if several fit, ask me; (3) show me date, hours, project, task path, role, rate type and narrative and wait for my yes; " +
+            "on big projects) to pick a task by its task_path (summary tasks are not listed; where tasks show assigned, use one with assigned = true; the rate type is always the task's default; don't ask me about it); " +
+            "if several fit, ask me; (3) show me date, hours, project, task path, role and narrative and wait for my yes; " +
             "(4) save_timecard with the task_path; then tell me the day's total hours and any warnings from the result. " +
             "It saves a Draft only; tell me to submit in Projector. " +
             "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and pass the full card to save_timecard.");

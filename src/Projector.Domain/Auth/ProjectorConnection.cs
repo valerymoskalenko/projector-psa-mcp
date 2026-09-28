@@ -40,6 +40,15 @@ public sealed class ProjectorConnection
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The Projector user behind this connection: tenant + Entra object id + Projector account when known (hosted),
+    /// else the connection id (local session). A connection belongs to exactly one user, so either identifies the user.
+    /// </summary>
+    public string UserKey =>
+        !string.IsNullOrWhiteSpace(TenantId) && !string.IsNullOrWhiteSpace(EntraObjectId)
+            ? $"{TenantId}|{EntraObjectId}|{ProjectorAccountCode}"
+            : $"conn|{ConnectionId}";
+
     public bool IsExpired(TimeSpan skew) => DateTimeOffset.UtcNow >= ExpiresAt - skew;
 
     public bool HasScope(string requiredScope) =>

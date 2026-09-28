@@ -58,6 +58,51 @@ public class ResourceArgumentTests
         result.GetProperty("resource_id").GetString().Should().Be("10001");
     }
 
+    [Fact]
+    public async Task ListTimecards_OwnCards_AreMarkedEditableOnlyWhenDraftOrRejected()
+    {
+        var (service, soap) = Create();
+        soap.Timecards.AddRange([Card("1", "D"), Card("2", "R"), Card("3", "S"), Card("4", "A")]);
+
+        var mine = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-25", "2026-09-25", null, null, CancellationToken.None));
+        mine.GetProperty("timecards").EnumerateArray().Select(c => c.GetProperty("Editable").GetBoolean())
+            .Should().Equal(true, true, false, false);
+
+        var someoneElse = Json(await service.ListTimecardsAsync(
+            ConnectionId, "10001", "2026-09-25", "2026-09-25", null, null, CancellationToken.None));
+        someoneElse.GetProperty("timecards").EnumerateArray()
+            .Should().AllSatisfy(c => c.TryGetProperty("Editable", out _).Should().BeFalse("only the user's own cards say whether save_timecard can change them"));
+    }
+
+    [Fact]
+    public async Task ListTimecards_Query_FiltersOnWholeWords()
+    {
+        var (service, soap) = Create();
+        soap.Timecards.AddRange(
+        [
+            Card("1", "S", "Payroll checkpoint with HR"),
+            Card("2", "S", "Workplace review"),
+            Card("3", "S", "ACE data mapping"),
+        ]);
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-25", "2026-09-25", null, null, CancellationToken.None, query: "ace"));
+
+        result.GetProperty("timecards").EnumerateArray().Select(c => c.GetProperty("TimecardUid").GetString())
+            .Should().Equal("3");
+        result.GetProperty("count").GetInt32().Should().Be(1);
+    }
+
+    private static Timecard Card(string uid, string status, string description = "Work") => new()
+    {
+        TimecardUid = uid,
+        CardStatusCode = status,
+        Description = description,
+        ProjectCode = "P005678-001",
+        WorkDate = "2026-09-25"
+    };
+
     private static JsonElement Json(object result) => JsonSerializer.SerializeToElement(result);
 
     private static (ProjectorToolService Service, RecordingSoap Soap) Create()
@@ -85,6 +130,8 @@ public class ResourceArgumentTests
 
         public Dictionary<string, ResourceDetail> ResourcesByName { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+        public List<Timecard> Timecards { get; } = [];
+
         public static RecordingSoap Create() => (RecordingSoap)(object)Create<IProjectorSoapClient, RecordingSoap>();
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
@@ -93,7 +140,7 @@ public class ResourceArgumentTests
             {
                 case nameof(IProjectorSoapClient.ListTimecardsAsync):
                     Calls.Add($"ListTimecardsAsync({(args![1] as string) ?? "<none>"})");
-                    return Task.FromResult(new TimecardListResult { Timecards = [] });
+                    return Task.FromResult(new TimecardListResult { Timecards = Timecards.ToList() });
                 case nameof(IProjectorSoapClient.GetResourceAsync):
                     var id = (string)args![1]!;
                     Calls.Add($"GetResourceAsync({id})");

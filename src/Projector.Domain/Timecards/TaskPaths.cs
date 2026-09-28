@@ -13,12 +13,23 @@ public static class TaskPaths
     private const int MaxDepth = 12;
 
     /// <summary>Path per task UID. A task whose parent is not in the list starts its path at itself.</summary>
-    public static IReadOnlyDictionary<string, string> Build(IEnumerable<(string Uid, string? Name, string? ParentUid)> tasks)
+    public static IReadOnlyDictionary<string, string> Build(IEnumerable<(string Uid, string? Name, string? ParentUid)> tasks) =>
+        Build(tasks.Select(t => (t.Uid, t.Name, t.ParentUid, (string?)null)));
+
+    /// <summary>
+    /// Path per task UID from a possibly partial tree (card reads carry only the tasks the cards use): when a parent is
+    /// not in the list, the path starts at that parent's name (ParentTaskName) instead.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> Build(
+        IEnumerable<(string Uid, string? Name, string? ParentUid, string? ParentName)> tasks)
     {
-        var byUid = new Dictionary<string, (string? Name, string? ParentUid)>(StringComparer.Ordinal);
-        foreach (var (uid, name, parentUid) in tasks)
+        var byUid = new Dictionary<string, (string? Name, string? ParentUid, string? ParentName)>(StringComparer.Ordinal);
+        foreach (var (uid, name, parentUid, parentName) in tasks)
         {
-            byUid[uid] = (name?.Trim(), string.IsNullOrWhiteSpace(parentUid) ? null : parentUid.Trim());
+            byUid[uid] = (
+                name?.Trim(),
+                string.IsNullOrWhiteSpace(parentUid) ? null : parentUid.Trim(),
+                string.IsNullOrWhiteSpace(parentName) ? null : parentName.Trim());
         }
 
         var paths = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -32,6 +43,10 @@ public static class TaskPaths
             {
                 names.Add(string.IsNullOrEmpty(node.Name) ? "?" : node.Name);
                 current = node.ParentUid;
+                if (current is not null && !byUid.ContainsKey(current) && node.ParentName is not null)
+                {
+                    names.Add(node.ParentName);
+                }
             }
 
             names.Reverse();

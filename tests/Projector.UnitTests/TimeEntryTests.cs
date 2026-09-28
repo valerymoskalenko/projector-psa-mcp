@@ -166,6 +166,7 @@ public class TimeEntryTests
         dev.TaskTypeName.Should().Be("Development Services");
         dev.AllowedRateTypes.Select(r => r.Name).Should().Equal("Billable");
         dev.DefaultRateTypeUid.Should().Be("2300000000000000001");
+        setup.TaskTypeDefaultRateTypeUids.Should().Equal("2300000000000000001");
         setup.Tasks[1].AllowedRateTypes.Should().BeEmpty("the task has no task type");
         setup.Tasks[2].OpenForTime.Should().BeFalse();
     }
@@ -319,27 +320,72 @@ public class TimeEntryTests
         (await act.Should().ThrowAsync<ProjectorApiException>()).Which.ErrorCode.Should().Be("timecard_move_not_supported");
     }
 
-    [Theory]
-    [InlineData("Non-Chargeable", "invalid_rate_type")] // project rate type the task's type does not allow
-    [InlineData("Nope", "invalid_rate_type")]
-    public async Task Save_RejectsRateTypeTheTaskDoesNotAllow(string rateType, string code)
+    [Fact]
+    public async Task Save_AlwaysUsesTheTaskDefaultRateType()
     {
         var (service, fake) = CreateService();
-        var act = () => service.SaveTimecardAsync(ConnectionId, Input(rateType: rateType), CancellationToken.None);
+        dynamic result = await service.SaveTimecardAsync(ConnectionId, Input(), CancellationToken.None);
 
-        var error = (await act.Should().ThrowAsync<ProjectorApiException>()).Which;
-        error.ErrorCode.Should().Be(code);
-        error.Message.Should().Contain("Billable");
-        fake.Saves.Should().BeEmpty();
+        fake.Saves.Should().ContainSingle().Which.RateTypeUid.Should().Be("2300000000000000001");
+        ((string)result.timecard.rate_type).Should().Be("Billable");
     }
 
     [Fact]
-    public async Task Save_TaskWithoutTypeUsesProjectRateTypes()
+    public async Task Save_Update_ResetsRateTypeToTheTaskDefault()
     {
+        // The card was saved with another rate type (e.g. by hand in Projector); an update from the tool uses the
+        // task's default, also when the card moves to another task.
         var (service, fake) = CreateService();
-        await service.SaveTimecardAsync(
-            ConnectionId, Input(task: "Project Management", rateType: "Non-Chargeable"), CancellationToken.None);
-        fake.Saves.Should().ContainSingle().Which.RateTypeUid.Should().Be("2300000000000000002");
+        fake.Card = new OwnTimecard
+        {
+            TimecardUid = "9", CardStatusCode = "D", ProjectCode = "P005678-001",
+            TaskUid = "2100000000000000002", RateTypeUid = "2300000000000000002"
+        };
+        fake.SaveResult = new TimecardSaveResult { TimecardUid = "9", CardStatusCode = "D" };
+
+        await service.SaveTimecardAsync(ConnectionId, Input(uid: "9", task: "Development"), CancellationToken.None);
+
+        fake.Saves.Should().ContainSingle().Which.RateTypeUid.Should().Be("2300000000000000001");
+    }
+
+    [Fact]
+    public async Task Save_TaskWithoutType_UsesTheProjectsCommonDefault()
+    {
+        // "Project Management" has no task type (no default) and two allowed rate types; every task type on the
+        // project defaults to Billable, so that is used (seen live on a project where 30 of 39 tasks have no type).
+        var (service, fake) = CreateService();
+        await service.SaveTimecardAsync(ConnectionId, Input(task: "Project Management"), CancellationToken.None);
+        fake.Saves.Should().ContainSingle().Which.RateTypeUid.Should().Be("2300000000000000001");
+    }
+
+    [Fact]
+    public void DefaultRateType_RefusesWhenTaskTypesDisagree()
+    {
+        var billable = new TimeEntryRateType("1", "Billable");
+        var internalRate = new TimeEntryRateType("2", "Internal");
+        var setup = new TimeEntryProjectSetup
+        {
+            ProjectCode = "P1",
+            RateTypes = [billable, internalRate],
+            TaskTypeDefaultRateTypeUids = ["1", "2"]
+        };
+        var untyped = new TimeEntryTask { Uid = "10", Name = "Support" };
+
+        var act = () => TimeEntryToolService.DefaultRateType(untyped, setup, "P1");
+
+        var error = act.Should().Throw<ProjectorApiException>().Which;
+        error.ErrorCode.Should().Be("no_default_rate_type");
+        error.Message.Should().Contain("enter this card in Projector");
+    }
+
+    [Fact]
+    public void DefaultRateType_WithoutDefault_UsesTheOnlyAllowedOne()
+    {
+        var only = new TimeEntryRateType("2300000000000000009", "Internal");
+        var setup = new TimeEntryProjectSetup { ProjectCode = "P1", RateTypes = [only] };
+        var untyped = new TimeEntryTask { Uid = "1", Name = "Support" };
+
+        TimeEntryToolService.DefaultRateType(untyped, setup, "P1").Should().Be(only);
     }
 
     [Fact]
@@ -719,6 +765,244 @@ public class TimeEntryTests
         fake.Calls["projects"].Should().Be(1, "query and paging filter the cached list");
     }
 
+    // ---- Tasks Projector auto-rejects at submit, card reads, call limit (v0.6.0, 2026-09-28) ----
+
+    [Fact]
+    public async Task Options_LeaveOutSummaryTasks_AndCountThem()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.Setup = TreeWithOpenParents();
+
+        var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None));
+
+        options.GetProperty("tasks").EnumerateArray().Select(t => t.GetProperty("wbs_code").GetString())
+            .Should().Equal("1.1", "1.2", "2.1", "2.2");
+        options.GetProperty("tasks_summary_hidden").GetInt32().Should().Be(2);
+        options.TryGetProperty("assignment_note", out _).Should().BeFalse();
+        fake.Calls["assignments"].Should().Be(0, "only projects with AllowAssignmentFlag=false need the assignments");
+    }
+
+    [Fact]
+    public async Task Save_SummaryTask_IsRefusedWithItsSubTasks()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.Setup = TreeWithOpenParents();
+
+        var act = () => service.SaveTimecardAsync(ConnectionId, Input(task: "1"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProjectorApiException>()).Which;
+        error.ErrorCode.Should().Be("summary_task");
+        error.Message.Should().Contain("Nothing was saved")
+            .And.Contain("User Story 101: Export totals do not match > Analysis & Design (WBS 1.1)")
+            .And.Contain("> Development (WBS 1.2)");
+        fake.SaveCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Options_RestrictedProject_MarksAssignedTasks_AndCachesTheAssignments()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.Setup = TreeWithOpenParents(allowAssignment: false);
+        fake.Assignments = Assignments(restricted: true, ("2100000000000000012", "2200000000000000001"));
+
+        var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None));
+        await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None, query: "202");
+
+        var assigned = options.GetProperty("tasks").EnumerateArray()
+            .ToDictionary(t => t.GetProperty("wbs_code").GetString()!, t => t.GetProperty("assigned").GetBoolean());
+        assigned.Should().Equal(new Dictionary<string, bool> { ["1.1"] = true, ["1.2"] = false, ["2.1"] = false, ["2.2"] = false });
+        options.GetProperty("assignment_note").GetString().Should().Contain("assigned = false");
+        fake.Calls["assignments"].Should().Be(1, "assignments are cached per user and project");
+    }
+
+    [Fact]
+    public async Task Save_NotAssignedTask_IsRefused_AssignedTaskIsSaved()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.Setup = TreeWithOpenParents(allowAssignment: false);
+        fake.Assignments = Assignments(restricted: true, ("2100000000000000012", "2200000000000000001"));
+
+        var act = () => service.SaveTimecardAsync(ConnectionId, Input(task: "1.2"), CancellationToken.None);
+        var error = (await act.Should().ThrowAsync<ProjectorApiException>()).Which;
+        error.ErrorCode.Should().Be("not_assigned_to_task");
+        error.Message.Should().Contain("Nothing was saved").And.Contain("project manager");
+        fake.SaveCalls.Should().Be(0);
+
+        await service.SaveTimecardAsync(ConnectionId, Input(task: "1.1"), CancellationToken.None);
+        fake.Saves.Should().ContainSingle().Which.TaskUid.Should().Be("2100000000000000012");
+    }
+
+    [Fact]
+    public async Task FailedAssignmentRead_NeverBlocks_AndSaysSo()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.Setup = TreeWithOpenParents(allowAssignment: false);
+        fake.AssignmentsException = new ProjectorApiException("No permission to view project.", "NoPermission");
+
+        var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None));
+        options.GetProperty("tasks").EnumerateArray().Should().AllSatisfy(t => t.TryGetProperty("assigned", out _).Should().BeFalse());
+        options.GetProperty("assignment_note").GetString().Should().Contain("could not be read");
+
+        await service.SaveTimecardAsync(ConnectionId, Input(task: "1.2"), CancellationToken.None);
+        fake.Saves.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void ParseTaskAssignments_ReadsFlagAndRolesPerTask()
+    {
+        var doc = XDocument.Parse(
+            "<Envelope><Body><R><TimeEntryRestrictedToRolesAssignedToTasksFlag>true</TimeEntryRestrictedToRolesAssignedToTasksFlag>" +
+            Detail("t1", "r1") + Detail("t1", "r2") + Detail("t2", "r2") +
+            "</R></Body></Envelope>");
+
+        var assignments = ProjectorTimeEntryParsers.ParseTaskAssignments(doc);
+
+        assignments.Restricted.Should().BeTrue();
+        assignments.IsAssigned("t1", ["r1"]).Should().BeTrue();
+        assignments.IsAssigned("t2", ["r1"]).Should().BeFalse();
+        assignments.IsAssigned("t3", ["r1", "r2"]).Should().BeFalse();
+
+        static string Detail(string task, string role) =>
+            $"<ProjectTaskRoleDetail><ProjectRoleIdentity><ProjectRoleUid>{role}</ProjectRoleUid></ProjectRoleIdentity>" +
+            $"<ProjectTaskIdentity><ProjectTaskUid>{task}</ProjectTaskUid></ProjectTaskIdentity></ProjectTaskRoleDetail>";
+    }
+
+    [Theory]
+    [InlineData("ACE", "ACE Consulting Group", true)]
+    [InlineData("ACE", "Workplace", false)]
+    [InlineData("ace consult", "ACE Consulting Group", true)]
+    [InlineData("3.4", "3.4.2", true)]
+    [InlineData("3.4", "4.3", false)]
+    [InlineData("P005678", "P005678-001", true)]
+    [InlineData("Design", "User Story 101 > Analysis & Design", true)]
+    [InlineData("sign", "User Story 101 > Analysis & Design", false)]
+    public void TextMatch_MatchesWholeWordsOrWordStarts(string query, string value, bool expected) =>
+        TextMatch.Matches(query, value).Should().Be(expected);
+
+    [Fact]
+    public void TextMatch_RanksExactThenPrefixThenWord()
+    {
+        TextMatch.Score("ACE", "ACE").Should().Be(3);
+        TextMatch.Score("ACE", "ACE Consulting").Should().Be(2);
+        TextMatch.Score("Consulting", "ACE Consulting").Should().Be(1);
+    }
+
+    [Fact]
+    public void GetTimeCardsEnvelope_AsksForEveryStatus_AndOnlyTheReferencedTasks()
+    {
+        var xml = XDocument.Parse(ProjectorEnvelopeBuilders.BuildGetTimeCards("ticket", null, "2026-09-21", "2026-09-25"));
+        var request = xml.Descendants().Single(e => e.Name.LocalName == "serviceRequest");
+
+        request.Elements().Select(e => e.Name.LocalName).Should().Equal(
+            "SessionTicket", "EndDate", "IncludeApprovedFlag", "IncludeDraftFlag", "IncludeReferencedTasksOnlyFlag",
+            "IncludeRejectedFlag", "IncludeSubmittedFlag", "IncludeTimeCardsFlag", "IncludeTimeOffCardsFlag", "StartDate");
+        request.Elements().Where(e => e.Name.LocalName.StartsWith("Include", StringComparison.Ordinal)
+                && e.Name.LocalName != "IncludeTimeOffCardsFlag")
+            .Should().AllSatisfy(e => e.Value.Should().Be("true"));
+    }
+
+    [Fact]
+    public void TaskPaths_StartAtTheParentName_WhenTheParentIsNotInTheResponse()
+    {
+        var paths = TaskPaths.Build(
+        [
+            ("10", "Development", "1", "User Story 101"),
+            ("20", "Story", null, null),
+            ("21", "Analysis", "20", "Story"),
+        ]);
+
+        paths["10"].Should().Be("User Story 101 > Development");
+        paths["21"].Should().Be("Story > Analysis");
+    }
+
+    [Fact]
+    public async Task CallLimiter_LetsThreeCallsPerUserRun_TheFourthWaits_OtherUsersDoNot()
+    {
+        var limiter = new ProjectorCallLimiter();
+        var slots = new List<IDisposable>();
+        for (var i = 0; i < ProjectorCallLimiter.MaxConcurrentPerUser; i++)
+        {
+            slots.Add(await limiter.EnterAsync("user-a", CancellationToken.None));
+        }
+
+        var fourth = limiter.EnterAsync("user-a", CancellationToken.None);
+        var otherUser = limiter.EnterAsync("user-b", CancellationToken.None);
+
+        otherUser.IsCompleted.Should().BeTrue();
+        fourth.IsCompleted.Should().BeFalse();
+
+        slots[0].Dispose();
+        (await fourth.WaitAsync(TimeSpan.FromSeconds(5))).Dispose();
+        (await otherUser).Dispose();
+        slots.Skip(1).ToList().ForEach(s => s.Dispose());
+        limiter.ActiveUsers.Should().Be(0, "idle users are removed");
+    }
+
+    [Fact]
+    public async Task BusyRead_IsRetriedOnce()
+    {
+        ProjectorSoapHttp.BusyRetryDelay = TimeSpan.Zero;
+        var handler = new ScriptedHandler(BusyResponse, OkResponse);
+        var soap = new ProjectorSoapHttp(new HttpClient(handler), NullLogger<ProjectorSoapHttp>.Instance, new ProjectorCallLimiter());
+
+        await soap.PostWcfAsync(Connection(), "PwsGetTimeCards", new XElement("x"));
+
+        handler.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task BusyRead_TwiceInARow_BecomesProjectorBusy()
+    {
+        ProjectorSoapHttp.BusyRetryDelay = TimeSpan.Zero;
+        var handler = new ScriptedHandler(BusyResponse, BusyResponse);
+        var soap = new ProjectorSoapHttp(new HttpClient(handler), NullLogger<ProjectorSoapHttp>.Instance, new ProjectorCallLimiter());
+
+        var act = () => soap.PostWcfAsync(Connection(), "PwsGetTimeCards", new XElement("x"));
+
+        (await act.Should().ThrowAsync<ProjectorApiException>()).Which.ErrorCode.Should().Be("projector_busy");
+        handler.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task BusySave_IsNeverRetried()
+    {
+        var handler = new ScriptedHandler(() => new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent("") });
+        var write = new ProjectorSoapWriteHttp(new HttpClient(handler), NullLogger<ProjectorSoapHttp>.Instance, new ProjectorCallLimiter());
+
+        var act = () => write.Soap.PostWcfAsync(Connection(), "PwsSaveTimeCards", new XElement("x"));
+
+        var error = (await act.Should().ThrowAsync<ProjectorApiException>()).Which;
+        error.ErrorCode.Should().Be("projector_busy");
+        error.Message.Should().StartWith("Nothing was saved");
+        handler.Calls.Should().Be(1);
+    }
+
+    private static HttpResponseMessage OkResponse() => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent("<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><R/></s:Body></s:Envelope>")
+    };
+
+    private static HttpResponseMessage BusyResponse() => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(
+            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><R><Messages><PwsMessage>" +
+            "<ErrorCode>TooManyRequests</ErrorCode><ErrorText>You currently have 5 active requests, exceeding the threshold of 4.</ErrorText>" +
+            "</PwsMessage></Messages></R></s:Body></s:Envelope>")
+    };
+
+    private static TaskAssignments Assignments(bool restricted, params (string Task, string Role)[] pairs) =>
+        new(restricted, pairs.GroupBy(p => p.Task).ToDictionary(
+            g => g.Key, g => (IReadOnlySet<string>)g.Select(p => p.Role).ToHashSet(), StringComparer.Ordinal));
+
+    /// <summary>Answers each call with the next response factory; the last one repeats.</summary>
+    private sealed class ScriptedHandler(params Func<HttpResponseMessage>[] responses) : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(responses[Math.Min(Calls++, responses.Length - 1)]());
+    }
+
     private static JsonElement Json(object result) => JsonSerializer.SerializeToElement(result,
         new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
 
@@ -743,9 +1027,8 @@ public class TimeEntryTests
         double hours = 1.5,
         string task = "development",
         string role = "System Engineer",
-        string rateType = "Billable",
         string narrative = "Fix build pipeline") =>
-        new(date, hours, "P005678-001", task, role, rateType, narrative, uid);
+        new(date, hours, "P005678-001", task, role, narrative, uid);
 
     private static ProjectorConnection Connection(string id = ConnectionId, string? tenant = null, string? oid = null) => new()
     {
@@ -759,6 +1042,22 @@ public class TimeEntryTests
         SoapServiceAuthority = "https://example.invalid",
         RestServiceAuthority = "https://example.invalid"
     };
+
+    /// <summary>
+    /// The task tree fixture with its parent tasks (User Story 101 / 202) open for time, which makes them summary tasks
+    /// Projector still reports as open; optionally with AllowAssignmentFlag=false (time only on assigned tasks).
+    /// </summary>
+    private static TimeEntryProjectSetup TreeWithOpenParents(bool allowAssignment = true)
+    {
+        var xml = File.ReadAllText(Path.Combine(FixturesDir, "time_entry_project_tree.xml"))
+            .Replace("<a:OpenForTimeFlag>false</a:OpenForTimeFlag>", "<a:OpenForTimeFlag>true</a:OpenForTimeFlag>");
+        if (!allowAssignment)
+        {
+            xml = xml.Replace("<a:AllowAssignmentFlag>true</a:AllowAssignmentFlag>", "<a:AllowAssignmentFlag>false</a:AllowAssignmentFlag>");
+        }
+
+        return ProjectorTimeEntryParsers.ParseTimeEntryProject(XDocument.Parse(xml))!;
+    }
 
     private static (TimeEntryToolService Service, FakeTimeEntryClient Fake) CreateService(bool tree = false)
     {
@@ -806,7 +1105,19 @@ public class TimeEntryTests
         public int SaveCalls { get; private set; }
 
         /// <summary>Projector read calls per kind, to check what the cache saves.</summary>
-        public Dictionary<string, int> Calls { get; } = new() { ["projects"] = 0, ["setup"] = 0, ["rules"] = 0, ["day_cards"] = 0 };
+        public Dictionary<string, int> Calls { get; } = new() { ["projects"] = 0, ["setup"] = 0, ["rules"] = 0, ["day_cards"] = 0, ["assignments"] = 0 };
+
+        public TaskAssignments Assignments { get; set; } = new(false, new Dictionary<string, IReadOnlySet<string>>());
+        public Exception? AssignmentsException { get; set; }
+
+        public Task<TaskAssignments> GetTaskAssignmentsAsync(
+            ProjectorConnection connection, string projectCode, CancellationToken cancellationToken = default)
+        {
+            Calls["assignments"]++;
+            return AssignmentsException is not null
+                ? Task.FromException<TaskAssignments>(AssignmentsException)
+                : Task.FromResult(Assignments);
+        }
 
         public Task<IReadOnlyList<TimeEntryProjectSummary>> SearchTimeEntryProjectsAsync(
             ProjectorConnection connection, string workDate, string? query = null, string? projectCode = null,

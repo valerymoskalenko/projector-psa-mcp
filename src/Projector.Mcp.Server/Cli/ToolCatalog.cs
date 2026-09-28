@@ -143,7 +143,8 @@ public static class ToolCatalog
         var end = Require(args, "end_date");
         args.TryGetValue("status", out var status);
         args.TryGetValue("project_code", out var projectCode);
-        return tools.ListTimecardsAsync(connectionId, resourceId, start, end, status, projectCode, ct);
+        args.TryGetValue("query", out var query);
+        return tools.ListTimecardsAsync(connectionId, resourceId, start, end, status, projectCode, ct, query);
     }
 
     private static Task<object> ListTimeOffAsync(
@@ -296,7 +297,6 @@ public static class ToolCatalog
                 Require(args, "project_code"),
                 Require(args, "task"),
                 Require(args, "role"),
-                Require(args, "rate_type"),
                 Require(args, "narrative"),
                 timecardUid,
                 location,
