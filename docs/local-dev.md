@@ -76,3 +76,17 @@ Optional: `PROJECTOR_LIVE_RESOURCE_SEARCH`, `PROJECTOR_LIVE_PTO_COUNT`, `PROJECT
 ## Build locks
 
 If a local MCP session (stdio) is running from your editor, `dotnet build` can fail with "file is locked by Projector.Mcp.Server". Stop the MCP server in the editor, or build to the git-ignored `artifacts` folder inside the repository: `dotnet test tests/Projector.UnitTests --artifacts-path artifacts --filter "Category!=Live"`. Keep the folder inside the repository: the tests find `fixtures/` by walking up from the test binary.
+
+## Check a raw Projector response (`pws`, dev only)
+
+Before adding a field or flag, look at what Projector actually returns. `pws` posts a request body you write, signed in with your local `auth login` session, and prints the response XML:
+
+```powershell
+# body.xml: <pws:PwsGetTimeEntryParameters><pws:serviceRequest><req:SessionTicket>{{ticket}}</req:SessionTicket></pws:serviceRequest></pws:PwsGetTimeEntryParameters>
+dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- pws PwsGetTimeEntryParameters body.xml
+```
+
+- `{{ticket}}` is replaced by your session ticket. Prefixes `pws:`, `req:`, `com:`, `tim:` and `sch:` are declared for you.
+- Read-only: only `PwsGet…` and `PwsSearch…` methods are sent, and the body element must match the method. Saves, deletes, submits and approvals are refused before any call.
+- Runs only with `ASPNETCORE_ENVIRONMENT=Development`.
+- It runs as you, with your Projector permissions. Don't commit captured responses: turn them into fixtures with invented names and ids.

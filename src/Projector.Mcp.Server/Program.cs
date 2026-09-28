@@ -70,7 +70,7 @@ toolCommand.SetAction(async (parseResult, ct) =>
 });
 root.Subcommands.Add(toolCommand);
 
-var pwsCommand = new Command("pws", "Dev only: POST a raw PWS request body (file) with the local OAuth session and print the response XML");
+var pwsCommand = new Command("pws", "Dev only, read-only (Development environment; PwsGet*/PwsSearch* methods): POST a raw PWS request body (file) with the local OAuth session and print the response XML");
 var pwsMethodArg = new Argument<string>("method") { Description = "PWS method, e.g. PwsSearchProjects" };
 var pwsBodyArg = new Argument<string>("body-file") { Description = "XML file with <pws:Method>…</pws:Method>; {{ticket}} is replaced by the session ticket" };
 pwsCommand.Arguments.Add(pwsMethodArg);
