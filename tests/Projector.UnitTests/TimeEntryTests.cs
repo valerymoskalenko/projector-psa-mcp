@@ -1573,6 +1573,20 @@ public class TimeEntryTests
         Projector.Mcp.Server.Tools.ToolCallLogFilter.HeaderNames(headers).Should().Be("Accept,Authorization,User-Agent");
     }
 
+    [Fact]
+    public void ToolCallClient_FallsBackToUserAgent_AndSessionToConversationId()
+    {
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.ClientName("copilot-cowork", "0.1.0", "ua").Should().Be("copilot-cowork 0.1.0");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.ClientName(null, null, "Some-Agent/1.0").Should().Be("ua:Some-Agent/1.0");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.ClientName(null, null, null).Should().Be("unknown");
+
+        var copilot = new Microsoft.AspNetCore.Http.HeaderDictionary { ["X-Microsoft-AI-ConversationId"] = "conv-1" };
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.SessionOrConversationId(copilot).Should().Be("conv-1");
+        copilot["Mcp-Session-Id"] = "mcp-1";
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.SessionOrConversationId(copilot).Should().Be("mcp-1");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.SessionOrConversationId(null).Should().BeNull();
+    }
+
     private sealed class ListLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {
         public List<(Microsoft.Extensions.Logging.LogLevel Level, string Message)> Entries { get; } = [];

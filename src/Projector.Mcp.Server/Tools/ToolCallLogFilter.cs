@@ -61,7 +61,8 @@ internal static class ToolCallLogFilter
             ["ServerVersion"] = ServerVersion,
             ["UserId"] = UserId,
             ["ConnectionId"] = ConnectionId,
-            ["McpSessionId"] = SessionId
+            ["SessionId"] = SessionId,
+            ["HeaderNames"] = HeaderNames
         };
     }
 
@@ -77,12 +78,50 @@ internal static class ToolCallLogFilter
         return new CallInfo(
             Tool: tool,
             RequestedTool: string.Equals(tool, requested, StringComparison.Ordinal) ? null : requested,
-            Client: client is null ? "unknown" : $"{client.Name} {client.Version}".Trim(),
+            Client: ClientName(client?.Name, client?.Version, http?.Request.Headers.UserAgent.FirstOrDefault()),
             ServerVersion: context.Server.ServerOptions.ServerInfo?.Version,
-            UserId: user?.FindFirstValue("oid"),
+            UserId: user?.FindFirstValue("oid") ?? user?.FindFirstValue(ObjectIdClaimType),
             ConnectionId: user?.FindFirstValue("connection_id"),
-            SessionId: http?.Request.Headers["Mcp-Session-Id"].FirstOrDefault(),
+            SessionId: SessionOrConversationId(http?.Request.Headers),
             HeaderNames: http is null ? null : HeaderNames(http.Request.Headers));
+    }
+
+    /// <summary>JwtBearer maps the token's <c>oid</c> claim to this type (seen in production 2026-09-29).</summary>
+    internal const string ObjectIdClaimType = "http://schemas.microsoft.com/identity/claims/objectidentifier";
+
+    /// <summary>
+    /// The MCP client name, or the User-Agent when the client didn't send one with this request: Cowork names itself
+    /// only on initialize, and each stateless call is a new request.
+    /// </summary>
+    internal static string ClientName(string? name, string? version, string? userAgent)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            return $"{name} {version}".Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            return "unknown";
+        }
+
+        var ua = userAgent.Trim();
+        return "ua:" + (ua.Length <= 80 ? ua : ua[..80]);
+    }
+
+    /// <summary>
+    /// The MCP session id, or Copilot's conversation id: stateless Copilot/Cowork calls have no MCP session, but carry
+    /// <c>X-Microsoft-AI-ConversationId</c>, which groups the calls of one conversation.
+    /// </summary>
+    internal static string? SessionOrConversationId(IHeaderDictionary? headers)
+    {
+        if (headers is null)
+        {
+            return null;
+        }
+
+        var id = headers["Mcp-Session-Id"].FirstOrDefault();
+        return string.IsNullOrWhiteSpace(id) ? headers["X-Microsoft-AI-ConversationId"].FirstOrDefault() : id;
     }
 
     /// <summary>
@@ -157,13 +196,12 @@ internal static class ToolCallLogFilter
         logger.Log(
             level,
             exception,
-            "Tool call {Tool} {Outcome} in {DurationMs} ms (client {Client}, server {ServerVersion}, requested as {RequestedTool}, headers {HeaderNames})",
+            "Tool call {Tool} {Outcome} in {DurationMs} ms (client {Client}, server {ServerVersion}, requested as {RequestedTool})",
             call.Tool,
             outcome,
             (long)elapsed.TotalMilliseconds,
             call.Client,
             call.ServerVersion,
-            call.RequestedTool ?? call.Tool,
-            call.HeaderNames);
+            call.RequestedTool ?? call.Tool);
     }
 }
