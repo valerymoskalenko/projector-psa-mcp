@@ -179,12 +179,8 @@ public static class ToolCatalog
             people.Add(resourceId.Trim());
         }
 
+        // No people = the signed-in user (the service fills it in).
         people = people.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (people.Count == 0)
-        {
-            throw new ArgumentException("Provide --people and/or --resource-id.");
-        }
-
         double? hours = GetDouble(args, "required_hours_per_week");
         double? minutes = GetDouble(args, "required_minutes_per_week");
         var showDays = GetBool(args, "show_availability_days");

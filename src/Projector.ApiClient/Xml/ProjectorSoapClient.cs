@@ -154,7 +154,7 @@ public sealed class ProjectorSoapClient :
 
     public async Task<AvailabilitySummary> CheckAvailabilityAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         string? displayName = null,

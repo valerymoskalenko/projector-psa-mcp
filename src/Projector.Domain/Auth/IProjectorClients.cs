@@ -135,9 +135,10 @@ public interface IProjectorScheduleClient
         string endDate,
         CancellationToken cancellationToken = default);
 
+    /// <summary>A null resource = the caller (PwsGetResourceSchedule without ResourceIdentity).</summary>
     Task<AvailabilitySummary> CheckAvailabilityAsync(
         ProjectorConnection connection,
-        string resourceReferenceSystemId,
+        string? resourceReferenceSystemId,
         string startDate,
         string endDate,
         string? displayName = null,

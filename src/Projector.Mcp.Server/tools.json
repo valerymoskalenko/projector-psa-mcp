@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -164,7 +164,7 @@
         "browseResources",
         "scheduleResources"
       ],
-      "description": "Compares capacity and bookings for 1–20 people over a date window using utilization-basis minutes. Returns weekly available minutes/hours, project/role bookings, PTO/holidays, and whether each person can take the requested weekly hours. Daily availability.days is omitted unless show_availability_days is true. Includes searchCoverage (status partial when any person fails). Does not return resource history or actual timecards.",
+      "description": "Compares capacity and bookings for 1–20 people over a date window using utilization-basis minutes. Returns weekly available minutes/hours, project/role bookings, PTO/holidays, and whether each person can take the requested weekly hours. people defaults to the signed-in user; without required_hours_per_week the result shows capacity only. Daily availability.days is omitted unless show_availability_days is true. Includes searchCoverage (status partial when any person fails). Does not return resource history or actual timecards.",
       "whenNotToUse": "Do not use for historical time entry totals; use list_timecards. Do not use to list assigned projects only; use get_schedule (or a bookings-shaped wrapper).",
       "inputSchema": {
         "type": "object",
@@ -175,12 +175,11 @@
         "properties": {
           "people": {
             "type": "array",
-            "minItems": 1,
             "maxItems": 20,
             "items": {
               "type": "string"
             },
-            "description": "Emails, display names, or system ids"
+            "description": "Emails, display names, or system ids; omit (or \"me\") for the signed-in user"
           },
           "resource_id": {
             "type": "string",

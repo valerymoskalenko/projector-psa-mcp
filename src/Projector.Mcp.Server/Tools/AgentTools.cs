@@ -99,7 +99,9 @@ public sealed class AgentTools
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
         "Compares capacity and bookings for 1–20 people over a date window using utilization-basis minutes. " +
-        "Optional resource_id is merged into people. " +
+        "people defaults to the signed-in user (\"me\"); optional resource_id is merged into people. " +
+        "Pass required_hours_per_week to check whether someone can take on that much work; without it the result " +
+        "shows capacity (available and booked minutes per week). " +
         "Weekly availability is always returned; set show_availability_days true to also include daily days. " +
         ToolOutputSchemas.AvailabilitySchemaHint + " " +
         "WhenNotToUse: Do not use for historical time entry totals; use list_timecards. " +
@@ -107,9 +109,9 @@ public sealed class AgentTools
     public Task<CallToolResult> CheckAvailability(
         [Description("Inclusive start date")] string start_date,
         [Description("Inclusive end date")] string end_date,
-        [Description("Emails, display names, or system ids")] string[]? people = null,
+        [Description("Emails, display names, or system ids; omit (or \"me\") for the signed-in user")] string[]? people = null,
         [Description("Optional ResourceReferenceSystemId alias for people")] string? resource_id = null,
-        [Description("Required hours per week")] double? required_hours_per_week = null,
+        [Description("Required hours per week; omit to see capacity only")] double? required_hours_per_week = null,
         [Description("Required minutes per week")] double? required_minutes_per_week = null,
         [Description("When true, include daily availability.days; default weekly only")] bool show_availability_days = false,
         CancellationToken cancellationToken = default) =>
@@ -326,6 +328,11 @@ public sealed class AgentTools
         if (code == "error")
         {
             logger?.LogError(ex, "Tool call failed with an unexpected {ExceptionType}", ex.GetType().FullName);
+        }
+        else
+        {
+            // The SDK logs only "IsError = True"; keep the reason so a refused call can be diagnosed later.
+            logger?.LogWarning("Tool call refused: {ErrorCode} {ErrorMessage}", code, message);
         }
 
         var body = JsonSerializer.Serialize(new { error = code, message }, JsonOptions);

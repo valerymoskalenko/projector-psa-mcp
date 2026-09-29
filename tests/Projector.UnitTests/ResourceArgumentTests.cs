@@ -95,6 +95,34 @@ public class ResourceArgumentTests
     }
 
     [Fact]
+    public async Task CheckAvailability_WithoutPeopleOrHours_ShowsMyCapacity()
+    {
+        var (service, soap) = Create();
+
+        var result = Json(await service.CheckAvailabilityAsync(
+            ConnectionId, [], "2026-09-28", "2026-10-02", null, null, false, CancellationToken.None));
+
+        soap.Calls.Should().ContainSingle().Which.Should().Be("CheckAvailabilityAsync(<none>, 0)", "no people = the signed-in user, no lookup");
+        result.GetProperty("people").GetArrayLength().Should().Be(1);
+        result.GetProperty("errors").GetArrayLength().Should().Be(0);
+        result.GetProperty("required_minutes_per_week").ValueKind.Should().Be(JsonValueKind.Null);
+        result.GetProperty("note").GetString().Should().Contain("capacity");
+    }
+
+    [Fact]
+    public async Task CheckAvailability_WithHours_KeepsTheRequirement()
+    {
+        var (service, soap) = Create();
+
+        var result = Json(await service.CheckAvailabilityAsync(
+            ConnectionId, ["me", "10001"], "2026-09-28", "2026-10-02", 20, null, false, CancellationToken.None));
+
+        soap.Calls.Should().Contain("CheckAvailabilityAsync(<none>, 1200)");
+        result.GetProperty("required_minutes_per_week").GetDouble().Should().Be(1200);
+        result.GetProperty("note").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
     public async Task ListTimecards_AddsHoursPerDayAndStatus()
     {
         var (service, soap) = Create();
@@ -167,6 +195,9 @@ public class ResourceArgumentTests
                 case nameof(IProjectorSoapClient.ListTimecardsAsync):
                     Calls.Add($"ListTimecardsAsync({(args![1] as string) ?? "<none>"})");
                     return Task.FromResult(new TimecardListResult { Timecards = Timecards.ToList() });
+                case nameof(IProjectorSoapClient.CheckAvailabilityAsync):
+                    Calls.Add($"CheckAvailabilityAsync({(args![1] as string) ?? "<none>"}, {args[6]})");
+                    return Task.FromResult(new Projector.Domain.Availability.AvailabilitySummary { State = "available" });
                 case nameof(IProjectorSoapClient.GetResourceAsync):
                     var id = (string)args![1]!;
                     Calls.Add($"GetResourceAsync({id})");

@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -28,6 +30,8 @@ internal static class ToolArgumentFilter
                 var problem = Normalize(arguments, tool.ProtocolTool.InputSchema);
                 if (problem is not null)
                 {
+                    context.Services?.GetService<ILoggerFactory>()?.CreateLogger(typeof(ToolArgumentFilter))
+                        .LogWarning("Tool call refused: invalid_argument {Tool} {ErrorMessage}", request.Name, problem);
                     return ValueTask.FromResult(Error(problem));
                 }
             }

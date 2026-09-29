@@ -995,6 +995,32 @@ public class TimeEntryTests
     }
 
     [Fact]
+    public void RefusedToolCall_IsLoggedWithCodeAndReason()
+    {
+        var logger = new ListLogger();
+
+        var result = Projector.Mcp.Server.Tools.AgentTools.ToError(
+            new ProjectorApiException("Task 'X' is a summary task.", "summary_task"), logger);
+
+        result.IsError.Should().BeTrue();
+        logger.Entries.Should().ContainSingle(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && e.Message.Contains("summary_task") && e.Message.Contains("is a summary task"));
+    }
+
+    private sealed class ListLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public List<(Microsoft.Extensions.Logging.LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
+    }
+
+    [Fact]
     public void ToolArguments_NullsAreDropped_WholeNumbersBind_BadValuesAreNamed()
     {
         var schema = JsonDocument.Parse("""

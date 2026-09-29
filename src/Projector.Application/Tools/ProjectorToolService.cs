@@ -176,7 +176,13 @@ public sealed class ProjectorToolService
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        if (people.Count is < 1 or > 20)
+        // No people = the signed-in user, like get_schedule.
+        if (people.Count == 0)
+        {
+            people = [SignedInUser];
+        }
+
+        if (people.Count > 20)
         {
             throw new ArgumentException("people must contain 1–20 entries.");
         }
@@ -186,13 +192,9 @@ public sealed class ProjectorToolService
             throw new ArgumentException("Provide required_hours_per_week or required_minutes_per_week, not both.");
         }
 
-        if (requiredHoursPerWeek is null && requiredMinutesPerWeek is null)
-        {
-            throw new ArgumentException("Provide required_hours_per_week or required_minutes_per_week.");
-        }
-
-        var requiredMinutes = requiredMinutesPerWeek
-            ?? requiredHoursPerWeek!.Value * 60;
+        // No required hours = show capacity (available vs booked per week) instead of refusing.
+        var capacityOnly = requiredHoursPerWeek is null && requiredMinutesPerWeek is null;
+        var requiredMinutes = requiredMinutesPerWeek ?? (requiredHoursPerWeek ?? 0) * 60;
 
         var connection = await RequireAsync(connectionId, ct);
         var results = new List<object>();
@@ -202,7 +204,9 @@ public sealed class ProjectorToolService
         {
             try
             {
-                var resolved = await ResolvePersonAsync(connection, person, includeHistory: false, ct);
+                var resolved = IsSignedInUser(person)
+                    ? (ResourceId: (string?)null, DisplayName: connection.DisplayName, Email: (string?)null, Detail: (ResourceDetail?)null)
+                    : await ResolvePersonAsync(connection, person, includeHistory: false, ct);
                 var summary = await WithRefreshAsync(connection, c =>
                     _soap.CheckAvailabilityAsync(
                         c,
@@ -221,7 +225,7 @@ public sealed class ProjectorToolService
                     resource = resolved.Detail is null
                         ? (object)new
                         {
-                            resourceReferenceSystemId = resolved.ResourceId,
+                            resourceReferenceSystemId = resolved.ResourceId ?? SignedInUser,
                             displayName = resolved.DisplayName,
                             emailAddress = resolved.Email
                         }
@@ -248,7 +252,11 @@ public sealed class ProjectorToolService
         {
             start_date = Short(startDate),
             end_date = Short(endDate),
-            required_minutes_per_week = requiredMinutes,
+            required_minutes_per_week = capacityOnly ? (double?)null : requiredMinutes,
+            note = capacityOnly
+                ? "No required hours were given, so this shows capacity: available and booked minutes per week. " +
+                  "Pass required_hours_per_week to check whether someone can take on that much work."
+                : null,
             people = results,
             errors,
             searchCoverage = SearchCoverageDto.From(BuildAvailabilityCoverage(
@@ -696,6 +704,9 @@ public sealed class ProjectorToolService
     /// <summary>Label shown as resource_id when the call ran for the signed-in user.</summary>
     public const string SignedInUser = "me";
 
+    private static bool IsSignedInUser([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? input) =>
+        string.IsNullOrWhiteSpace(input) || string.Equals(input.Trim(), SignedInUser, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Turns a tool's person argument into a Projector resource id. Empty or "me" = the signed-in user: returns
     /// a null id, and Projector applies the call to the caller. A numeric id is used as is (no extra call);
@@ -707,7 +718,7 @@ public sealed class ProjectorToolService
         CancellationToken ct)
     {
         var text = input?.Trim();
-        if (string.IsNullOrEmpty(text) || string.Equals(text, SignedInUser, StringComparison.OrdinalIgnoreCase))
+        if (IsSignedInUser(text))
         {
             return (null, SignedInUser);
         }
