@@ -38,8 +38,9 @@ public sealed class TimeEntryTools
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
         "Lists many projects the signed-in user can enter time on for one work_date, with the user's roles on each. " +
-        "Always the signed-in user's own time sheet. Optional query filters by project, engagement or client text; " +
-        "page with offset. chargeable is false where the user has no role (Projector refuses time there). " +
+        "Always the signed-in user's own time sheet. Optional query matches whole words or word starts of the project, " +
+        "engagement or client; page with offset. By default only chargeable projects (where the user has a role) are " +
+        "listed; not_chargeable_hidden counts the others, which chargeable_only = false shows with chargeable = false. " +
         ToolOutputSchemas.TimeProjectsSchemaHint + " " +
         "WhenNotToUse: Do not use to browse engagements or a manager's projects; use list_engagements. " +
         "Do not use for who is staffed on a project; use list_project_roles.")]
@@ -48,8 +49,9 @@ public sealed class TimeEntryTools
         [Description("Optional text to match project, engagement or client")] string? query = null,
         [Description("Maximum projects to return (1-200)")] int max_rows = 50,
         [Description("Rows to skip; use next_offset from the previous page")] int offset = 0,
+        [Description("true (default): only projects where you have a role and can post time; false: also the others")] bool chargeable_only = true,
         CancellationToken cancellationToken = default) =>
-        InvokeAsync(ct => _timeEntry.ListTimeProjectsAsync(ct.ConnectionId, work_date, query, max_rows, ct.Token, offset),
+        InvokeAsync(ct => _timeEntry.ListTimeProjectsAsync(ct.ConnectionId, work_date, query, max_rows, ct.Token, offset, chargeable_only),
             cancellationToken);
 
     [McpServerTool(Name = "get_timecard_options", Title = "Get time entry options for a project",

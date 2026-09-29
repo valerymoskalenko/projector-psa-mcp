@@ -28,7 +28,8 @@ public static class ToolOutputSchemas
         "Output keys: uri, resource, resource_links.";
 
     public const string TimecardsSchemaHint =
-        "Output keys: resource_id (\"me\" for the signed-in user), start_date, end_date, count, timecards[], searchCoverage. "
+        "Output keys: resource_id (\"me\" for the signed-in user), start_date, end_date, count, by_date[] (date, hours, card_count, "
+        + "hours_by_status: posted hours per day, so compare days with get_schedule without adding cards up), timecards[], searchCoverage. "
         + "Each card has taskName, taskPath (parent tasks > task), taskWbsCode, timecardUid, projectTaskUid, projectRoleUid "
         + "and projectRateTypeUid (use them with save_timecard). Every status is listed, Rejected included (with the "
         + "rejection reason when Projector gives one). The signed-in user's own cards have editable: true = Draft or "
@@ -61,7 +62,7 @@ public static class ToolOutputSchemas
         + SearchCoverageRule;
 
     public const string TimeProjectsSchemaHint =
-        "Output keys: work_date, query, count, total, offset, has_more, next_offset, projects[] (project_code, "
+        "Output keys: work_date, query, count, total, offset, has_more, next_offset, not_chargeable_hidden, projects[] (project_code, "
         + "project_name, engagement_code, client_name, billable, chargeable, roles[] with role_uid and role_name), next_step.";
 
     public const string TimecardOptionsSchemaHint =

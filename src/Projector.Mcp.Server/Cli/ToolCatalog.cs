@@ -264,7 +264,8 @@ public static class ToolCatalog
         var svc = services.GetRequiredService<TimeEntryToolService>();
         args.TryGetValue("query", out var query);
         return svc.ListTimeProjectsAsync(
-            connectionId, Require(args, "work_date"), query, GetInt(args, "max_rows", 50), ct, GetInt(args, "offset", 0));
+            connectionId, Require(args, "work_date"), query, GetInt(args, "max_rows", 50), ct, GetInt(args, "offset", 0),
+            chargeableOnly: !args.ContainsKey("chargeable_only") || GetBool(args, "chargeable_only"));
     }
 
     private static Task<object> GetTimecardOptionsAsync(

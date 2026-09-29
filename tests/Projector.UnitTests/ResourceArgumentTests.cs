@@ -94,13 +94,39 @@ public class ResourceArgumentTests
         result.GetProperty("count").GetInt32().Should().Be(1);
     }
 
-    private static Timecard Card(string uid, string status, string description = "Work") => new()
+    [Fact]
+    public async Task ListTimecards_AddsHoursPerDayAndStatus()
+    {
+        var (service, soap) = Create();
+        soap.Timecards.AddRange(
+        [
+            Card("1", "D", minutes: 60, date: "2026-09-24", statusName: "Draft"),
+            Card("2", "S", minutes: 90, date: "2026-09-24", statusName: "Submitted"),
+            Card("3", "S", minutes: 30, date: "2026-09-23", statusName: "Submitted"),
+        ]);
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-23", "2026-09-24", null, null, CancellationToken.None));
+
+        var days = result.GetProperty("by_date").EnumerateArray().ToList();
+        days.Select(d => d.GetProperty("date").GetString()).Should().Equal("2026-09-23", "2026-09-24");
+        days[1].GetProperty("hours").GetDouble().Should().Be(2.5);
+        days[1].GetProperty("card_count").GetInt32().Should().Be(2);
+        days[1].GetProperty("hours_by_status").GetProperty("Draft").GetDouble().Should().Be(1);
+        days[1].GetProperty("hours_by_status").GetProperty("Submitted").GetDouble().Should().Be(1.5);
+    }
+
+    private static Timecard Card(
+        string uid, string status, string description = "Work", int minutes = 60, string date = "2026-09-25", string? statusName = null) => new()
     {
         TimecardUid = uid,
         CardStatusCode = status,
         Description = description,
         ProjectCode = "P005678-001",
-        WorkDate = "2026-09-25"
+        WorkDate = date,
+        WorkMinutes = minutes,
+        WorkHours = minutes / 60.0,
+        Status = statusName
     };
 
     private static JsonElement Json(object result) => JsonSerializer.SerializeToElement(result);

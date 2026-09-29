@@ -751,11 +751,11 @@ public class TimeEntryTests
     {
         var (service, fake) = CreateService();
 
-        var all = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 50, CancellationToken.None));
+        var all = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 50, CancellationToken.None, chargeableOnly: false));
         var chargeable = all.GetProperty("projects").EnumerateArray().Select(p => p.GetProperty("chargeable").GetBoolean()).ToList();
         chargeable.Should().Equal(true, false);
 
-        var page = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 1, CancellationToken.None, offset: 1));
+        var page = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 1, CancellationToken.None, offset: 1, chargeableOnly: false));
         page.GetProperty("projects")[0].GetProperty("chargeable").GetBoolean().Should().BeFalse();
         page.GetProperty("has_more").GetBoolean().Should().BeFalse();
 
@@ -1012,6 +1012,38 @@ public class TimeEntryTests
 
         Projector.Mcp.Server.Tools.ToolArgumentFilter.Normalize(new Dictionary<string, JsonElement> { ["max_rows"] = J("2.5") }, schema)
             .Should().Contain("max_rows must be a whole number");
+    }
+
+    [Fact]
+    public async Task Options_QueryWithNoMatch_SaysWhatToTryNext()
+    {
+        var (service, _) = CreateService(tree: true);
+
+        var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None, query: "zzqq"));
+
+        options.GetProperty("tasks_total").GetInt32().Should().Be(0);
+        options.GetProperty("next_step").GetString().Should().Contain("No task matches 'zzqq'")
+            .And.Contain("WBS").And.Contain("list_timecards with project_code and query");
+    }
+
+    [Fact]
+    public async Task ListTimeProjects_ShowsChargeableOnlyByDefault()
+    {
+        var (service, fake) = CreateService();
+        fake.Projects.Add(new TimeEntryProjectSummary { ProjectCode = "P009999-001", ProjectName = "Fabrikam Rollout" });
+
+        var byDefault = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 50, CancellationToken.None));
+        byDefault.GetProperty("projects").EnumerateArray().Should().AllSatisfy(p => p.GetProperty("chargeable").GetBoolean().Should().BeTrue());
+        byDefault.GetProperty("not_chargeable_hidden").GetInt32().Should().BeGreaterThan(0);
+
+        var all = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 50, CancellationToken.None, chargeableOnly: false));
+        all.GetProperty("projects").EnumerateArray().Select(p => p.GetProperty("project_code").GetString()).Should().Contain("P009999-001");
+        all.TryGetProperty("not_chargeable_hidden", out _).Should().BeFalse();
+
+        var hidden = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", "Fabrikam", 50, CancellationToken.None));
+        hidden.GetProperty("total").GetInt32().Should().Be(0);
+        hidden.GetProperty("next_step").GetString().Should().Contain("no role").And.Contain("chargeable_only = false");
+        fake.Calls["projects"].Should().Be(1, "all three answers come from the cached list");
     }
 
     private static HttpResponseMessage OkResponse() => new(HttpStatusCode.OK)

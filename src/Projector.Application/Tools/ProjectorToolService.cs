@@ -99,6 +99,7 @@ public sealed class ProjectorToolService
             start_date = start,
             end_date = end,
             count = cards.Count,
+            by_date = ByDate(cards),
             timecards = cards.Select(t => MapTimecard(t, ownCards)).ToList(),
             searchCoverage = SearchCoverageDto.From(coverage)
         }, sw);
@@ -1147,6 +1148,26 @@ public sealed class ProjectorToolService
     };
 
     private static object MapSchedule(ResourceSchedule schedule) => schedule;
+
+    /// <summary>
+    /// Posted hours per date (and per status), so an agent compares days with get_schedule's expected hours without
+    /// adding up dozens of cards itself.
+    /// </summary>
+    internal static IReadOnlyList<object> ByDate(IEnumerable<Timecard> cards) =>
+        cards
+            .GroupBy(c => c.WorkDate ?? "unknown")
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => (object)new
+            {
+                date = g.Key,
+                hours = g.Sum(c => c.WorkMinutes) / 60.0,
+                card_count = g.Count(),
+                hours_by_status = g
+                    .GroupBy(c => c.Status ?? c.CardStatusCode ?? "unknown")
+                    .OrderBy(s => s.Key, StringComparer.Ordinal)
+                    .ToDictionary(s => s.Key, s => s.Sum(c => c.WorkMinutes) / 60.0)
+            })
+            .ToList();
 
     private static TimecardDto MapTimecard(Timecard t) => MapTimecard(t, ownCards: false);
 

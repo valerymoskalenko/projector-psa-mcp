@@ -74,7 +74,8 @@ public sealed class TimeEntryToolService
         string? query,
         int maxRows,
         CancellationToken ct,
-        int offset = 0)
+        int offset = 0,
+        bool chargeableOnly = true)
     {
         var date = ParseWorkDate(workDate);
         maxRows = Math.Clamp(maxRows, 1, 200);
@@ -83,11 +84,16 @@ public sealed class TimeEntryToolService
         var all = await GetProjectsAsync(connection, date, ct);
 
         // Filtered here, on the cached full list (Projector ignores MaximumRows anyway), so a new query or page
-        // does not call Projector again.
+        // does not call Projector again. By default only projects where the user has a role: time elsewhere is refused.
         var text = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
-        var matches = text is null
-            ? all
-            : Ranked(all, p => TextMatch.Score(text, p.ProjectCode, p.ProjectName, p.EngagementCode, p.EngagementName, p.ClientName));
+        int Score(TimeEntryProjectSummary p) =>
+            TextMatch.Score(text!, p.ProjectCode, p.ProjectName, p.EngagementCode, p.EngagementName, p.ClientName);
+        var candidates = all.Where(p => !chargeableOnly || p.Roles.Count > 0).ToList();
+        var notChargeableHidden = all.Count - candidates.Count;
+        var matches = text is null ? candidates : Ranked(candidates, Score);
+        var hiddenMatches = chargeableOnly && text is not null && matches.Count == 0
+            ? all.Count(p => p.Roles.Count == 0 && Score(p) > 0)
+            : 0;
         var page = matches.Skip(offset).Take(maxRows).ToList();
         var hasMore = offset + page.Count < matches.Count;
         return new
@@ -99,6 +105,7 @@ public sealed class TimeEntryToolService
             offset,
             has_more = hasMore,
             next_offset = hasMore ? offset + page.Count : (int?)null,
+            not_chargeable_hidden = chargeableOnly ? notChargeableHidden : (int?)null,
             projects = page.Select(p => new
             {
                 project_code = p.ProjectCode,
@@ -111,7 +118,10 @@ public sealed class TimeEntryToolService
                 roles = p.Roles.Select(r => new { role_uid = r.Uid, role_name = r.Name }).ToList(),
                 unavailable_reason = p.UnavailableReasonCode
             }).ToList(),
-            next_step = text is not null && matches.Count == 0
+            next_step = hiddenMatches > 0
+                ? $"{hiddenMatches} project(s) match '{text}' but you have no role there, so Projector refuses time on them " +
+                  "(see them with chargeable_only = false). Ask the project manager to add you, or pick another project."
+                : text is not null && matches.Count == 0
                 ? $"No project you can enter time on matches '{text}'. Projector lists only projects where you have a role: " +
                   "check the name with list_engagements, and ask the project manager to add you if it exists. The words may " +
                   "also be a task inside another project (e.g. a presale opportunity): try get_timecard_options with query."
@@ -202,9 +212,13 @@ public sealed class TimeEntryToolService
                 udf2 = DescribeUdf(rules.Udf2, setup.Udf2Treatment)
             },
             rate_type_note = "Rate types are listed for information only: save_timecard always uses the task's default_rate_type.",
-            next_step = hasMore
-                ? "More tasks match: narrow with query (task name, WBS or parent) or page with offset = tasks_next_offset."
-                : "Confirm the card with the user (date, hours, project, task path, role, narrative), then call save_timecard."
+            next_step = text is not null && matches.Count == 0
+                ? $"No task matches '{text}' among the {openTasks.Count} tasks that take time here. Try one word, the parent " +
+                  "task's name or the WBS code; to find the task used before for this work, call list_timecards with " +
+                  "project_code and query."
+                : hasMore
+                    ? "More tasks match: narrow with query (task name, WBS or parent) or page with offset = tasks_next_offset."
+                    : "Confirm the card with the user (date, hours, project, task path, role, narrative), then call save_timecard."
         };
     }
 

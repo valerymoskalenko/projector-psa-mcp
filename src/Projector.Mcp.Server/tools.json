@@ -87,7 +87,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector.",
+      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector. by_date gives posted hours per day (and per status), so days can be compared with get_schedule's expected hours without adding cards up.",
       "whenNotToUse": "Do not use for capacity or bookings; use check_availability or get_schedule. Do not use for PTO cards; use list_time_off.",
       "inputSchema": {
         "type": "object",
@@ -508,7 +508,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many projects the signed-in user can enter time on for one work_date (PwsSearchProjects, ListType=T, available projects only), with the user's roles on each. Always the signed-in user's own time sheet; no resource parameter. Optional query matches whole words or word starts of the project, engagement or client (best match first). The query filters the user's full project list in memory (cached per user for a few minutes); page with offset. chargeable is false where the user has no role on the project (Projector refuses time there).",
+      "description": "Lists many projects the signed-in user can enter time on for one work_date (PwsSearchProjects, ListType=T, available projects only), with the user's roles on each. Always the signed-in user's own time sheet; no resource parameter. Optional query matches whole words or word starts of the project, engagement or client (best match first). The query filters the user's full project list in memory (cached per user for a few minutes); page with offset. chargeable is false where the user has no role on the project (Projector refuses time there). By default only chargeable projects are listed (not_chargeable_hidden counts the rest); chargeable_only = false shows them too.",
       "whenNotToUse": "Do not use to browse engagements or a manager's projects; use list_engagements. Do not use for who is staffed on a project; use list_project_roles.",
       "inputSchema": {
         "type": "object",
@@ -536,6 +536,10 @@
             "minimum": 0,
             "default": 0,
             "description": "Rows to skip; use next_offset from the previous page"
+          },
+          "chargeable_only": {
+            "type": "boolean",
+            "description": "true (default): only projects where you have a role and can post time; false: also the others"
           }
         }
       }
