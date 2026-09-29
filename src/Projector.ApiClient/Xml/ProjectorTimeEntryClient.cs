@@ -89,12 +89,19 @@ public sealed class ProjectorTimeEntryClient : IProjectorTimeEntryClient
         return ProjectorTimeEntryParsers.ParseTimeEntryParameters(doc);
     }
 
-    public async Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
+    public Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
         ProjectorConnection connection,
         string workDate,
+        CancellationToken cancellationToken = default) =>
+        ListOwnTimecardsAsync(connection, workDate, workDate, cancellationToken);
+
+    public async Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
+        ProjectorConnection connection,
+        string startDate,
+        string endDate,
         CancellationToken cancellationToken = default)
     {
-        var xml = ProjectorEnvelopeBuilders.BuildGetTimeCards(connection.SessionTicket, null, workDate, workDate);
+        var xml = ProjectorEnvelopeBuilders.BuildGetTimeCards(connection.SessionTicket, null, startDate, endDate);
         var doc = await PostAsync(_read, connection, "PwsGetTimeCards", xml, cancellationToken);
         ProjectorSoapHttp.ThrowIfResultError(XmlNodeHelpers.LocalNode(doc, "PwsGetTimeCardsResult"));
         return ProjectorResponseParsers.ParseTimeCards(doc);

@@ -1072,6 +1072,272 @@ public class TimeEntryTests
         fake.Calls["projects"].Should().Be(1, "all three answers come from the cached list");
     }
 
+    // ---- Batch save (v0.6.2) ------------------------------------------------------------------
+
+    private static List<SaveTimecardInput> Batch(params (string Task, double Hours, string Narrative)[] cards) =>
+        cards.Select(c => Input(task: c.Task, hours: c.Hours, narrative: c.Narrative)).ToList();
+
+    [Fact]
+    public async Task Batch_SavesTheValidCards_AndReportsTheInvalidOnes()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.Setup = TreeWithOpenParents(allowAssignment: false);
+        fake.Assignments = Assignments(restricted: true, ("2100000000000000012", "2200000000000000001"));
+        fake.DayCards = [DayCard("800", minutes: 60, task: "2100000000000000099", narrative: "Weekly status call")];
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 1.5, "Export analysis"), ("1", 1, "Summary task work"), ("1.2", 0.5, "Unassigned work")),
+            dryRun: false, CancellationToken.None));
+
+        result.GetProperty("results").EnumerateArray().Select(r => r.GetProperty("status").GetString())
+            .Should().Equal("saved", "invalid", "invalid");
+        result.GetProperty("results")[1].GetProperty("error").GetString().Should().Be("summary_task");
+        result.GetProperty("results")[2].GetProperty("error").GetString().Should().Be("not_assigned_to_task");
+        result.GetProperty("saved_count").GetInt32().Should().Be(1);
+        result.GetProperty("invalid_count").GetInt32().Should().Be(2);
+        fake.Saves.Should().ContainSingle().Which.TaskUid.Should().Be("2100000000000000012");
+        result.GetProperty("days")[0].GetProperty("total_hours").GetDouble().Should().Be(2.5);
+    }
+
+    [Fact]
+    public async Task Batch_DryRun_SavesNothing_AndProjectsTheDayTotal()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.DayCards = [DayCard("800", minutes: 60, task: "2100000000000000099", narrative: "Weekly status call")];
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 1.5, "Export analysis"), ("2.2", 0.5, "Invoice layout fix")),
+            dryRun: true, CancellationToken.None));
+
+        fake.SaveCalls.Should().Be(0);
+        result.GetProperty("action").GetString().Should().Be("dry_run");
+        result.GetProperty("results").EnumerateArray().Select(r => r.GetProperty("status").GetString())
+            .Should().Equal("valid", "valid");
+        result.GetProperty("valid_count").GetInt32().Should().Be(2);
+        result.GetProperty("days")[0].GetProperty("total_hours").GetDouble().Should().Be(3);
+        result.GetProperty("days")[0].GetProperty("card_count").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Batch_UnknownOutcome_StopsBeforeTheNextCard()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.SaveException = new ProjectorApiException("Projector did not answer.", "write_outcome_unknown");
+        fake.SaveExceptionOnCall = 2;
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 1, "First"), ("1.2", 1, "Second"), ("2.1", 1, "Third")),
+            dryRun: false, CancellationToken.None));
+
+        result.GetProperty("results").EnumerateArray().Select(r => r.GetProperty("status").GetString())
+            .Should().Equal("saved", "failed", "not_attempted");
+        result.GetProperty("results")[1].GetProperty("error").GetString().Should().Be("write_outcome_unknown");
+        fake.SaveCalls.Should().Be(2, "a card after an unknown outcome is never sent");
+    }
+
+    [Fact]
+    public async Task Batch_ProjectorErrorOnOneCard_DoesNotStopTheOthers()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.SaveException = new ProjectorApiException("Accounting period closed.", "CannotChangeSubmittedTimecardsApClosed");
+        fake.SaveExceptionOnCall = 1;
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 1, "First"), ("1.2", 1, "Second")),
+            dryRun: false, CancellationToken.None));
+
+        result.GetProperty("results").EnumerateArray().Select(r => r.GetProperty("status").GetString())
+            .Should().Equal("failed", "saved");
+        result.GetProperty("results")[0].GetProperty("message").GetString().Should().Contain("accounting period");
+    }
+
+    [Fact]
+    public async Task Batch_WarnsAboutADuplicateInsideTheSameCall()
+    {
+        var (service, fake) = CreateService(tree: true);
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 1, "Export totals analysis with the customer"), ("1.1", 1, "Export totals analysis with customer")),
+            dryRun: false, CancellationToken.None));
+
+        result.GetProperty("results")[0].TryGetProperty("warnings", out _).Should().BeFalse();
+        result.GetProperty("results")[1].GetProperty("warnings")[0].GetString().Should().Contain("Possible duplicate");
+        fake.SaveCalls.Should().Be(2, "a duplicate is a warning, not a refusal");
+    }
+
+    [Fact]
+    public async Task Batch_TooManyCards_IsRefused()
+    {
+        var (service, fake) = CreateService(tree: true);
+        var cards = Enumerable.Range(0, TimeEntryToolService.MaxCardsPerSave + 1).Select(_ => Input(task: "1.1")).ToList();
+
+        var act = () => service.SaveTimecardsAsync(ConnectionId, cards, dryRun: false, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        fake.SaveCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public void ToolArguments_NormalizeInsideCards()
+    {
+        var schema = JsonDocument.Parse("""
+            {"type":"object","properties":{"cards":{"type":"array","items":{"type":"object","properties":{
+              "hours":{"type":"number"},"location":{"type":["string","null"]}}}}}}
+            """).RootElement;
+        JsonElement J(string json) => JsonDocument.Parse(json).RootElement;
+
+        var args = new Dictionary<string, JsonElement> { ["cards"] = J("""[{"hours":"0.25","location":null}]""") };
+        Projector.Mcp.Server.Tools.ToolArgumentFilter.Normalize(args, schema).Should().BeNull();
+        var card = args["cards"][0];
+        card.GetProperty("hours").GetDouble().Should().Be(0.25);
+        card.TryGetProperty("location", out _).Should().BeFalse();
+
+        var asString = new Dictionary<string, JsonElement> { ["cards"] = J("\"[{\\\"hours\\\":1}]\"") };
+        Projector.Mcp.Server.Tools.ToolArgumentFilter.Normalize(asString, schema).Should().BeNull();
+        asString["cards"].GetArrayLength().Should().Be(1);
+
+        Projector.Mcp.Server.Tools.ToolArgumentFilter.Normalize(
+                new Dictionary<string, JsonElement> { ["cards"] = J("""[{"hours":1},{"hours":"lots"}]""") }, schema)
+            .Should().Be("cards[1].hours must be a number (got \"lots\").");
+    }
+
+    // ---- Recent usage and task search in list_time_projects (v0.6.2) ---------------------------------
+
+    private static Timecard RecentCard(
+        string project, string date, int minutes, string taskUid, string path, string wbs, string? description = null) => new()
+    {
+        Description = description,
+        ProjectCode = project,
+        WorkDate = date,
+        WorkMinutes = minutes,
+        WorkHours = minutes / 60.0,
+        ProjectTaskUid = taskUid,
+        TaskName = path.Split(" > ")[^1],
+        TaskPath = path,
+        TaskWbsCode = wbs,
+        CardStatusCode = "S"
+    };
+
+    private static (TimeEntryToolService Service, FakeTimeEntryClient Fake) CreateServiceWithRecentUse()
+    {
+        var (service, fake) = CreateService();
+        fake.Projects.Add(new TimeEntryProjectSummary
+        {
+            ProjectCode = "P007777-001",
+            ProjectName = "Northwind - Presale",
+            Roles = [new TimeEntryRole("2200000000000000077", "Architect", null, null)]
+        });
+        fake.RecentCards =
+        [
+            RecentCard("P005678-001", "2026-09-10", 60, "t1", "Build > Development", "1.2"),
+            RecentCard("P007777-001", "2026-09-22", 30, "t7", "Presale > Tailspin onboarding", "185"),
+            RecentCard("P007777-001", "2026-09-23", 45, "t7", "Presale > Tailspin onboarding", "185"),
+            RecentCard("P007777-001", "2026-09-15", 60, "t8", "Presale > Proposal writing", "12")
+        ];
+        return (service, fake);
+    }
+
+    [Fact]
+    public async Task ListTimeProjects_ShowsRecentUse_MostRecentFirst()
+    {
+        var (service, fake) = CreateServiceWithRecentUse();
+
+        var result = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 50, CancellationToken.None));
+
+        var projects = result.GetProperty("projects").EnumerateArray().ToList();
+        projects.Select(p => p.GetProperty("project_code").GetString()).Should().Equal("P007777-001", "P005678-001");
+        projects[0].GetProperty("last_used").GetString().Should().Be("2026-09-23");
+        projects[0].GetProperty("hours_last_30d").GetDouble().Should().Be(2.25);
+        var tasks = projects[0].GetProperty("recent_tasks").EnumerateArray().ToList();
+        tasks.Select(t => t.GetProperty("wbs_code").GetString()).Should().Equal("185", "12");
+        tasks[0].GetProperty("hours").GetDouble().Should().Be(1.25);
+        result.TryGetProperty("recent_note", out _).Should().BeFalse();
+
+        await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", "presale", 50, CancellationToken.None);
+        fake.Calls["recent"].Should().Be(1, "recent usage is cached per user and date");
+    }
+
+    [Fact]
+    public async Task ListTimeProjects_QueryFindsTheProjectThroughARecentTask()
+    {
+        var (service, _) = CreateServiceWithRecentUse();
+
+        var result = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", "Tailspin", 50, CancellationToken.None));
+
+        var project = result.GetProperty("projects").EnumerateArray().Should().ContainSingle().Subject;
+        project.GetProperty("project_code").GetString().Should().Be("P007777-001");
+        project.GetProperty("matched_tasks")[0].GetProperty("task_path").GetString().Should().Be("Presale > Tailspin onboarding");
+        project.GetProperty("matched_tasks")[0].GetProperty("wbs_code").GetString().Should().Be("185");
+    }
+
+    [Fact]
+    public async Task ListTimeProjects_QueryAlsoMatchesRecentCardDescriptions()
+    {
+        var (service, fake) = CreateServiceWithRecentUse();
+        fake.RecentCards.Add(RecentCard(
+            "P007777-001", "2026-09-21", 30, "t9", "Presale > Miscellaneous", "186", "[Litware] follow-up on the demo environment"));
+
+        var result = Json(await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", "Litware", 50, CancellationToken.None));
+
+        var project = result.GetProperty("projects").EnumerateArray().Should().ContainSingle().Subject;
+        project.GetProperty("matched_tasks")[0].GetProperty("wbs_code").GetString().Should().Be("186");
+        project.GetProperty("matched_tasks")[0].TryGetProperty("descriptions", out _).Should().BeFalse("descriptions are matched, not shown");
+    }
+
+    [Fact]
+    public async Task ListTimeProjects_StillWorks_WhenRecentCardsCannotBeRead()
+    {
+        var (service, fake) = CreateService();
+        fake.DayCardsException = null;
+        var failing = new FailingRecentClient(fake);
+        var store = new InMemoryProjectorConnectionStore();
+        store.Save(Connection());
+        var svc = new TimeEntryToolService(
+            new ProjectorConnectionService(store, new NoRefreshTokenClient()), failing, new TimeEntryCache(),
+            NullLogger<TimeEntryToolService>.Instance);
+
+        var result = Json(await svc.ListTimeProjectsAsync(ConnectionId, "2026-09-24", null, 50, CancellationToken.None));
+
+        result.GetProperty("projects").GetArrayLength().Should().BeGreaterThan(0);
+        result.GetProperty("recent_note").GetString().Should().Contain("could not be read");
+    }
+
+    /// <summary>The fake client, except that the recent-cards read fails.</summary>
+    private sealed class FailingRecentClient(FakeTimeEntryClient inner) : IProjectorTimeEntryClient
+    {
+        public Task<IReadOnlyList<TimeEntryProjectSummary>> SearchTimeEntryProjectsAsync(
+            ProjectorConnection connection, string workDate, string? query = null, string? projectCode = null,
+            CancellationToken cancellationToken = default) =>
+            inner.SearchTimeEntryProjectsAsync(connection, workDate, query, projectCode, cancellationToken);
+
+        public Task<TimeEntryProjectSetup?> GetTimeEntryProjectAsync(
+            ProjectorConnection connection, string projectCode, string workDate, CancellationToken cancellationToken = default) =>
+            inner.GetTimeEntryProjectAsync(connection, projectCode, workDate, cancellationToken);
+
+        public Task<TimeEntryParameters> GetTimeEntryParametersAsync(ProjectorConnection connection, CancellationToken cancellationToken = default) =>
+            inner.GetTimeEntryParametersAsync(connection, cancellationToken);
+
+        public Task<TaskAssignments> GetTaskAssignmentsAsync(
+            ProjectorConnection connection, string projectCode, CancellationToken cancellationToken = default) =>
+            inner.GetTaskAssignmentsAsync(connection, projectCode, cancellationToken);
+
+        public Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
+            ProjectorConnection connection, string workDate, CancellationToken cancellationToken = default) =>
+            inner.ListOwnTimecardsAsync(connection, workDate, cancellationToken);
+
+        public Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
+            ProjectorConnection connection, string startDate, string endDate, CancellationToken cancellationToken = default) =>
+            Task.FromException<IReadOnlyList<Timecard>>(new ProjectorApiException("Timeout.", "RequestTimeout"));
+
+        public Task<OwnTimecard?> GetOwnTimecardAsync(
+            ProjectorConnection connection, string timecardUid, string workDate, CancellationToken cancellationToken = default) =>
+            inner.GetOwnTimecardAsync(connection, timecardUid, workDate, cancellationToken);
+
+        public Task<TimecardSaveResult> SaveTimecardAsync(
+            ProjectorConnection connection, TimecardSaveRequest request, CancellationToken cancellationToken = default) =>
+            inner.SaveTimecardAsync(connection, request, cancellationToken);
+    }
+
     private static HttpResponseMessage OkResponse() => new(HttpStatusCode.OK)
     {
         Content = new StringContent("<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><R/></s:Body></s:Envelope>")
@@ -1194,13 +1460,26 @@ public class TimeEntryTests
         public OwnTimecard? Card { get; set; }
         public TimecardSaveResult SaveResult { get; set; } = new() { TimecardUid = "3000000000000000042", CardStatusCode = "D" };
         public Exception? SaveException { get; set; }
+
+        /// <summary>When set, <see cref="SaveException"/> is thrown only on that save call (1-based).</summary>
+        public int? SaveExceptionOnCall { get; set; }
         public List<Timecard> DayCards { get; set; } = [];
         public Exception? DayCardsException { get; set; }
         public List<TimecardSaveRequest> Saves { get; } = [];
         public int SaveCalls { get; private set; }
 
         /// <summary>Projector read calls per kind, to check what the cache saves.</summary>
-        public Dictionary<string, int> Calls { get; } = new() { ["projects"] = 0, ["setup"] = 0, ["rules"] = 0, ["day_cards"] = 0, ["assignments"] = 0 };
+        public Dictionary<string, int> Calls { get; } = new() { ["projects"] = 0, ["setup"] = 0, ["rules"] = 0, ["day_cards"] = 0, ["assignments"] = 0, ["recent"] = 0 };
+
+        /// <summary>The user's cards of the recent window (list_time_projects' recent usage).</summary>
+        public List<Timecard> RecentCards { get; set; } = [];
+
+        public Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
+            ProjectorConnection connection, string startDate, string endDate, CancellationToken cancellationToken = default)
+        {
+            Calls["recent"]++;
+            return Task.FromResult<IReadOnlyList<Timecard>>(RecentCards.ToList());
+        }
 
         public TaskAssignments Assignments { get; set; } = new(false, new Dictionary<string, IReadOnlySet<string>>());
         public Exception? AssignmentsException { get; set; }
@@ -1255,13 +1534,20 @@ public class TimeEntryTests
             ProjectorConnection connection, TimecardSaveRequest request, CancellationToken cancellationToken = default)
         {
             SaveCalls++;
-            if (SaveException is not null)
+            if (SaveException is not null && (SaveExceptionOnCall is null || SaveExceptionOnCall == SaveCalls))
             {
                 throw SaveException;
             }
 
             Saves.Add(request);
-            return Task.FromResult(SaveResult);
+            return Task.FromResult(new TimecardSaveResult
+            {
+                TimecardUid = SaveCalls == 1 ? SaveResult.TimecardUid : $"{SaveResult.TimecardUid}{SaveCalls}",
+                WorkDate = SaveResult.WorkDate,
+                WorkMinutes = SaveResult.WorkMinutes,
+                CardStatusCode = SaveResult.CardStatusCode,
+                SubmittedFlag = SaveResult.SubmittedFlag
+            });
         }
     }
 

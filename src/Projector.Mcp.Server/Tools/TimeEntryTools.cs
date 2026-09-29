@@ -41,6 +41,9 @@ public sealed class TimeEntryTools
         "Always the signed-in user's own time sheet. Optional query matches whole words or word starts of the project, " +
         "engagement or client; page with offset. By default only chargeable projects (where the user has a role) are " +
         "listed; not_chargeable_hidden counts the others, which chargeable_only = false shows with chargeable = false. " +
+        "Each project shows the user's use in the last 30 days (last_used, hours_last_30d, recent_tasks with task path " +
+        "and WBS), most recently used first; query also matches those recent task names (matched_tasks), so a task such " +
+        "as a presale opportunity finds its project. " +
         ToolOutputSchemas.TimeProjectsSchemaHint + " " +
         "WhenNotToUse: Do not use to browse engagements or a manager's projects; use list_engagements. " +
         "Do not use for who is staffed on a project; use list_project_roles.")]
@@ -80,32 +83,26 @@ public sealed class TimeEntryTools
     [McpServerTool(Name = "save_timecard", Title = "Save my Projector time card (draft)",
         ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
     [Description(
-        "Creates one work time card as Draft on the signed-in user's own time sheet, or updates one of the user's own " +
-        "Draft or Rejected cards when timecard_uid is given (from list_timecards). Never submits, approves or deletes; " +
-        "the user submits in Projector. Before calling, show the user the date, hours, project, task, role " +
-        "and narrative and get explicit confirmation. Find the values with list_time_projects, then get_timecard_options; " +
-        "task accepts the UID, the full task_path, the WBS code or a unique name; role accepts the UID or the exact name. " +
-        "The rate type is not a parameter: the server always uses the task's default rate type (on update too; moving a " +
-        "card to another task gives it that task's default). On an update send the full card, not just the changes. " +
-        "The result includes the day's total hours and warns about a likely duplicate card (same date, project and task, similar narrative); relay warnings to the user. " +
+        "Saves 1–20 work time cards on the signed-in user's own time sheet in one call: each card is created as Draft, " +
+        "or updates one of the user's own Draft or Rejected cards when its timecard_uid is given (from list_timecards). " +
+        "Never submits, approves or deletes; the user submits in Projector. Before calling, show the user every card " +
+        "(date, hours, project, task path, role, narrative) and get one explicit confirmation; then send all approved " +
+        "cards in one call. Find the values with list_time_projects, then get_timecard_options; task accepts the WBS " +
+        "code (preferred), the UID, the task_path (or its end) or a unique name; role accepts the UID or the exact name. " +
+        "The rate type is not a parameter: the server always uses the task's default rate type. On an update send the " +
+        "full card. Every card is checked first: invalid cards are reported and not sent, valid ones are saved one by " +
+        "one. dry_run = true checks everything and shows the day totals without saving. Relay each card's status and " +
+        "warnings (e.g. a likely duplicate) to the user. " +
         ToolOutputSchemas.SaveTimecardSchemaHint + " " +
         "WhenNotToUse: Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.")]
     public Task<CallToolResult> SaveTimecard(
-        [Description("Work date (yyyy-MM-dd). On update, the card's current work date.")] string work_date,
-        [Description("Hours worked, e.g. 1.5. More than 0, at most 24, in the account's time increment.")] double hours,
-        [Description("Project code, e.g. P001234-001")] string project_code,
-        [Description("Task UID, task_path, WBS code or unique task name (get_timecard_options)")] string task,
-        [Description("Role UID or exact role name (get_timecard_options)")] string role,
-        [Description("What was done; required, at most 1000 characters")] string narrative,
-        [Description("Only to update: the card's timecardUid from list_timecards. Omit to create a new Draft card.")] string? timecard_uid = null,
-        [Description("Location name; only when get_timecard_options says location_required")] string? location = null,
-        [Description("Text for UDF 1; only when get_timecard_options lists rules.udf1")] string? udf1 = null,
-        [Description("Text for UDF 2; only when get_timecard_options lists rules.udf2")] string? udf2 = null,
+        [Description("The cards to save (1–20), in the order the user approved them")] SaveTimecardCard[] cards,
+        [Description("true: check every card and show the day totals, but save nothing")] bool dry_run = false,
         CancellationToken cancellationToken = default) =>
-        InvokeAsync(ct => _timeEntry.SaveTimecardAsync(
+        InvokeAsync(ct => _timeEntry.SaveTimecardsAsync(
                 ct.ConnectionId,
-                new SaveTimecardInput(work_date, hours, project_code, task, role, narrative,
-                    timecard_uid, location, udf1, udf2),
+                (cards ?? []).Select(c => c.ToInput()).ToList(),
+                dry_run,
                 ct.Token),
             cancellationToken);
 

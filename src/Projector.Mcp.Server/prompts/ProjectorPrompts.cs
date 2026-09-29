@@ -44,9 +44,51 @@ public sealed class ProjectorPrompts
             "(2) get_timecard_options with project_code and work_date (add query with task words, a WBS code or the parent's name " +
             "on big projects) to pick a task by its task_path (summary tasks are not listed; where tasks show assigned, use one with assigned = true; the rate type is always the task's default; don't ask me about it); " +
             "if several fit, ask me; (3) show me date, hours, project, task path, role and narrative and wait for my yes; " +
-            "(4) save_timecard with the task_path; then tell me the day's total hours and any warnings from the result. " +
+            "(4) save_timecard with cards = [this card] (WBS code as task); then tell me the card's status, the day's total hours and any warnings. " +
             "It saves a Draft only; tell me to submit in Projector. " +
-            "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and pass the full card to save_timecard.");
+            "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and send the full card in save_timecard cards.");
+
+    [McpServerPrompt(Name = "projector_review_my_day"), Description(
+        "Reviews the signed-in user's working day: collects evidence of the work (meetings, mail, chats, files, work " +
+        "items) from the sources the client can access, compares it with the cards already posted, proposes the missing " +
+        "Draft time cards with project, task and hours, and saves the approved ones in one call. Never submits.")]
+    public static ChatMessage ReviewMyDay(
+        [Description("Work date yyyy-MM-dd; omit for today (before 06:00: the previous working day)")] string? work_date = null)
+        => new(ChatRole.User,
+            (string.IsNullOrWhiteSpace(work_date)
+                ? "Review my Projector PSA time for today (before 06:00 use the previous working day; say which date you used). "
+                : $"Review my Projector PSA time for {work_date.Trim()}. ") +
+            ReviewMyDaySteps);
+
+    /// <summary>The daily review, generic for any MCP client (evidence from whatever sources it can reach).</summary>
+    internal const string ReviewMyDaySteps =
+        "Read-only until I approve entries. Time cards are a date and hours: count each activity on my local working day. " +
+        "1) Projector (tools default to me): list_timecards for the day (every status; editable = false means only I can fix it " +
+        "in Projector); get_schedule for my expected hours, holidays and PTO; my last 10 working days with list_timecards, one " +
+        "week per call, as history (by_date gives the posted hours per day: flag days below expected); list_time_projects for " +
+        "the day (chargeable projects, most recently used first, with my recent tasks; its query also matches recent task names " +
+        "and descriptions). " +
+        "2) Evidence of the day's work from every source you can access: my calendar and Teams meetings (a meeting transcript, " +
+        "when there is one, shows whether I attended and how long it really ran; never quote it), e-mails and chat messages I " +
+        "wrote, files I edited, work items, commits and pull requests. Not evidence: received-only mail, notifications, my own " +
+        "placeholder blocks, messages of only a few words, earlier AI summaries. A meeting chat saying it was cancelled means it " +
+        "didn't happen. Without a transcript, use the calendar time and say \"attendance not verified\". " +
+        "3) Compare: mark each activity covered by an existing card or missing; flag duplicates, wrong projects and Rejected cards. " +
+        "4) Map each missing activity: history first (the task of my most recent card for the same topic, customer or meeting " +
+        "series; conflicting history becomes a question), then get_timecard_options for the project (query = topic words, a " +
+        "ticket number or a WBS code). Summary tasks are never listed; where tasks show assigned, pick assigned = true. The rate " +
+        "type is always the task's default: never ask about it. Show the full task path and WBS code everywhere. Durations: " +
+        "meetings from the transcript or calendar; a run of my own messages or commits on one topic is a \"suggested\" block from " +
+        "first to last evidence, rounded to the nearest time increment and trimmed at meetings; a single message or an unmeasured " +
+        "call is a question, not an estimate. Never invent a project, task or duration, and never pad the day. Descriptions on " +
+        "billable projects use customer terms. " +
+        "Output: A) summary (expected, posted, proposed, gap); B) covered activities, duplicates, Rejected cards and cards to " +
+        "fix; C) numbered proposals: hours | project | task path (WBS) | role | description | evidence | confidence; D) numbered " +
+        "questions, one per possible card, with options; E) what could not be confirmed and why. Then stop and ask which entries " +
+        "to save. " +
+        "5) Save all approved cards in one save_timecard call (cards = [...], WBS code as task). Report each card's status " +
+        "(saved, invalid, failed, not_attempted) with its reason, and the day totals against my expected hours. Fix invalid cards " +
+        "with me and send them in one more call. Cards are Drafts; I submit in Projector.";
 
     [McpServerPrompt(Name = "projector_timecards_for_project"), Description(
         "Returns a person's timecards for a named project/engagement in a week or month.")]

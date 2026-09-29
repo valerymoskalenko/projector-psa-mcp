@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.6.1"
+    "version": "0.6.2"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -507,7 +507,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many projects the signed-in user can enter time on for one work_date (PwsSearchProjects, ListType=T, available projects only), with the user's roles on each. Always the signed-in user's own time sheet; no resource parameter. Optional query matches whole words or word starts of the project, engagement or client (best match first). The query filters the user's full project list in memory (cached per user for a few minutes); page with offset. chargeable is false where the user has no role on the project (Projector refuses time there). By default only chargeable projects are listed (not_chargeable_hidden counts the rest); chargeable_only = false shows them too.",
+      "description": "Lists many projects the signed-in user can enter time on for one work_date (PwsSearchProjects, ListType=T, available projects only), with the user's roles on each. Always the signed-in user's own time sheet; no resource parameter. Optional query matches whole words or word starts of the project, engagement or client (best match first). The query filters the user's full project list in memory (cached per user for a few minutes); page with offset. chargeable is false where the user has no role on the project (Projector refuses time there). By default only chargeable projects are listed (not_chargeable_hidden counts the rest); chargeable_only = false shows them too. Each project shows the user's use in the last 30 days (last_used, hours_last_30d, recent_tasks), most recent first; query also matches recent task names (matched_tasks).",
       "whenNotToUse": "Do not use to browse engagements or a manager's projects; use list_engagements. Do not use for who is staffed on a project; use list_project_roles.",
       "inputSchema": {
         "type": "object",
@@ -606,58 +606,76 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Creates one work time card as Draft on the signed-in user's own time sheet, or updates one of the user's own Draft or Rejected cards when timecard_uid is given (PwsSaveTimeCards with SubmitFlag=false, no ResourceIdentity). Never submits, approves or deletes. The agent must confirm the card with the user first. task accepts the UID, the full task_path, the WBS code or a unique name; role accepts the UID or the exact name. There is no rate_type parameter: the server always uses the task's default rate type, on create and on update (moving a card to another task gives it that task's default); a task without a default uses its only allowed rate type, otherwise error no_default_rate_type. The result includes the day's total hours and card count, and a warning when a card with the same date, project and task and a similar narrative already exists; the card is still saved. The save is sent once and never retried; on write_outcome_unknown check list_timecards before retrying. On web_services_access_view_only nothing was saved: the user's Projector Web Services Access is V (View), not U (Update), and they must ask their Projector PSA administrator to change it. Refuses, with nothing saved, the two cases Projector would auto-reject at submit: a summary task with sub-tasks (error summary_task, lists the sub-tasks) and, on projects that restrict time to assigned people, a task the user's role is not assigned to (error not_assigned_to_task). Error projector_busy: too many parallel requests; retry in a few seconds.",
+      "description": "Saves 1–20 work time cards on the signed-in user's own time sheet in one call (PwsSaveTimeCards per card, SubmitFlag=false): each card is created as Draft, or updates one of the user's own Draft or Rejected cards when its timecard_uid is given. Never submits, approves or deletes; no resource parameter. Show the user every card and get one confirmation, then send all approved cards in one call. Every card is checked first (task, role, hours, summary tasks, tasks the user is not assigned to, duplicates): invalid cards are reported and not sent, valid ones are saved one by one and never retried; after an unknown outcome the remaining cards are not attempted. The rate type is always the task's default. dry_run = true checks everything and shows the day totals without saving.",
       "whenNotToUse": "Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.",
       "inputSchema": {
         "type": "object",
         "required": [
-          "work_date",
-          "hours",
-          "project_code",
-          "task",
-          "role",
-          "narrative"
+          "cards"
         ],
         "properties": {
-          "work_date": {
-            "type": "string",
-            "format": "date",
-            "description": "Work date (yyyy-MM-dd). On update, the card's current work date."
+          "cards": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "The cards to save (1–20), in the order the user approved them",
+            "items": {
+              "type": "object",
+              "required": [
+                "work_date",
+                "hours",
+                "project_code",
+                "task",
+                "role",
+                "narrative"
+              ],
+              "properties": {
+                "work_date": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "Work date (yyyy-MM-dd). On update, the card's current work date."
+                },
+                "hours": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 24,
+                  "description": "Hours worked, in the account's time increment (e.g. 0.25 steps)"
+                },
+                "project_code": {
+                  "type": "string"
+                },
+                "task": {
+                  "type": "string",
+                  "description": "WBS code (preferred), task UID, task_path or unique task name (get_timecard_options)"
+                },
+                "role": {
+                  "type": "string",
+                  "description": "Role UID or exact role name"
+                },
+                "narrative": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "timecard_uid": {
+                  "type": "string",
+                  "description": "Only to update: timecardUid from list_timecards"
+                },
+                "location": {
+                  "type": "string"
+                },
+                "udf1": {
+                  "type": "string"
+                },
+                "udf2": {
+                  "type": "string"
+                }
+              }
+            }
           },
-          "hours": {
-            "type": "number",
-            "exclusiveMinimum": 0,
-            "maximum": 24,
-            "description": "Hours worked, in the account's time increment (e.g. 0.25 steps)"
-          },
-          "project_code": {
-            "type": "string"
-          },
-          "task": {
-            "type": "string",
-            "description": "Task UID, task_path, WBS code or unique task name"
-          },
-          "role": {
-            "type": "string",
-            "description": "Role UID or exact role name"
-          },
-          "narrative": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          },
-          "timecard_uid": {
-            "type": "string",
-            "description": "Only to update: timecardUid from list_timecards"
-          },
-          "location": {
-            "type": "string"
-          },
-          "udf1": {
-            "type": "string"
-          },
-          "udf2": {
-            "type": "string"
+          "dry_run": {
+            "type": "boolean",
+            "description": "true: check every card and show the day totals, but save nothing"
           }
         }
       }

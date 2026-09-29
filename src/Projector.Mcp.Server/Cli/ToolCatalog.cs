@@ -278,6 +278,16 @@ public static class ToolCatalog
         IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
     {
         var svc = services.GetRequiredService<TimeEntryToolService>();
+        var dryRun = GetBool(args, "dry_run");
+
+        // --cards-json <file>: the same cards array the MCP tool takes. Otherwise the single-card flags make one card.
+        if (args.TryGetValue("cards_json", out var cardsFile) && !string.IsNullOrWhiteSpace(cardsFile))
+        {
+            var cards = System.Text.Json.JsonSerializer.Deserialize<Tools.SaveTimecardCard[]>(File.ReadAllText(cardsFile))
+                ?? throw new ArgumentException("--cards-json must contain a JSON array of cards.");
+            return svc.SaveTimecardsAsync(connectionId, cards.Select(c => c.ToInput()).ToList(), dryRun, ct);
+        }
+
         var hours = double.TryParse(Require(args, "hours"), System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out var h)
             ? h
@@ -286,19 +296,22 @@ public static class ToolCatalog
         args.TryGetValue("location", out var location);
         args.TryGetValue("udf1", out var udf1);
         args.TryGetValue("udf2", out var udf2);
-        return svc.SaveTimecardAsync(
+        return svc.SaveTimecardsAsync(
             connectionId,
-            new SaveTimecardInput(
-                Require(args, "work_date"),
-                hours,
-                Require(args, "project_code"),
-                Require(args, "task"),
-                Require(args, "role"),
-                Require(args, "narrative"),
-                timecardUid,
-                location,
-                udf1,
-                udf2),
+            [
+                new SaveTimecardInput(
+                    Require(args, "work_date"),
+                    hours,
+                    Require(args, "project_code"),
+                    Require(args, "task"),
+                    Require(args, "role"),
+                    Require(args, "narrative"),
+                    timecardUid,
+                    location,
+                    udf1,
+                    udf2)
+            ],
+            dryRun,
             ct);
     }
 

@@ -63,7 +63,9 @@ public static class ToolOutputSchemas
 
     public const string TimeProjectsSchemaHint =
         "Output keys: work_date, query, count, total, offset, has_more, next_offset, not_chargeable_hidden, projects[] (project_code, "
-        + "project_name, engagement_code, client_name, billable, chargeable, roles[] with role_uid and role_name), next_step.";
+        + "project_name, engagement_code, client_name, billable, chargeable, roles[] with role_uid and role_name, last_used, "
+        + "hours_last_30d, recent_tasks[] and matched_tasks[] with task_path, wbs_code, hours, last_used), recent_note, next_step. "
+        + "Save by the wbs_code of a recent task.";
 
     public const string TimecardOptionsSchemaHint =
         "Output keys: work_date, project (open_for_time, narrative_required), roles[] (role_uid, role_name), "
@@ -76,11 +78,16 @@ public static class ToolOutputSchemas
         + "rules (time_increment_minutes, max_hours_per_day, location_required, udf1, udf2), next_step.";
 
     public const string SaveTimecardSchemaHint =
-        "Output keys: action (created|updated), timecard (timecard_uid, work_date, hours, project_code, task, task_path, "
-        + "wbs_code, role, rate_type, narrative, status), day (work_date, total_hours, card_count: all the user's cards on "
-        + "that date after this save), submitted (always false), note, warnings (e.g. a possible duplicate card; relay "
-        + "them to the user). "
-        + "On error write_outcome_unknown the save may or may not have happened: check list_timecards before retrying. "
+        "Output keys: action (saved|dry_run), results[] (one per card, in input order: index, status saved|valid|invalid|"
+        + "failed|not_attempted, action created|updated, timecard (timecard_uid, work_date, hours, project_code, task, "
+        + "task_path, wbs_code, role, rate_type, narrative, status), day, note, warnings; or error and message), days[] "
+        + "(work_date, total_hours, card_count: all the user's cards on that date after this call), saved_count, "
+        + "valid_count (dry run), invalid_count, failed_count, not_attempted_count, submitted (always false), note. "
+        + "Relay each card's status, errors and warnings (e.g. a possible duplicate) to the user. "
+        + "invalid = not sent (fix and send it again); failed = Projector refused it; not_attempted = not sent because an "
+        + "earlier card's outcome was unknown. "
+        + "Error write_outcome_unknown on a card: that save may or may not have happened; check list_timecards before "
+        + "sending it or the not_attempted cards again. "
         + "On error web_services_access_view_only nothing was saved: tell the user their Projector Web Services Access is "
         + "V (View), not U (Update), and to ask their Projector PSA administrator to change it; do not retry. "
         + "On error summary_task or not_assigned_to_task nothing was saved: pick one of the sub-tasks the message lists, "

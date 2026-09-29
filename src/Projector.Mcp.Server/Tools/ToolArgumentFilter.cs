@@ -40,21 +40,28 @@ internal static class ToolArgumentFilter
         };
 
     /// <summary>Fixes the arguments in place; returns a message when one can't be used.</summary>
-    internal static string? Normalize(IDictionary<string, JsonElement> arguments, JsonElement schema)
+    internal static string? Normalize(IDictionary<string, JsonElement> arguments, JsonElement schema) =>
+        NormalizeObject(arguments, schema, prefix: string.Empty);
+
+    /// <summary>
+    /// One object's properties (the arguments, or an item of an array argument such as save_timecard's cards).
+    /// Error messages name the full path, e.g. cards[2].hours.
+    /// </summary>
+    private static string? NormalizeObject(IDictionary<string, JsonElement> arguments, JsonElement schema, string prefix)
     {
         var properties = schema.ValueKind == JsonValueKind.Object && schema.TryGetProperty("properties", out var p) ? p : default;
         foreach (var name in arguments.Keys.ToList())
         {
             var value = arguments[name];
+            var path = prefix + name;
             if (value.ValueKind == JsonValueKind.Null)
             {
                 arguments.Remove(name);
                 continue;
             }
 
-            var type = properties.ValueKind == JsonValueKind.Object && properties.TryGetProperty(name, out var prop)
-                ? SchemaType(prop)
-                : null;
+            var prop = properties.ValueKind == JsonValueKind.Object && properties.TryGetProperty(name, out var found) ? found : default;
+            var type = prop.ValueKind == JsonValueKind.Object ? SchemaType(prop) : null;
             switch (type)
             {
                 case "integer":
@@ -64,7 +71,7 @@ internal static class ToolArgumentFilter
                     }
                     else
                     {
-                        return $"{name} must be a whole number (got {value.GetRawText()}).";
+                        return $"{path} must be a whole number (got {value.GetRawText()}).";
                     }
 
                     break;
@@ -75,7 +82,7 @@ internal static class ToolArgumentFilter
                     }
                     else
                     {
-                        return $"{name} must be a number (got {value.GetRawText()}).";
+                        return $"{path} must be a number (got {value.GetRawText()}).";
                     }
 
                     break;
@@ -91,11 +98,71 @@ internal static class ToolArgumentFilter
                         break;
                     }
 
-                    return $"{name} must be true or false (got {value.GetRawText()}).";
+                    return $"{path} must be true or false (got {value.GetRawText()}).";
+                case "array":
+                    var (array, problem) = NormalizeArray(value, prop, path);
+                    if (problem is not null)
+                    {
+                        return problem;
+                    }
+
+                    arguments[name] = array;
+                    break;
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// An array argument: a JSON array sent as a string is parsed, and object items are normalized like arguments.
+    /// </summary>
+    private static (JsonElement Value, string? Problem) NormalizeArray(JsonElement value, JsonElement schema, string path)
+    {
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            try
+            {
+                value = JsonDocument.Parse(value.GetString() ?? string.Empty).RootElement.Clone();
+            }
+            catch (JsonException)
+            {
+                return (value, $"{path} must be a list (got a string that is not a JSON array).");
+            }
+        }
+
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return (value, $"{path} must be a list (got {value.ValueKind.ToString().ToLowerInvariant()}).");
+        }
+
+        var items = schema.TryGetProperty("items", out var itemSchema) ? itemSchema : default;
+        if (items.ValueKind != JsonValueKind.Object || SchemaType(items) != "object")
+        {
+            return (value, null);
+        }
+
+        var normalized = new List<Dictionary<string, JsonElement>>();
+        var index = 0;
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                return (value, $"{path}[{index}] must be an object.");
+            }
+
+            var fields = item.EnumerateObject().ToDictionary(f => f.Name, f => f.Value.Clone(), StringComparer.Ordinal);
+            var problem = NormalizeObject(fields, items, $"{path}[{index}].");
+            if (problem is not null)
+            {
+                return (value, problem);
+            }
+
+            normalized.Add(fields);
+            index++;
+        }
+
+        return (JsonSerializer.SerializeToElement(normalized), null);
     }
 
     /// <summary>The JSON schema type, ignoring "null" in a type list (nullable parameters).</summary>

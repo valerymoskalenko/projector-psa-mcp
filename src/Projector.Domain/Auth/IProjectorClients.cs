@@ -113,6 +113,13 @@ public interface IProjectorTimeEntryClient
         string workDate,
         CancellationToken cancellationToken = default);
 
+    /// <summary>The caller's own work cards (any status) from <paramref name="startDate"/> through <paramref name="endDate"/>.</summary>
+    Task<IReadOnlyList<Timecard>> ListOwnTimecardsAsync(
+        ProjectorConnection connection,
+        string startDate,
+        string endDate,
+        CancellationToken cancellationToken = default);
+
     Task<OwnTimecard?> GetOwnTimecardAsync(
         ProjectorConnection connection,
         string timecardUid,

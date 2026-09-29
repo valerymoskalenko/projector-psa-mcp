@@ -41,6 +41,10 @@ public sealed class TimeEntryToolService
         "Do not retry this call until the permission is changed.";
 
     public const int MaxNarrativeLength = 1000;
+    public const int MaxCardsPerSave = 20;
+
+    /// <summary>Error code of a save whose outcome is unknown (the request may have reached Projector).</summary>
+    private const string WriteOutcomeUnknown = "write_outcome_unknown";
     public const int DefaultMaxTasks = 50;
     public const int MaxTasksLimit = 200;
     private const int MaxListedNames = 25;
@@ -49,6 +53,9 @@ public sealed class TimeEntryToolService
     private const string SetupKind = "setup";
     private const string DayCardsKind = "day_cards";
     private const string AssignmentsKind = "assignments";
+    private const string RecentKind = "recent";
+    private const int RecentDays = 30;
+    private const int MaxRecentTasks = 5;
     private static readonly HashSet<string> EditableStatuses = new(StringComparer.OrdinalIgnoreCase) { "D", "R" };
 
     private readonly ProjectorConnectionService _connections;
@@ -82,13 +89,30 @@ public sealed class TimeEntryToolService
         offset = Math.Max(0, offset);
         var connection = await RequireAsync(connectionId, ct);
         var all = await GetProjectsAsync(connection, date, ct);
+        var (recent, recentNote) = await TryGetRecentUsageAsync(connection, date, ct);
+        RecentUsage? Usage(TimeEntryProjectSummary p) => recent?.GetValueOrDefault(p.ProjectCode.ToUpperInvariant());
 
         // Filtered here, on the cached full list (Projector ignores MaximumRows anyway), so a new query or page
         // does not call Projector again. By default only projects where the user has a role: time elsewhere is refused.
+        // A query also matches the tasks the user posted to recently (task path, WBS or the cards' descriptions), so
+        // an opportunity or customer name finds the project and task used for that work.
         var text = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
-        int Score(TimeEntryProjectSummary p) =>
-            TextMatch.Score(text!, p.ProjectCode, p.ProjectName, p.EngagementCode, p.EngagementName, p.ClientName);
-        var candidates = all.Where(p => !chargeableOnly || p.Roles.Count > 0).ToList();
+        IReadOnlyList<RecentTask> MatchedTasks(TimeEntryProjectSummary p) =>
+            text is null || Usage(p) is not { } u
+                ? []
+                : u.Tasks.Where(task => TextMatch.Matches(text, [task.Path, task.WbsCode, .. task.Descriptions])).ToList();
+        int Score(TimeEntryProjectSummary p) => Math.Max(
+            TextMatch.Score(text!, p.ProjectCode, p.ProjectName, p.EngagementCode, p.EngagementName, p.ClientName),
+            MatchedTasks(p).Count > 0 ? 1 : 0);
+
+        // Most recently used first, then Projector's order.
+        var candidates = all
+            .Where(p => !chargeableOnly || p.Roles.Count > 0)
+            .Select((p, i) => (p, i))
+            .OrderByDescending(x => Usage(x.p)?.LastUsed ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(x => x.i)
+            .Select(x => x.p)
+            .ToList();
         var notChargeableHidden = all.Count - candidates.Count;
         var matches = text is null ? candidates : Ranked(candidates, Score);
         var hiddenMatches = chargeableOnly && text is not null && matches.Count == 0
@@ -116,18 +140,78 @@ public sealed class TimeEntryToolService
                 billable = p.Billable,
                 chargeable = p.Roles.Count > 0,
                 roles = p.Roles.Select(r => new { role_uid = r.Uid, role_name = r.Name }).ToList(),
-                unavailable_reason = p.UnavailableReasonCode
+                unavailable_reason = p.UnavailableReasonCode,
+                last_used = Usage(p)?.LastUsed,
+                hours_last_30d = Usage(p)?.Hours,
+                recent_tasks = Usage(p)?.Tasks.Take(MaxRecentTasks).Select(TaskView).ToList(),
+                matched_tasks = MatchedTasks(p) is { Count: > 0 } matched ? matched.Select(TaskView).ToList() : null
             }).ToList(),
+            recent_note = recentNote,
             next_step = hiddenMatches > 0
                 ? $"{hiddenMatches} project(s) match '{text}' but you have no role there, so Projector refuses time on them " +
                   "(see them with chargeable_only = false). Ask the project manager to add you, or pick another project."
                 : text is not null && matches.Count == 0
                 ? $"No project you can enter time on matches '{text}'. Projector lists only projects where you have a role: " +
                   "check the name with list_engagements, and ask the project manager to add you if it exists. The words may " +
-                  "also be a task inside another project (e.g. a presale opportunity): try get_timecard_options with query."
+                  "also be a task inside another project that you haven't posted to in the last 30 days: find it with " +
+                  "list_timecards (query, a longer date range) or get_timecard_options (query) on the likely project."
                 : "Call get_timecard_options with a project_code where chargeable is true and the same work_date " +
                   "(add query to find a task by name, WBS or parent)."
         };
+    }
+
+    /// <summary>The user's own posting on one project in the recent window.</summary>
+    private sealed record RecentUsage(string LastUsed, double Hours, IReadOnlyList<RecentTask> Tasks);
+
+    /// <summary>A task the user posted to recently; <paramref name="Descriptions"/> are only matched, never shown.</summary>
+    private sealed record RecentTask(string? Path, string? WbsCode, double Hours, string LastUsed, IReadOnlyList<string> Descriptions);
+
+    private static object TaskView(RecentTask t) =>
+        new { task_path = t.Path, wbs_code = t.WbsCode, hours = t.Hours, last_used = t.LastUsed };
+
+    /// <summary>
+    /// The user's own cards of the last <see cref="RecentDays"/> days up to the work date, summed per project and task
+    /// (one Projector read, cached per user). A failed read never blocks the project list: it returns a note instead.
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<string, RecentUsage>? Usage, string? Note)> TryGetRecentUsageAsync(
+        ProjectorConnection connection,
+        string workDate,
+        CancellationToken ct)
+    {
+        var end = DateTime.ParseExact(workDate, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var start = end.AddDays(-(RecentDays - 1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        try
+        {
+            var cards = await _cache.GetOrLoadAsync(connection, RecentKind, workDate, TimeEntryCache.LookupTtl, () =>
+                WithRefreshAsync(connection, c => _timeEntry.ListOwnTimecardsAsync(c, start, workDate, ct), ct));
+            var usage = cards
+                .Where(c => !string.IsNullOrWhiteSpace(c.ProjectCode) && !string.IsNullOrWhiteSpace(c.WorkDate))
+                .GroupBy(c => c.ProjectCode!.ToUpperInvariant())
+                .ToDictionary(
+                    g => g.Key,
+                    g => new RecentUsage(
+                        g.Max(c => c.WorkDate!)!,
+                        g.Sum(c => c.WorkMinutes) / 60.0,
+                        g.GroupBy(c => c.ProjectTaskUid ?? c.TaskWbsCode ?? c.TaskName ?? string.Empty)
+                            .Select(tg => new RecentTask(
+                                tg.First().TaskPath ?? tg.First().TaskName,
+                                tg.First().TaskWbsCode,
+                                tg.Sum(c => c.WorkMinutes) / 60.0,
+                                tg.Max(c => c.WorkDate!)!,
+                                tg.Select(c => c.Description).OfType<string>().Distinct(StringComparer.Ordinal).ToList()))
+                            .OrderByDescending(task => task.LastUsed, StringComparer.Ordinal)
+                            .ThenByDescending(task => task.Hours)
+                            .ToList()),
+                    StringComparer.Ordinal);
+            return (usage, null);
+        }
+        catch (Exception ex) when (ex is ProjectorApiException or HttpRequestException or TaskCanceledException
+            && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "list_time_projects: could not read recent cards from {Start} to {End}", start, workDate);
+            return (null, $"Recent usage is missing: your cards from {start} to {workDate} could not be read. " +
+                "list_timecards shows them.");
+        }
     }
 
     public async Task<object> GetTimecardOptionsAsync(
@@ -222,9 +306,219 @@ public sealed class TimeEntryToolService
         };
     }
 
-    public async Task<object> SaveTimecardAsync(
+    /// <summary>
+    /// Saves up to <see cref="MaxCardsPerSave"/> cards in one call (one user approval). Every card is checked first;
+    /// invalid cards are reported and not sent, valid ones are saved one by one (one Projector call each, never
+    /// retried). A Projector error on one card doesn't stop the others, but an unknown outcome (the save may or may
+    /// not have happened) stops the batch: the rest are reported as not attempted, so nothing is sent twice.
+    /// With <paramref name="dryRun"/> nothing is saved: the result shows what would be saved and the day totals.
+    /// </summary>
+    public async Task<object> SaveTimecardsAsync(
+        string connectionId,
+        IReadOnlyList<SaveTimecardInput>? cards,
+        bool dryRun,
+        CancellationToken ct)
+    {
+        var outcome = await SaveCardsCoreAsync(connectionId, cards, dryRun, ct);
+        var results = outcome.Cards.Select(c => c.View).ToList();
+        int Count(string status) => outcome.Cards.Count(c => c.Status == status);
+        return new
+        {
+            action = dryRun ? "dry_run" : "saved",
+            results,
+            days = outcome.Days,
+            saved_count = Count("saved"),
+            valid_count = dryRun ? Count("valid") : (int?)null,
+            invalid_count = Count("invalid"),
+            failed_count = Count("failed"),
+            not_attempted_count = Count("not_attempted"),
+            submitted = false,
+            note = dryRun
+                ? "Dry run: nothing was saved. Cards with status valid would be saved; fix the invalid ones first."
+                : "Saved cards are Drafts, not submitted. Submit your time sheet in Projector when it is complete.",
+            warnings = outcome.Warnings.Count == 0 ? null : outcome.Warnings
+        };
+    }
+
+    /// <summary>
+    /// One card, the shape tests use: returns that card's result, or throws its error (same exception as before
+    /// batches existed).
+    /// </summary>
+    internal async Task<object> SaveTimecardAsync(
         string connectionId,
         SaveTimecardInput input,
+        CancellationToken ct)
+    {
+        var outcome = await SaveCardsCoreAsync(connectionId, [input], dryRun: false, ct);
+        var card = outcome.Cards[0];
+        if (card.Error is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(card.Error).Throw();
+        }
+
+        return card.View;
+    }
+
+    private sealed record CardOutcome(int Index, string Status, object View, Exception? Error = null);
+
+    private sealed record BatchOutcome(IReadOnlyList<CardOutcome> Cards, IReadOnlyList<object> Days, IReadOnlyList<string> Warnings);
+
+    /// <summary>A card that passed every check: the Projector request plus what the result shows.</summary>
+    private sealed record PreparedCard(
+        int Index,
+        TimecardSaveRequest Request,
+        TimeEntryProjectSetup Setup,
+        TimeEntryTask Task,
+        TimeEntryRole Role,
+        TimeEntryRateType RateType,
+        OwnTimecard? Existing)
+    {
+        public bool IsUpdate => Request.TimecardUid is not null;
+    }
+
+    private async Task<BatchOutcome> SaveCardsCoreAsync(
+        string connectionId,
+        IReadOnlyList<SaveTimecardInput>? cards,
+        bool dryRun,
+        CancellationToken ct)
+    {
+        if (cards is null || cards.Count is 0 or > MaxCardsPerSave)
+        {
+            throw new ArgumentException($"cards must contain 1–{MaxCardsPerSave} time cards.");
+        }
+
+        var connection = await RequireAsync(connectionId, ct);
+        var rules = await GetRulesAsync(connection, ct);
+        var outcomes = new CardOutcome?[cards.Count];
+        var prepared = new List<PreparedCard>();
+        for (var i = 0; i < cards.Count; i++)
+        {
+            try
+            {
+                prepared.Add(await PrepareAsync(connection, i, cards[i], rules, ct));
+            }
+            catch (Exception ex) when (IsCardError(ex, ct))
+            {
+                outcomes[i] = Failed(i, "invalid", ex);
+            }
+        }
+
+        // The day's cards feed the duplicate check and the day totals; earlier cards of this batch are added as they
+        // are saved (or, in a dry run, as they would be), so a duplicate inside the batch is caught too.
+        var days = new Dictionary<string, List<Timecard>?>(StringComparer.Ordinal);
+        var unreadDates = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var date in prepared.Select(p => p.Request.WorkDate).Distinct(StringComparer.Ordinal))
+        {
+            var dayCards = await TryGetDayCardsAsync(connection, date, ct);
+            days[date] = dayCards?.ToList();
+            if (dayCards is null)
+            {
+                unreadDates.Add(date);
+            }
+        }
+
+        var stopped = false;
+        foreach (var card in prepared)
+        {
+            var date = card.Request.WorkDate;
+            if (stopped)
+            {
+                outcomes[card.Index] = new CardOutcome(card.Index, "not_attempted", new
+                {
+                    index = card.Index,
+                    status = "not_attempted",
+                    message = "Not sent: an earlier save in this call had an unknown outcome. Check list_timecards, then send this card again."
+                });
+                continue;
+            }
+
+            var cardWarnings = new List<string>();
+            if (unreadDates.Contains(date))
+            {
+                cardWarnings.Add($"Could not read your other cards for {date}, so there is no duplicate check or day total. " +
+                    "Check with list_timecards.");
+            }
+
+            if (!card.IsUpdate && days[date] is { } before
+                && FindLikelyDuplicate(before, card.Request.ProjectCode, card.Task.Uid, card.Request.WorkMinutes, card.Request.Description) is { } duplicate)
+            {
+                cardWarnings.Add(
+                    $"Possible duplicate: card {duplicate.TimecardUid ?? "earlier in this call"} ({duplicate.WorkHours:0.##} h, " +
+                    $"{duplicate.Status}) is already on {date} for the same project and task: \"{Shorten(duplicate.Description)}\". " +
+                    "Both cards are kept; ask the user whether this one should stay.");
+            }
+
+            if (dryRun)
+            {
+                AddToDay(days, date, ToTimecard(card, card.Request.TimecardUid, "D"));
+                outcomes[card.Index] = new CardOutcome(card.Index, "valid", CardView(card, "valid", card.Request.TimecardUid, "D", DayView(days, date), cardWarnings, note: null));
+                continue;
+            }
+
+            TimecardSaveResult saved;
+            try
+            {
+                saved = await WithRefreshAsync(connection, c => _timeEntry.SaveTimecardAsync(c, card.Request, ct), ct);
+            }
+            catch (ProjectorApiException ex)
+            {
+                _logger.LogWarning(
+                    "save_timecard failed: {ErrorCode} {ErrorMessage} (update={IsUpdate})", ex.ErrorCode, ex.Message, card.IsUpdate);
+                _cache.Remove(connection, DayCardsKind, date);
+                days[date] = null;
+                var mapped = MapSaveError(ex);
+                outcomes[card.Index] = Failed(card.Index, "failed", mapped);
+                stopped = string.Equals(ex.ErrorCode, WriteOutcomeUnknown, StringComparison.Ordinal);
+                continue;
+            }
+
+            // Projector saves every create and every update as Draft: a Rejected card goes back to Draft when saved
+            // (seen live 2026-09-25), and the user resubmits it like any other draft.
+            const string expectedStatus = "D";
+            if (saved.SubmittedFlag)
+            {
+                _logger.LogError("save_timecard: Projector reported SubmittedFlag=true for card {TimecardUid}", saved.TimecardUid);
+                cardWarnings.Add("Projector reported the card as submitted, which save_timecard never requests. Check it in Projector.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(saved.CardStatusCode)
+                && !string.Equals(saved.CardStatusCode, expectedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "save_timecard: card {TimecardUid} status {Actual}, expected {Expected}", saved.TimecardUid, saved.CardStatusCode, expectedStatus);
+                cardWarnings.Add($"The card is now {StatusName(saved.CardStatusCode)} (expected {StatusName(expectedStatus)}).");
+            }
+
+            var statusCode = saved.CardStatusCode ?? expectedStatus;
+            var savedUid = saved.TimecardUid ?? card.Request.TimecardUid;
+            if (days[date] is not null && savedUid is not null)
+            {
+                AddToDay(days, date, ToTimecard(card, savedUid, statusCode));
+                _cache.Set(connection, DayCardsKind, date, (IReadOnlyList<Timecard>)days[date]!, TimeEntryCache.DayCardsTtl);
+            }
+            else
+            {
+                _cache.Remove(connection, DayCardsKind, date);
+            }
+
+            var wasRejected = card.IsUpdate && string.Equals(card.Existing!.CardStatusCode, "R", StringComparison.OrdinalIgnoreCase);
+            outcomes[card.Index] = new CardOutcome(card.Index, "saved", CardView(
+                card, "saved", savedUid, statusCode, DayView(days, date), cardWarnings,
+                wasRejected
+                    ? "Saved. The card was Rejected and is now a Draft again, not submitted. Resubmit it in Projector."
+                    : "Saved as Draft, not submitted. Submit your time sheet in Projector when it is complete."));
+        }
+
+        var dayTotals = days.Keys.OrderBy(d => d, StringComparer.Ordinal).Select(d => DayView(days, d)).OfType<object>().ToList();
+        return new BatchOutcome(outcomes.Select(o => o!).ToList(), dayTotals, []);
+    }
+
+    /// <summary>Every check a card needs before it may be sent; throws with the reason when it can't be saved.</summary>
+    private async Task<PreparedCard> PrepareAsync(
+        ProjectorConnection connection,
+        int index,
+        SaveTimecardInput input,
+        TimeEntryParameters rules,
         CancellationToken ct)
     {
         var date = ParseWorkDate(input.WorkDate);
@@ -243,17 +537,13 @@ public sealed class TimeEntryToolService
         }
 
         var timecardUid = string.IsNullOrWhiteSpace(input.TimecardUid) ? null : input.TimecardUid.Trim();
-        var isUpdate = timecardUid is not null;
-        var connection = await RequireAsync(connectionId, ct);
-
-        var rules = await GetRulesAsync(connection, ct);
         var minutes = ToMinutes(input.Hours, rules.ReportingTimeIncrementMinutes);
 
         OwnTimecard? existing = null;
-        if (isUpdate)
+        if (timecardUid is not null)
         {
             // Never cached: the Timestamp must be current or Projector rejects the update.
-            existing = await WithRefreshAsync(connection, c => _timeEntry.GetOwnTimecardAsync(c, timecardUid!, date, ct), ct)
+            existing = await WithRefreshAsync(connection, c => _timeEntry.GetOwnTimecardAsync(c, timecardUid, date, ct), ct)
                 ?? throw new ProjectorApiException(
                     $"No time card {timecardUid} dated {date} on your own time sheet. Use the timecardUid and workDate " +
                     "from list_timecards; you can only update your own cards.",
@@ -348,134 +638,105 @@ public sealed class TimeEntryToolService
             Udf1 = BuildUdf("udf1", input.Udf1, rules.Udf1, setup.Udf1Treatment),
             Udf2 = BuildUdf("udf2", input.Udf2, rules.Udf2, setup.Udf2Treatment)
         };
+        return new PreparedCard(index, request, setup, task, role, rateType, existing);
+    }
 
-        // The day's cards feed the duplicate check and the day total. The save doesn't need them,
-        // so a failed read only becomes a warning.
-        var warnings = new List<string>();
-        var dayCards = await TryGetDayCardsAsync(connection, date, ct);
-        if (dayCards is null)
-        {
-            warnings.Add("Could not read your other cards for this date, so there is no duplicate check or day total. " +
-                "Check with list_timecards.");
-        }
-        else if (!isUpdate)
-        {
-            var duplicate = FindLikelyDuplicate(dayCards, projectCode, task.Uid, minutes, narrative);
-            if (duplicate is not null)
-            {
-                warnings.Add(
-                    $"Possible duplicate: card {duplicate.TimecardUid} ({duplicate.WorkHours:0.##} h, {duplicate.Status}) " +
-                    $"was already on {date} for the same project and task: \"{Shorten(duplicate.Description)}\". " +
-                    "Both cards are kept; ask the user whether this new one should stay.");
-            }
-        }
+    /// <summary>A card's own problem (bad input, a Projector refusal, a failed lookup), not a cancelled call.</summary>
+    private static bool IsCardError(Exception ex, CancellationToken ct) =>
+        ex is ProjectorApiException or ArgumentException or HttpRequestException
+        || (ex is TaskCanceledException && !ct.IsCancellationRequested);
 
-        TimecardSaveResult saved;
-        try
+    private CardOutcome Failed(int index, string status, Exception ex)
+    {
+        var code = ex switch
         {
-            saved = await WithRefreshAsync(connection, c => _timeEntry.SaveTimecardAsync(c, request, ct), ct);
-        }
-        catch (ProjectorApiException ex)
-        {
-            _logger.LogWarning(
-                "save_timecard failed: {ErrorCode} {ErrorMessage} (update={IsUpdate})",
-                ex.ErrorCode,
-                ex.Message,
-                isUpdate);
-            _cache.Remove(connection, DayCardsKind, date);
-            throw MapSaveError(ex);
-        }
+            ProjectorApiException api => api.ErrorCode ?? "projector_error",
+            ArgumentException => "invalid_argument",
+            _ => "projector_unavailable"
+        };
+        var message = ex is ProjectorApiException or ArgumentException
+            ? ex.Message
+            : "Projector could not be reached while checking this card; nothing was saved for it. Try again.";
+        _logger.LogWarning("save_timecard card {Index} {Status}: {ErrorCode} {ErrorMessage}", index, status, code, message);
+        return new CardOutcome(index, status, new { index, status, error = code, message }, ex);
+    }
 
-        // Projector saves every create and every update as Draft: a Rejected card goes back to Draft when saved
-        // (seen live 2026-09-25), and the user resubmits it like any other draft.
-        const string expectedStatus = "D";
-        var wasRejected = isUpdate && string.Equals(existing!.CardStatusCode, "R", StringComparison.OrdinalIgnoreCase);
-        if (saved.SubmittedFlag)
-        {
-            _logger.LogError("save_timecard: Projector reported SubmittedFlag=true for card {TimecardUid}", saved.TimecardUid);
-            warnings.Add("Projector reported the card as submitted, which save_timecard never requests. Check it in Projector.");
-        }
+    private static Timecard ToTimecard(PreparedCard card, string? uid, string statusCode) => new()
+    {
+        TimecardUid = uid,
+        ProjectCode = card.Setup.ProjectCode,
+        ProjectName = card.Setup.ProjectName,
+        WorkDate = card.Request.WorkDate,
+        WorkMinutes = card.Request.WorkMinutes,
+        WorkHours = card.Request.WorkMinutes / 60.0,
+        Status = StatusName(statusCode),
+        CardStatusCode = statusCode,
+        TaskName = card.Task.Name,
+        TaskPath = card.Task.Path,
+        TaskWbsCode = card.Task.WbsCode,
+        ProjectTaskUid = card.Task.Uid,
+        RoleName = card.Role.Name,
+        ProjectRoleUid = card.Role.Uid,
+        RateTypeName = card.RateType.Name,
+        ProjectRateTypeUid = card.RateType.Uid,
+        Description = card.Request.Description
+    };
 
-        if (!string.IsNullOrWhiteSpace(saved.CardStatusCode)
-            && !string.Equals(saved.CardStatusCode, expectedStatus, StringComparison.OrdinalIgnoreCase))
+    /// <summary>Adds or replaces (same UID) a card in that date's list; a date whose cards couldn't be read stays unknown.</summary>
+    private static void AddToDay(Dictionary<string, List<Timecard>?> days, string date, Timecard card)
+    {
+        if (days[date] is not { } list)
         {
-            _logger.LogWarning(
-                "save_timecard: card {TimecardUid} status {Actual}, expected {Expected}",
-                saved.TimecardUid,
-                saved.CardStatusCode,
-                expectedStatus);
-            warnings.Add($"The card is now {StatusName(saved.CardStatusCode)} (expected {StatusName(expectedStatus)}).");
+            return;
         }
 
-        var statusCode = saved.CardStatusCode ?? expectedStatus;
-        var savedUid = saved.TimecardUid ?? timecardUid;
-        object? day = null;
-        if (dayCards is not null && savedUid is not null)
+        if (card.TimecardUid is not null)
         {
-            var updatedDay = dayCards
-                .Where(c => !string.Equals(c.TimecardUid, savedUid, StringComparison.Ordinal))
-                .Append(new Timecard
-                {
-                    TimecardUid = savedUid,
-                    ProjectCode = setup.ProjectCode,
-                    ProjectName = setup.ProjectName,
-                    WorkDate = date,
-                    WorkMinutes = minutes,
-                    WorkHours = minutes / 60.0,
-                    Status = StatusName(statusCode),
-                    CardStatusCode = statusCode,
-                    TaskName = task.Name,
-                    TaskPath = task.Path,
-                    TaskWbsCode = task.WbsCode,
-                    ProjectTaskUid = task.Uid,
-                    RoleName = role.Name,
-                    ProjectRoleUid = role.Uid,
-                    RateTypeName = rateType.Name,
-                    ProjectRateTypeUid = rateType.Uid,
-                    Description = narrative
-                })
-                .ToList();
-            _cache.Set(connection, DayCardsKind, date, (IReadOnlyList<Timecard>)updatedDay, TimeEntryCache.DayCardsTtl);
-            day = new
-            {
-                work_date = date,
-                total_hours = updatedDay.Sum(c => c.WorkMinutes) / 60.0,
-                card_count = updatedDay.Count
-            };
-        }
-        else
-        {
-            _cache.Remove(connection, DayCardsKind, date);
+            list.RemoveAll(c => string.Equals(c.TimecardUid, card.TimecardUid, StringComparison.Ordinal));
         }
 
-        return new
+        list.Add(card);
+    }
+
+    private static object? DayView(Dictionary<string, List<Timecard>?> days, string date) =>
+        days.TryGetValue(date, out var list) && list is not null
+            ? new { work_date = date, total_hours = list.Sum(c => c.WorkMinutes) / 60.0, card_count = list.Count }
+            : null;
+
+    private static object CardView(
+        PreparedCard card,
+        string status,
+        string? uid,
+        string statusCode,
+        object? day,
+        List<string> warnings,
+        string? note) => new
         {
-            action = isUpdate ? "updated" : "created",
+            index = card.Index,
+            status,
+            action = card.IsUpdate ? "updated" : "created",
             timecard = new
             {
-                timecard_uid = savedUid,
-                work_date = date,
-                hours = minutes / 60.0,
-                minutes,
-                project_code = setup.ProjectCode,
-                project_name = setup.ProjectName,
-                task = task.Name,
-                task_path = task.Path,
-                wbs_code = task.WbsCode,
-                role = role.Name,
-                rate_type = rateType.Name,
-                narrative,
+                timecard_uid = uid,
+                work_date = card.Request.WorkDate,
+                hours = card.Request.WorkMinutes / 60.0,
+                minutes = card.Request.WorkMinutes,
+                project_code = card.Setup.ProjectCode,
+                project_name = card.Setup.ProjectName,
+                task = card.Task.Name,
+                task_path = card.Task.Path,
+                wbs_code = card.Task.WbsCode,
+                role = card.Role.Name,
+                rate_type = card.RateType.Name,
+                narrative = card.Request.Description,
                 status = StatusName(statusCode),
                 status_code = statusCode
             },
             day,
             submitted = false,
-            note = wasRejected
-                ? "Saved. The card was Rejected and is now a Draft again, not submitted. Resubmit it in Projector."
-                : "Saved as Draft, not submitted. Submit your time sheet in Projector when it is complete.",
+            note,
             warnings = warnings.Count == 0 ? null : warnings
         };
-    }
 
     /// <summary>
     /// Finds a task by UID, full path ("Parent > Task"), WBS code or unique name. Names repeat under different
