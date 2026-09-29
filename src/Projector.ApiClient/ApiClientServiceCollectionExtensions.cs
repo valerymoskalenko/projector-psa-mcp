@@ -43,11 +43,38 @@ public static class ApiClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Reads Projector can take longer than the standard 10 s attempt to answer. They get one long attempt and no
+    /// retry: 3 × 10 s gave up on a list that takes ~12 s (list_engagements, 13 of 52 calls over 8 s in 14 days).
+    /// </summary>
+    public static readonly TimeSpan LongReadTimeout = TimeSpan.FromSeconds(25);
+
+    private static readonly HashSet<string> LongReadActions = new(StringComparer.Ordinal) { "PwsGetEngagementList" };
+
+    /// <summary>True when the request is a SOAP call listed in <see cref="LongReadActions"/>.</summary>
+    internal static bool IsLongRead(HttpRequestMessage? request) =>
+        request is not null
+        && request.Headers.TryGetValues("SOAPAction", out var values)
+        && values.Any(v => LongReadActions.Contains(ProjectorSoapHttp.SoapActionName(v)));
+
+    /// <summary>The attempt timeout for a request: <see cref="LongReadTimeout"/> for a long read, else the standard one.</summary>
+    internal static TimeSpan AttemptTimeoutFor(HttpRequestMessage? request, TimeSpan standard) =>
+        IsLongRead(request) ? LongReadTimeout : standard;
+
     private static void ConfigureSoapRetry(HttpStandardResilienceOptions options)
     {
+        var standardAttempt = options.AttemptTimeout.Timeout;
+        options.AttemptTimeout.TimeoutGenerator = args =>
+            new ValueTask<TimeSpan>(AttemptTimeoutFor(args.Context.GetRequestMessage(), standardAttempt));
+
         // Projector returns HTTP 500 for business SOAP faults — do not retry those.
         options.Retry.ShouldHandle = args =>
         {
+            if (IsLongRead(args.Context.GetRequestMessage()))
+            {
+                return PredicateResult.False();
+            }
+
             if (args.Outcome.Exception is not null)
             {
                 return PredicateResult.True();

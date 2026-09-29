@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Server;
+using Projector.Application.Tools;
 
 namespace Projector.Mcp.Server.Prompts;
 
@@ -46,6 +47,7 @@ public sealed class ProjectorPrompts
             "if several fit, ask me; (3) show me date, hours, project, task path, role and narrative and wait for my yes; " +
             "(4) save_timecard with cards = [this card] (WBS code as task); then tell me the card's status, the day's total hours and any warnings. " +
             "It saves a Draft only; tell me to submit in Projector. " +
+            TimeEntryToolService.NoSaveToolHint + " " +
             "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and send the full card in save_timecard cards.");
 
     [McpServerPrompt(Name = "projector_review_my_day"), Description(
@@ -88,7 +90,8 @@ public sealed class ProjectorPrompts
         "to save. " +
         "5) Save all approved cards in one save_timecard call (cards = [...], WBS code as task). Report each card's status " +
         "(saved, invalid, failed, not_attempted) with its reason, and the day totals against my expected hours. Fix invalid cards " +
-        "with me and send them in one more call. Cards are Drafts; I submit in Projector.";
+        "with me and send them in one more call. Cards are Drafts; I submit in Projector. " +
+        TimeEntryToolService.NoSaveToolHint;
 
     [McpServerPrompt(Name = "projector_timecards_for_project"), Description(
         "Returns a person's timecards for a named project/engagement in a week or month.")]

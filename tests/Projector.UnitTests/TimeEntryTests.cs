@@ -698,12 +698,14 @@ public class TimeEntryTests
     }
 
     [Fact]
-    public async Task Save_NoDuplicateWarning_ForOtherTaskOrUpdate()
+    public async Task Save_OtherTaskIsNotASameTaskDuplicate_AndUpdateIsNoDuplicate()
     {
         var (service, fake) = CreateService();
         fake.DayCards = [DayCard("802", 90, "2100000000000000002", "Fix build pipeline")];
         var other = Json(await service.SaveTimecardAsync(ConnectionId, Input(), CancellationToken.None));
-        other.TryGetProperty("warnings", out _).Should().BeFalse("the existing card is on another task");
+        other.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()).Should()
+            .ContainSingle("the existing card is on another task: only the other-task warning (J4, v0.6.4)")
+            .Which.Should().StartWith("Possible duplicate on another task: card 802");
 
         var (updating, fake2) = CreateService();
         fake2.Card = new OwnTimecard { TimecardUid = "803", CardStatusCode = "D", ProjectCode = "P005678-001" };
@@ -1367,8 +1369,10 @@ public class TimeEntryTests
     private static JsonElement Json(object result) => JsonSerializer.SerializeToElement(result,
         new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
 
-    private static Timecard DayCard(string uid, int minutes, string task, string narrative) => new()
+    private static Timecard DayCard(string uid, int minutes, string task, string narrative, (string Uid, string Name)? role = null) => new()
     {
+        ProjectRoleUid = role?.Uid,
+        RoleName = role?.Name,
         TimecardUid = uid,
         ProjectCode = "P005678-001",
         WorkDate = "2026-09-24",
@@ -1379,6 +1383,208 @@ public class TimeEntryTests
         ProjectTaskUid = task,
         Description = narrative
     };
+
+    // ---- v0.6.4: logs, long reads, duplicates across tasks, role check ----------------------
+
+    [Theory]
+    [InlineData("http://projectorpsa.com/PwsProjectorServices/IPwsProjectorServices/PwsGetEngagementList", "PwsGetEngagementList")]
+    [InlineData("\"http://projectorpsa.com/OpsProjectorSvc/PwsGetTimeCards\"", "PwsGetTimeCards")]
+    [InlineData("PwsSaveTimeCards", "PwsSaveTimeCards")]
+    public void SoapActionName_IsTheMethodName(string header, string expected) =>
+        ProjectorSoapHttp.SoapActionName(header).Should().Be(expected);
+
+    [Fact]
+    public void LongRead_OnlyTheEngagementList_GetsTheLongAttempt()
+    {
+        HttpRequestMessage Request(string method)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://example.invalid/PwsProjectorServices.svc");
+            request.Headers.TryAddWithoutValidation("SOAPAction", SoapNamespaces.WcfSoapActionPrefix + method);
+            return request;
+        }
+
+        var standard = TimeSpan.FromSeconds(10);
+        ApiClientServiceCollectionExtensions.AttemptTimeoutFor(Request("PwsGetEngagementList"), standard)
+            .Should().Be(TimeSpan.FromSeconds(25));
+        ApiClientServiceCollectionExtensions.AttemptTimeoutFor(Request("PwsGetResourceList"), standard).Should().Be(standard);
+        ApiClientServiceCollectionExtensions.AttemptTimeoutFor(null, standard).Should().Be(standard);
+    }
+
+    [Fact]
+    public async Task LongRead_IsSentOnce_WithoutRetry()
+    {
+        // Registered the same way as production; only the primary handler is swapped for a failing counter.
+        var handler = new CountingHandler(new HttpRequestException("connection reset"));
+        var services = new ServiceCollection().AddLogging();
+        services.AddProjectorApiClient();
+        services.AddHttpClient<ProjectorSoapHttp>().ConfigurePrimaryHttpMessageHandler(() => handler);
+        using var provider = services.BuildServiceProvider();
+        var soap = provider.GetRequiredService<ProjectorSoapHttp>();
+
+        var act = () => soap.PostWcfAsync(Connection(), "PwsGetEngagementList", new XElement("x"));
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+        handler.Calls.Should().Be(1, "one long attempt replaces 3 × 10 s for the engagement list");
+    }
+
+    [Fact]
+    public async Task SoapFailure_IsLogged_WithTheActionAndElapsedTime()
+    {
+        var logger = new ListLogger<ProjectorSoapHttp>();
+        var soap = new ProjectorSoapHttp(
+            new HttpClient(new CountingHandler(new HttpRequestException("connection reset"))), logger);
+
+        var act = () => soap.PostWcfAsync(Connection(), "PwsGetResourceList", new XElement("x"));
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+        logger.Entries.Should().ContainSingle(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && e.Message.StartsWith("PWS PwsGetResourceList failed after ", StringComparison.Ordinal)
+            && e.Message.Contains("HttpRequestException"));
+    }
+
+    [Fact]
+    public async Task Batch_WarnsAboutTheSameWorkOnAnotherTask_ButStillSaves()
+    {
+        // J4 (2026-09-28): the same coordination card was entered under two tasks of different projects.
+        var (service, fake) = CreateService(tree: true);
+        fake.DayCards =
+        [
+            DayCard("800", minutes: 30, task: "2100000000000000099",
+                narrative: "IT migration internal coordination: answered questions on migration scope and licensing")
+        ];
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 0.5, "IT migration internal coordination: answered questions on migration scope and licensing split")),
+            dryRun: false, CancellationToken.None));
+
+        fake.SaveCalls.Should().Be(1);
+        result.GetProperty("results")[0].GetProperty("warnings")[0].GetString()
+            .Should().Contain("Possible duplicate on another task: card 800");
+    }
+
+    [Fact]
+    public void SimilarOnOtherTask_IgnoresTheSameTask_AndOtherWork()
+    {
+        var cards = new[]
+        {
+            DayCard("1", 60, "task-a", "Weekly status call with the customer team"),
+            DayCard("2", 60, "task-b", "Invoice layout fix")
+        };
+
+        TimeEntryToolService.FindSimilarOnOtherTask(cards, "P005678-001", "task-a", "Weekly status call with customer team")
+            .Should().BeNull("the same task is the ordinary duplicate check");
+        TimeEntryToolService.FindSimilarOnOtherTask(cards, "P005678-001", "task-c", "Weekly status call with customer team")
+            !.TimecardUid.Should().Be("1");
+        TimeEntryToolService.FindSimilarOnOtherTask(cards, "P005678-001", "task-c", "Export totals analysis")
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void RoleWarning_OnlyWhenEarlierCardsOnTheProjectUseAnotherRole()
+    {
+        Timecard Card(string project, string roleUid, string roleName) => new()
+        {
+            ProjectCode = project, ProjectRoleUid = roleUid, RoleName = roleName, WorkDate = "2026-09-24"
+        };
+
+        var twoAsArchitect = new[] { Card("P1", "r-arch", "Architect"), Card("P1", "r-arch", "Architect"), Card("P2", "r-dev", "Developer") };
+        TimeEntryToolService.RoleWarning("P1", "r-dev", "Developer", twoAsArchitect)
+            .Should().Contain("role 'Developer'").And.Contain("use 'Architect'");
+        TimeEntryToolService.RoleWarning("P1", "r-arch", "Architect", twoAsArchitect).Should().BeNull();
+        TimeEntryToolService.RoleWarning("P2", "r-arch", "Architect", twoAsArchitect)
+            .Should().BeNull("one earlier card is not a pattern");
+        TimeEntryToolService.RoleWarning("P3", "r-arch", "Architect", twoAsArchitect).Should().BeNull();
+        TimeEntryToolService.RoleWarning("P1", "r-dev", "Developer", [.. twoAsArchitect, Card("P1", "r-dev", "Developer")])
+            .Should().BeNull("the user has used this role on the project before");
+    }
+
+    [Fact]
+    public async Task Batch_WarnsWhenTheRoleDiffersFromEarlierCardsOnTheProject()
+    {
+        var (service, fake) = CreateService(tree: true);
+        fake.DayCards =
+        [
+            DayCard("800", 60, "2100000000000000099", "Weekly status call", role: ("2200000000000000099", "Architect")),
+            DayCard("801", 30, "2100000000000000098", "Design review", role: ("2200000000000000099", "Architect"))
+        ];
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 1, "Export analysis")), dryRun: true, CancellationToken.None));
+
+        result.GetProperty("results")[0].GetProperty("warnings")[0].GetString()
+            .Should().Contain("Role check").And.Contain("'System Engineer'").And.Contain("'Architect'");
+    }
+
+    [Fact]
+    public async Task Batch_WritesOneAuditLine_WithCountsAndCodes_ButNoNarratives()
+    {
+        var logger = new ListLogger<TimeEntryToolService>();
+        var (service, fake) = CreateService(tree: true, logger);
+        fake.Setup = TreeWithOpenParents(allowAssignment: false);
+        fake.Assignments = Assignments(restricted: true, ("2100000000000000012", "2200000000000000001"));
+
+        await service.SaveTimecardsAsync(ConnectionId,
+            Batch(("1.1", 1.5, "Secret customer narrative"), ("1", 1, "Summary task work"), ("1.2", 0.5, "Unassigned work")),
+            dryRun: false, CancellationToken.None);
+
+        var audit = logger.Entries.Should().ContainSingle(e => e.Message.StartsWith("save_timecard audit:", StringComparison.Ordinal))
+            .Which;
+        audit.Level.Should().Be(Microsoft.Extensions.Logging.LogLevel.Information);
+        audit.Message.Should().Contain("save 3 card(s): 1 saved, 0 valid, 2 invalid, 0 failed, 0 not attempted")
+            .And.Contain("errors [not_assigned_to_task,summary_task]")
+            .And.Contain("projects [P005678-001]")
+            .And.Contain("days [2026-09-24=1.5h/1]")
+            .And.NotContain("Secret customer narrative");
+    }
+
+    [Fact]
+    public void NoSaveToolHint_IsInTheTimeEntryPrompts()
+    {
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDaySteps.Should().EndWith(TimeEntryToolService.NoSaveToolHint);
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.LogTime("2026-09-24", 1, "P005678-001", "Work").Text
+            .Should().Contain(TimeEntryToolService.NoSaveToolHint);
+    }
+
+    [Fact]
+    public void ToolCallOutcome_IsOk_TheRefusalCode_OrError()
+    {
+        static ModelContextProtocol.Protocol.CallToolResult Result(bool isError, string text) => new()
+        {
+            IsError = isError,
+            Content = [new ModelContextProtocol.Protocol.TextContentBlock { Text = text }]
+        };
+
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.Outcome(Result(false, "{}")).Should().Be("ok");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.Outcome(Result(true, "{\"error\":\"projector_permission_denied\",\"message\":\"x\"}"))
+            .Should().Be("projector_permission_denied");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.Outcome(Result(true, "An error occurred invoking 'x'.")).Should().Be("error");
+    }
+
+    [Fact]
+    public void ToolCallHeaderNames_AreSortedNamesWithoutValues()
+    {
+        var headers = new Microsoft.AspNetCore.Http.HeaderDictionary
+        {
+            ["User-Agent"] = "Sydney",
+            ["Authorization"] = "Bearer secret-token",
+            ["Accept"] = "application/json"
+        };
+
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.HeaderNames(headers).Should().Be("Accept,Authorization,User-Agent");
+    }
+
+    private sealed class ListLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        public List<(Microsoft.Extensions.Logging.LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
+    }
 
     // ---- Helpers ---------------------------------------------------------------------------
 
@@ -1420,7 +1626,9 @@ public class TimeEntryTests
         return ProjectorTimeEntryParsers.ParseTimeEntryProject(XDocument.Parse(xml))!;
     }
 
-    private static (TimeEntryToolService Service, FakeTimeEntryClient Fake) CreateService(bool tree = false)
+    private static (TimeEntryToolService Service, FakeTimeEntryClient Fake) CreateService(
+        bool tree = false,
+        Microsoft.Extensions.Logging.ILogger<TimeEntryToolService>? logger = null)
     {
         var store = new InMemoryProjectorConnectionStore();
         store.Save(Connection());
@@ -1432,7 +1640,7 @@ public class TimeEntryTests
                 Fixture(tree ? "time_entry_project_tree.xml" : "time_entry_project_role.xml")),
             Parameters = ProjectorTimeEntryParsers.ParseTimeEntryParameters(Fixture("time_entry_parameters.xml"))
         };
-        return (new TimeEntryToolService(connections, fake, new TimeEntryCache(), NullLogger<TimeEntryToolService>.Instance), fake);
+        return (new TimeEntryToolService(connections, fake, new TimeEntryCache(), logger ?? NullLogger<TimeEntryToolService>.Instance), fake);
     }
 
     private static string ResolveDir(params string[] relative)

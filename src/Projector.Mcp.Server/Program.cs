@@ -154,11 +154,11 @@ static async Task<int> RunStdioAsync(CancellationToken ct)
     builder.Services
         .AddMcpServer(options =>
         {
-            options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.3" };
+            options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.4" };
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()
-        .WithRequestFilters(filters => filters.AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ToolArgumentFilter.Filter))
+        .WithRequestFilters(filters => filters.AddCallToolFilter(ToolCallLogFilter.Filter).AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ToolArgumentFilter.Filter))
         .WithResourcesFromAssembly()
         .WithPromptsFromAssembly();
 

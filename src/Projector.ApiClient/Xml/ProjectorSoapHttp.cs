@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Xml.Linq;
@@ -170,8 +171,31 @@ public sealed class ProjectorSoapHttp
             url,
             sessionTicketLen);
 
-        using var response = await _http.SendAsync(request, cancellationToken);
+        // Timed around the resilience pipeline, so it includes retries; each attempt is also its own dependency.
+        var started = Stopwatch.GetTimestamp();
+        HttpResponseMessage sent;
+        try
+        {
+            sent = await _http.SendAsync(request, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "PWS {Context} failed after {ElapsedMs} ms: {ExceptionType} {ErrorMessage}",
+                context,
+                ElapsedMs(started),
+                ex.GetType().Name,
+                ex.Message);
+            throw;
+        }
+
+        using var response = sent;
         var xml = await response.Content.ReadAsStringAsync(cancellationToken);
+        var elapsedMs = ElapsedMs(started);
+        if (elapsedMs >= SlowCallMs)
+        {
+            _logger.LogWarning("PWS {Context} slow: {ElapsedMs} ms (status {Status})", context, elapsedMs, (int)response.StatusCode);
+        }
 
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
@@ -203,6 +227,23 @@ public sealed class ProjectorSoapHttp
         AssertNoSoapFault(doc, context);
         ThrowIfBusy(doc);
         return doc;
+    }
+
+    /// <summary>A Projector call at least this slow is logged as a warning (the standard attempt timeout is 10 s).</summary>
+    internal const long SlowCallMs = 5000;
+
+    private static long ElapsedMs(long started) => (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+    /// <summary>
+    /// The method name from a SOAPAction header value, e.g.
+    /// <c>"http://projectorpsa.com/PwsProjectorServices/IPwsProjectorServices/PwsGetEngagementList"</c> →
+    /// <c>PwsGetEngagementList</c>.
+    /// </summary>
+    public static string SoapActionName(string soapAction)
+    {
+        var action = soapAction.Trim().Trim('"');
+        var slash = action.LastIndexOf('/');
+        return slash >= 0 ? action[(slash + 1)..] : action;
     }
 
     /// <summary>Projector can also refuse a call for too many active requests with a message in a normal result.</summary>

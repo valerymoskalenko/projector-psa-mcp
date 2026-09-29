@@ -53,6 +53,15 @@ public sealed class TimeEntryToolService
     private const string SetupKind = "setup";
     private const string DayCardsKind = "day_cards";
     private const string AssignmentsKind = "assignments";
+    /// <summary>
+    /// Microsoft 365 Copilot Chat lists only a connector's read tools (seen 2026-09-29): the model saw "call
+    /// save_timecard" without the tool and told the user the server can't save.
+    /// </summary>
+    public const string NoSaveToolHint =
+        "If save_timecard is not among your tools, this client offers only read tools (Microsoft 365 Copilot Chat does " +
+        "until write actions roll out): tell the user this chat can't save, suggest the Copilot Cowork tab or the Projector " +
+        "PSA agent, and don't say the Projector server can't save.";
+
     private const string RecentKind = "recent";
     private const int RecentDays = 30;
     private const int MaxRecentTasks = 5;
@@ -302,7 +311,8 @@ public sealed class TimeEntryToolService
                   "project_code and query."
                 : hasMore
                     ? "More tasks match: narrow with query (task name, WBS or parent) or page with offset = tasks_next_offset."
-                    : "Confirm the card with the user (date, hours, project, task path, role, narrative), then call save_timecard."
+                    : "Confirm the card with the user (date, hours, project, task path, role, narrative), then call save_timecard. " +
+                      NoSaveToolHint
         };
     }
 
@@ -322,6 +332,7 @@ public sealed class TimeEntryToolService
         var outcome = await SaveCardsCoreAsync(connectionId, cards, dryRun, ct);
         var results = outcome.Cards.Select(c => c.View).ToList();
         int Count(string status) => outcome.Cards.Count(c => c.Status == status);
+        LogAudit(outcome, dryRun);
         return new
         {
             action = dryRun ? "dry_run" : "saved",
@@ -359,9 +370,51 @@ public sealed class TimeEntryToolService
         return card.View;
     }
 
-    private sealed record CardOutcome(int Index, string Status, object View, Exception? Error = null);
+    /// <param name="ErrorCode">Why an invalid or failed card was not saved.</param>
+    /// <param name="WarningKinds">Short codes of the card's warnings, for the audit log.</param>
+    private sealed record CardOutcome(
+        int Index,
+        string Status,
+        object View,
+        Exception? Error = null,
+        string? ErrorCode = null,
+        IReadOnlyList<string>? WarningKinds = null);
 
-    private sealed record BatchOutcome(IReadOnlyList<CardOutcome> Cards, IReadOnlyList<object> Days, IReadOnlyList<string> Warnings);
+    /// <summary>
+    /// One line per save_timecard call for issue resolution: counts, error and warning codes, project codes, dates
+    /// and day totals. No narratives, task names or other card contents.
+    /// </summary>
+    private void LogAudit(BatchOutcome outcome, bool dryRun)
+    {
+        int Count(string status) => outcome.Cards.Count(c => c.Status == status);
+        static string Codes(IEnumerable<string> codes) =>
+            string.Join(",", codes.GroupBy(c => c, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => g.Count() == 1 ? g.Key : $"{g.Key}x{g.Count()}"));
+
+        _logger.LogInformation(
+            "save_timecard audit: {SaveAction} {CardCount} card(s): {Saved} saved, {Valid} valid, {Invalid} invalid, " +
+            "{Failed} failed, {NotAttempted} not attempted; errors [{ErrorCodes}]; warnings [{WarningCodes}]; " +
+            "projects [{ProjectCodes}]; days [{DayTotals}]",
+            dryRun ? "dry_run" : "save",
+            outcome.Cards.Count,
+            Count("saved"),
+            Count("valid"),
+            Count("invalid"),
+            Count("failed"),
+            Count("not_attempted"),
+            Codes(outcome.Cards.Select(c => c.ErrorCode).OfType<string>()),
+            Codes(outcome.Cards.SelectMany(c => c.WarningKinds ?? [])),
+            string.Join(",", outcome.ProjectCodes),
+            string.Join(",", outcome.DayTotals.Select(d =>
+                string.Create(CultureInfo.InvariantCulture, $"{d.Date}={d.Hours:0.##}h/{d.Cards}"))));
+    }
+
+    private sealed record BatchOutcome(
+        IReadOnlyList<CardOutcome> Cards,
+        IReadOnlyList<object> Days,
+        IReadOnlyList<string> Warnings,
+        IReadOnlyList<string> ProjectCodes,
+        IReadOnlyList<(string Date, double Hours, int Cards)> DayTotals);
 
     /// <summary>A card that passed every check: the Projector request plus what the result shows.</summary>
     private sealed record PreparedCard(
@@ -407,10 +460,14 @@ public sealed class TimeEntryToolService
         // are saved (or, in a dry run, as they would be), so a duplicate inside the batch is caught too.
         var days = new Dictionary<string, List<Timecard>?>(StringComparer.Ordinal);
         var unreadDates = new HashSet<string>(StringComparer.Ordinal);
+        // The cards that were there before this call: the role check compares against these only, so one wrong role
+        // earlier in the batch can't flag the right role on the cards after it.
+        var priorCards = new Dictionary<string, IReadOnlyList<Timecard>>(StringComparer.Ordinal);
         foreach (var date in prepared.Select(p => p.Request.WorkDate).Distinct(StringComparer.Ordinal))
         {
             var dayCards = await TryGetDayCardsAsync(connection, date, ct);
             days[date] = dayCards?.ToList();
+            priorCards[date] = PriorCards(connection, date, dayCards);
             if (dayCards is null)
             {
                 unreadDates.Add(date);
@@ -433,25 +490,45 @@ public sealed class TimeEntryToolService
             }
 
             var cardWarnings = new List<string>();
+            var warningKinds = new List<string>();
             if (unreadDates.Contains(date))
             {
                 cardWarnings.Add($"Could not read your other cards for {date}, so there is no duplicate check or day total. " +
                     "Check with list_timecards.");
+                warningKinds.Add("day_unread");
             }
 
-            if (!card.IsUpdate && days[date] is { } before
-                && FindLikelyDuplicate(before, card.Request.ProjectCode, card.Task.Uid, card.Request.WorkMinutes, card.Request.Description) is { } duplicate)
+            if (!card.IsUpdate && days[date] is { } before)
             {
-                cardWarnings.Add(
-                    $"Possible duplicate: card {duplicate.TimecardUid ?? "earlier in this call"} ({duplicate.WorkHours:0.##} h, " +
-                    $"{duplicate.Status}) is already on {date} for the same project and task: \"{Shorten(duplicate.Description)}\". " +
-                    "Both cards are kept; ask the user whether this one should stay.");
+                if (FindLikelyDuplicate(before, card.Request.ProjectCode, card.Task.Uid, card.Request.WorkMinutes, card.Request.Description) is { } duplicate)
+                {
+                    cardWarnings.Add(
+                        $"Possible duplicate: card {duplicate.TimecardUid ?? "earlier in this call"} ({duplicate.WorkHours:0.##} h, " +
+                        $"{duplicate.Status}) is already on {date} for the same project and task: \"{Shorten(duplicate.Description)}\". " +
+                        "Both cards are kept; ask the user whether this one should stay.");
+                    warningKinds.Add("duplicate");
+                }
+                else if (FindSimilarOnOtherTask(before, card.Request.ProjectCode, card.Task.Uid, card.Request.Description) is { } other)
+                {
+                    cardWarnings.Add(
+                        $"Possible duplicate on another task: card {other.TimecardUid ?? "earlier in this call"} ({other.WorkHours:0.##} h, " +
+                        $"{other.Status}) on {date} has a similar narrative under {other.ProjectCode} > {other.TaskPath ?? other.TaskName} " +
+                        $"(WBS {other.TaskWbsCode}): \"{Shorten(other.Description)}\". Both cards are kept; ask the user whether the " +
+                        "same work was entered twice.");
+                    warningKinds.Add("duplicate_other_task");
+                }
+            }
+
+            if (RoleWarning(card, priorCards.GetValueOrDefault(date) ?? []) is { } roleWarning)
+            {
+                cardWarnings.Add(roleWarning);
+                warningKinds.Add("role_differs");
             }
 
             if (dryRun)
             {
                 AddToDay(days, date, ToTimecard(card, card.Request.TimecardUid, "D"));
-                outcomes[card.Index] = new CardOutcome(card.Index, "valid", CardView(card, "valid", card.Request.TimecardUid, "D", DayView(days, date), cardWarnings, note: null));
+                outcomes[card.Index] = new CardOutcome(card.Index, "valid", CardView(card, "valid", card.Request.TimecardUid, "D", DayView(days, date), cardWarnings, note: null), WarningKinds: warningKinds);
                 continue;
             }
 
@@ -479,6 +556,7 @@ public sealed class TimeEntryToolService
             {
                 _logger.LogError("save_timecard: Projector reported SubmittedFlag=true for card {TimecardUid}", saved.TimecardUid);
                 cardWarnings.Add("Projector reported the card as submitted, which save_timecard never requests. Check it in Projector.");
+                warningKinds.Add("submitted_flag");
             }
 
             if (!string.IsNullOrWhiteSpace(saved.CardStatusCode)
@@ -487,6 +565,7 @@ public sealed class TimeEntryToolService
                 _logger.LogWarning(
                     "save_timecard: card {TimecardUid} status {Actual}, expected {Expected}", saved.TimecardUid, saved.CardStatusCode, expectedStatus);
                 cardWarnings.Add($"The card is now {StatusName(saved.CardStatusCode)} (expected {StatusName(expectedStatus)}).");
+                warningKinds.Add("unexpected_status");
             }
 
             var statusCode = saved.CardStatusCode ?? expectedStatus;
@@ -506,11 +585,18 @@ public sealed class TimeEntryToolService
                 card, "saved", savedUid, statusCode, DayView(days, date), cardWarnings,
                 wasRejected
                     ? "Saved. The card was Rejected and is now a Draft again, not submitted. Resubmit it in Projector."
-                    : "Saved as Draft, not submitted. Submit your time sheet in Projector when it is complete."));
+                    : "Saved as Draft, not submitted. Submit your time sheet in Projector when it is complete."),
+                WarningKinds: warningKinds);
         }
 
         var dayTotals = days.Keys.OrderBy(d => d, StringComparer.Ordinal).Select(d => DayView(days, d)).OfType<object>().ToList();
-        return new BatchOutcome(outcomes.Select(o => o!).ToList(), dayTotals, []);
+        var auditDays = days.Where(d => d.Value is not null)
+            .OrderBy(d => d.Key, StringComparer.Ordinal)
+            .Select(d => (d.Key, d.Value!.Sum(c => c.WorkMinutes) / 60.0, d.Value!.Count))
+            .ToList();
+        var projectCodes = prepared.Select(p => p.Setup.ProjectCode).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase).ToList();
+        return new BatchOutcome(outcomes.Select(o => o!).ToList(), dayTotals, [], projectCodes, auditDays);
     }
 
     /// <summary>Every check a card needs before it may be sent; throws with the reason when it can't be saved.</summary>
@@ -658,7 +744,7 @@ public sealed class TimeEntryToolService
             ? ex.Message
             : "Projector could not be reached while checking this card; nothing was saved for it. Try again.";
         _logger.LogWarning("save_timecard card {Index} {Status}: {ErrorCode} {ErrorMessage}", index, status, code, message);
-        return new CardOutcome(index, status, new { index, status, error = code, message }, ex);
+        return new CardOutcome(index, status, new { index, status, error = code, message }, ex, ErrorCode: code);
     }
 
     private static Timecard ToTimecard(PreparedCard card, string? uid, string statusCode) => new()
@@ -823,6 +909,70 @@ public sealed class TimeEntryToolService
             string.Equals(c.ProjectCode, projectCode, StringComparison.OrdinalIgnoreCase)
             && string.Equals(c.ProjectTaskUid, taskUid, StringComparison.Ordinal)
             && SimilarText(c.Description, narrative));
+
+    /// <summary>
+    /// A card on the same day under a different task (or project) with a similar narrative: the same work entered
+    /// twice under two tasks (seen 2026-09-28, J4). Checked only when there is no same-task duplicate.
+    /// </summary>
+    internal static Timecard? FindSimilarOnOtherTask(
+        IEnumerable<Timecard> dayCards,
+        string projectCode,
+        string taskUid,
+        string narrative) =>
+        dayCards.FirstOrDefault(c =>
+            !(string.Equals(c.ProjectCode, projectCode, StringComparison.OrdinalIgnoreCase)
+              && string.Equals(c.ProjectTaskUid, taskUid, StringComparison.Ordinal))
+            && SimilarText(c.Description, narrative));
+
+    /// <summary>Fewest earlier cards on a project before a different role is worth a warning.</summary>
+    internal const int MinCardsForRoleCheck = 2;
+
+    /// <summary>
+    /// The day's cards from before this call plus the recent cards list_time_projects already read (cache only; this
+    /// adds no Projector call). Used for the role check.
+    /// </summary>
+    private IReadOnlyList<Timecard> PriorCards(ProjectorConnection connection, string date, IReadOnlyList<Timecard>? dayCards)
+    {
+        var cards = new List<Timecard>(dayCards ?? []);
+        if (_cache.TryGet<IReadOnlyList<Timecard>>(connection, RecentKind, date, out var recent) && recent is not null)
+        {
+            cards.AddRange(recent.Where(r => r.TimecardUid is null
+                || !cards.Any(c => string.Equals(c.TimecardUid, r.TimecardUid, StringComparison.Ordinal))));
+        }
+
+        return cards;
+    }
+
+    /// <summary>
+    /// A warning when the card's role is not the one the user's earlier cards on that project use (at least
+    /// <see cref="MinCardsForRoleCheck"/> of them, none with this role). Warn only: several roles on a project are
+    /// legitimate, and Projector checks the role itself.
+    /// </summary>
+    internal static string? RoleWarning(
+        string projectCode,
+        string roleUid,
+        string? roleName,
+        IEnumerable<Timecard> earlierCards)
+    {
+        var onProject = earlierCards
+            .Where(c => string.Equals(c.ProjectCode, projectCode, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(c.ProjectRoleUid))
+            .ToList();
+        if (onProject.Count < MinCardsForRoleCheck
+            || onProject.Any(c => string.Equals(c.ProjectRoleUid, roleUid, StringComparison.Ordinal)))
+        {
+            return null;
+        }
+
+        var usual = onProject.GroupBy(c => c.ProjectRoleUid!, StringComparer.Ordinal)
+            .OrderByDescending(g => g.Count())
+            .First();
+        return $"Role check: this card uses role '{roleName}', but your {onProject.Count} earlier card(s) on {projectCode} " +
+            $"use '{usual.First().RoleName ?? usual.Key}'. The card is kept; confirm the role with the user.";
+    }
+
+    private static string? RoleWarning(PreparedCard card, IEnumerable<Timecard> earlierCards) =>
+        RoleWarning(card.Setup.ProjectCode, card.Role.Uid, card.Role.Name, earlierCards);
 
     internal static bool SimilarText(string? a, string? b)
     {

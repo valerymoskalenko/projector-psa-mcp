@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.AspNetCore.Authentication;
 using ModelContextProtocol.Server;
+using OpenTelemetry.Instrumentation.Http;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Trace;
 using Projector.ApiClient;
 using Projector.Application;
@@ -61,6 +63,13 @@ public static class ProjectorMcpHttpHost
             builder.Services.AddOpenTelemetry()
                 .UseAzureMonitor(o => o.ConnectionString = aiConnection)
                 .WithTracing(t => t.AddSqlClientInstrumentation());
+
+            // Scopes (tool, client, user; see ToolCallLogFilter) become custom dimensions on every log line of a call.
+            builder.Services.Configure<OpenTelemetryLoggerOptions>(o => o.IncludeScopes = true);
+
+            // Every Projector call goes to the same URL; name the dependency after its SOAP action instead.
+            builder.Services.Configure<HttpClientTraceInstrumentationOptions>(o =>
+                o.EnrichWithHttpRequestMessage = ProjectorTelemetry.EnrichProjectorCall);
         }
 
         await ConfigureServicesAsync(builder.Services, builder.Configuration, builder.Environment);
@@ -111,7 +120,7 @@ public static class ProjectorMcpHttpHost
 
         builder.Services.AddMcpServer(options =>
             {
-                options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.3" };
+                options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.4" };
             })
             .WithHttpTransport(options =>
             {
@@ -119,7 +128,7 @@ public static class ProjectorMcpHttpHost
             })
             .AddAuthorizationFilters()
             .WithToolsFromAssembly()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ToolArgumentFilter.Filter))
+            .WithRequestFilters(filters => filters.AddCallToolFilter(ToolCallLogFilter.Filter).AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ToolArgumentFilter.Filter))
             .WithResourcesFromAssembly()
             .WithPromptsFromAssembly();
 
