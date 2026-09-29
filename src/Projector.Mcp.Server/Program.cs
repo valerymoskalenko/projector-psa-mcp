@@ -154,7 +154,7 @@ static async Task<int> RunStdioAsync(CancellationToken ct)
     builder.Services
         .AddMcpServer(options =>
         {
-            options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.2" };
+            options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.3" };
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()
