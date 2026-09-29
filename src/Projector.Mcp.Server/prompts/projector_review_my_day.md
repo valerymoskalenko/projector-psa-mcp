@@ -13,7 +13,7 @@
 1. **Projector** (all tools default to the signed-in user):
    - `list_timecards` for the day: every card, Rejected included, and whether the user can fix it.
    - `get_schedule`: expected hours, holidays and PTO.
-   - `list_timecards` for the last 10 working days, one week per call, as history; `by_date` shows days below expected.
+   - `list_timecards` with `compact: true` for the last 10 working days, one week per call, as history; `by_date` shows days below expected.
    - `list_time_projects`: chargeable projects, most recently used first, with recent tasks; `query` also matches recent task names and descriptions.
 2. **Evidence** from whatever sources the client can access:
    - calendar and Teams meetings (a transcript shows attendance and the real length; never quoted)

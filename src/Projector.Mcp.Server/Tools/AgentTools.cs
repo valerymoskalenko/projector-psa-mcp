@@ -56,9 +56,10 @@ public sealed class AgentTools
         [Description("Optional card status filter")] string? status = null,
         [Description("Optional project code filter")] string? project_code = null,
         [Description("Optional words to find in the card description, project, client, task path or WBS (whole words or word starts, e.g. \"invoice export\" or a ticket number)")] string? query = null,
+        [Description("true = short cards (date, hours, project, task path, WBS, role, rate type, status, description, timecardUid, editable); use it for history reads")] bool compact = false,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _tools.ListTimecardsAsync(
-            ct.ConnectionId, resource_id, start_date, end_date, status, project_code, ct.Token, query), cancellationToken);
+            ct.ConnectionId, resource_id, start_date, end_date, status, project_code, ct.Token, query, compact), cancellationToken);
 
     [McpServerTool(Name = "list_time_off", Title = "List Projector time-off cards",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
@@ -195,11 +196,12 @@ public sealed class AgentTools
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
         "Returns a bounded bundle of resource profile, timecards, schedule/bookings/roles, and time off for one resource. " +
+        "The date window is at most 120 days. " +
         "WhenNotToUse: Do not use for simple availability checks; use check_availability.")]
     public Task<CallToolResult> GetResourceOverview(
         [Description("Person: resource id, full name or e-mail")] string resource_id,
         [Description("Inclusive start date")] string start_date,
-        [Description("Inclusive end date")] string end_date,
+        [Description("Inclusive end date; at most 120 days after start_date")] string end_date,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _tools.GetResourceOverviewAsync(
             ct.ConnectionId, resource_id, start_date, end_date, ct.Token), cancellationToken);
@@ -309,6 +311,19 @@ public sealed class AgentTools
         }
     }
 
+    /// <summary>Projector refused to show the data to this user (a Projector permission, not a server fault).</summary>
+    internal const string ProjectorPermissionDenied = "projector_permission_denied";
+
+    internal static string PermissionDeniedMessage(string projectorCode) =>
+        $"Your Projector user is not allowed to view this data (Projector: {projectorCode}). This is a permission " +
+        "in Projector PSA, not a problem with this tool: do not retry this tool with other arguments. Tell the user " +
+        "to ask their Projector PSA administrator for view access, and answer from tools that show their own data " +
+        "(get_schedule, list_timecards, list_time_projects) where that helps.";
+
+    private static bool IsViewPermissionDenied(ProjectorApiException ex) =>
+        string.Equals(ex.ErrorCode, "ViewPermissionDenied", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(ex.ErrorCode, "AccessPermissionDenied", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Maps an exception to the agent-facing error. Unexpected exceptions become a generic message for the agent
     /// and are logged (type, message, stack) so the cause shows in App Insights / stderr.
@@ -318,6 +333,7 @@ public sealed class AgentTools
         var (code, message) = ex switch
         {
             ProjectorAuthorizationException auth => ("authorization_error", SecretRedactor.Redact(auth.Message)),
+            ProjectorApiException api when IsViewPermissionDenied(api) => (ProjectorPermissionDenied, PermissionDeniedMessage(api.ErrorCode!)),
             ProjectorApiException api => (api.ErrorCode ?? "projector_error", SecretRedactor.Redact(api.Message)),
             FluentValidation.ValidationException validation => ("validation_error", SecretRedactor.Redact(validation.Message)),
             ArgumentException arg => ("invalid_argument", SecretRedactor.Redact(arg.Message)),

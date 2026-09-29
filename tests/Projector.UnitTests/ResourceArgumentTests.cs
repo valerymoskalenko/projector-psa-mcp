@@ -76,6 +76,55 @@ public class ResourceArgumentTests
     }
 
     [Fact]
+    public async Task ListTimecards_Compact_ReturnsShortCards()
+    {
+        var (service, soap) = Create();
+        soap.Timecards.Add(new Timecard
+        {
+            TimecardUid = "1",
+            CardStatusCode = "D",
+            Description = "Payroll checkpoint",
+            ProjectCode = "P005678-001",
+            ProjectName = "Operations",
+            ClientName = "Contoso",
+            EngagementName = "Internal",
+            TaskName = "Staff Management",
+            TaskPath = "Operations > Staff Management",
+            TaskWbsCode = "2.1",
+            RoleName = "Consultant",
+            RateTypeName = "Billable",
+            ProjectTaskUid = "task-uid",
+            WorkDate = "2026-09-25",
+            WorkMinutes = 60,
+            WorkHours = 1,
+            Status = "Draft"
+        });
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-25", "2026-09-25", null, null, CancellationToken.None, compact: true));
+
+        var c = result.GetProperty("timecards").EnumerateArray().Single();
+        c.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
+            "WorkDate", "WorkHours", "ProjectCode", "ProjectName", "TaskPath", "TaskWbsCode", "RoleName",
+            "RateTypeName", "Status", "Description", "TimecardUid", "Editable");
+        c.GetProperty("TaskPath").GetString().Should().Be("Operations > Staff Management");
+        c.GetProperty("Editable").GetBoolean().Should().BeTrue();
+        result.GetProperty("by_date").GetArrayLength().Should().Be(1, "compact changes only the cards, not the day totals");
+    }
+
+    [Fact]
+    public async Task GetOverview_TooLongWindow_SaysTheLimitAndHowToSplit()
+    {
+        var (service, _) = Create();
+
+        var act = () => service.GetResourceOverviewAsync(
+            ConnectionId, "10001", "2026-01-01", "2026-12-31", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.Message
+            .Should().Contain("365 days").And.Contain("at most 120 days").And.Contain("shorter window");
+    }
+
+    [Fact]
     public async Task ListTimecards_Query_FiltersOnWholeWords()
     {
         var (service, soap) = Create();

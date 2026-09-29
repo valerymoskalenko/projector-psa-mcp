@@ -34,6 +34,25 @@ public sealed record TimecardDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaskWbsCode = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Editable = null);
 
+/// <summary>
+/// list_timecards with compact=true: what a history read needs (style examples, task picks, fixes), about half the size of
+/// <see cref="TimecardDto"/>.
+/// </summary>
+public sealed record CompactTimecardDto(
+    string? WorkDate,
+    double WorkHours,
+    string? ProjectCode,
+    string? ProjectName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaskPath,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaskWbsCode,
+    string? RoleName,
+    string? RateTypeName,
+    string? Status,
+    string? Description,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RejectedReason = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TimecardUid = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Editable = null);
+
 public sealed record ListTimecardsResponse(
     int Count,
     IReadOnlyList<TimecardDto> Timecards,

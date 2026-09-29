@@ -117,6 +117,10 @@
           "query": {
             "type": "string",
             "description": "Optional words to find in the card description, project, client, task path or WBS (whole words or word starts, e.g. \"invoice export\" or a ticket number)"
+          },
+          "compact": {
+            "type": "boolean",
+            "description": "true = short cards (date, hours, project, task path, WBS, role, rate type, status, description, timecardUid, editable); use it for history reads"
           }
         }
       }
@@ -351,7 +355,7 @@
         "scheduleResources",
         "viewProjects"
       ],
-      "description": "Returns a bounded bundle of resource profile, timecards, schedule/bookings/roles, and time off for one resource. Prefer this instead of chaining four primitives.",
+      "description": "Returns a bounded bundle of resource profile, timecards, schedule/bookings/roles, and time off for one resource. Prefer this instead of chaining four primitives. The date window is at most 120 days.",
       "whenNotToUse": "Do not use for simple availability checks; use check_availability.",
       "inputSchema": {
         "type": "object",
@@ -371,7 +375,8 @@
           },
           "end_date": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "description": "Inclusive end date; at most 120 days after start_date"
           }
         }
       },

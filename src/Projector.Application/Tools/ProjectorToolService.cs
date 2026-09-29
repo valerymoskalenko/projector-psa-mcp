@@ -48,7 +48,8 @@ public sealed class ProjectorToolService
         string? status,
         string? projectCode,
         CancellationToken ct,
-        string? query = null)
+        string? query = null,
+        bool compact = false)
     {
         var sw = Stopwatch.StartNew();
         var connection = await RequireAsync(connectionId, ct);
@@ -100,7 +101,9 @@ public sealed class ProjectorToolService
             end_date = end,
             count = cards.Count,
             by_date = ByDate(cards),
-            timecards = cards.Select(t => MapTimecard(t, ownCards)).ToList(),
+            timecards = compact
+                ? cards.Select(t => (object)MapCompactTimecard(t, ownCards)).ToList()
+                : cards.Select(t => (object)MapTimecard(t, ownCards)).ToList(),
             searchCoverage = SearchCoverageDto.From(coverage)
         }, sw);
     }
@@ -1121,7 +1124,9 @@ public sealed class ProjectorToolService
 
         if ((e - s).TotalDays + 1 > maxDays)
         {
-            throw new ArgumentException($"Date window exceeds {maxDays} days.");
+            throw new ArgumentException(
+                $"Date window is {(e - s).TotalDays + 1:0} days; this tool allows at most {maxDays} days. " +
+                $"Use a shorter window (split a longer period into windows of {maxDays} days or less).");
         }
     }
 
@@ -1193,7 +1198,14 @@ public sealed class ProjectorToolService
             t.RejectedByDisplayName, t.RejectedByEmail, t.RejectedByUserReferenceSystemId,
             t.RejectedReason, t.RejectedTimestamp,
             t.TimecardUid, t.ProjectTaskUid, t.ProjectRoleUid, t.ProjectRateTypeUid, t.TaskPath, t.TaskWbsCode,
-            ownCards ? t.CardStatusCode?.Trim().ToUpperInvariant() is "D" or "R" : null);
+            ownCards ? IsEditable(t) : null);
+
+    private static CompactTimecardDto MapCompactTimecard(Timecard t, bool ownCards) =>
+        new(t.WorkDate, t.WorkHours, t.ProjectCode, t.ProjectName, t.TaskPath ?? t.TaskName, t.TaskWbsCode,
+            t.RoleName, t.RateTypeName, t.Status, t.Description, t.RejectedReason, t.TimecardUid,
+            ownCards ? IsEditable(t) : null);
+
+    private static bool IsEditable(Timecard t) => t.CardStatusCode?.Trim().ToUpperInvariant() is "D" or "R";
 
     private static TimeOffCardDto MapTimeOff(TimeOffCard t) =>
         new(t.TimeOffReason, t.TimeOffDate, t.TimeOffMinutes, t.TimeOffHours, t.Narrative,

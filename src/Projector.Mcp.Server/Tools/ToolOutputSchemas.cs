@@ -34,6 +34,8 @@ public static class ToolOutputSchemas
         + "and projectRateTypeUid (use them with save_timecard). Every status is listed, Rejected included (with the "
         + "rejection reason when Projector gives one). The signed-in user's own cards have editable: true = Draft or "
         + "Rejected (save_timecard with timecard_uid can fix it), false = fix it in Projector. "
+        + "compact=true returns short cards (workDate, workHours, projectCode, projectName, taskPath, taskWbsCode, roleName, "
+        + "rateTypeName, status, description, rejectedReason, timecardUid, editable), about half the size; use it for history. "
         + SearchCoverageRule;
 
     public const string TimeOffSchemaHint =

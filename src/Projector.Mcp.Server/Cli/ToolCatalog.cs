@@ -144,7 +144,8 @@ public static class ToolCatalog
         args.TryGetValue("status", out var status);
         args.TryGetValue("project_code", out var projectCode);
         args.TryGetValue("query", out var query);
-        return tools.ListTimecardsAsync(connectionId, resourceId, start, end, status, projectCode, ct, query);
+        return tools.ListTimecardsAsync(connectionId, resourceId, start, end, status, projectCode, ct, query,
+            GetBool(args, "compact"));
     }
 
     private static Task<object> ListTimeOffAsync(

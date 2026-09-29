@@ -38,6 +38,19 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
         doc.RootElement.GetProperty("error").GetString().Should().Be("AtLeastOneItemNotFound");
     }
 
+    [Theory]
+    [InlineData("ViewPermissionDenied")]
+    [InlineData("AccessPermissionDenied")]
+    public void AgentTools_ToError_PermissionDenied_SaysDoNotRetry(string projectorCode)
+    {
+        var result = AgentTools.ToError(new ProjectorApiException("You do not have permission to view this item.", projectorCode));
+        var text = result.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Single().Text;
+        using var doc = JsonDocument.Parse(text!);
+        doc.RootElement.GetProperty("error").GetString().Should().Be("projector_permission_denied");
+        doc.RootElement.GetProperty("message").GetString().Should()
+            .Contain(projectorCode).And.Contain("do not retry").And.Contain("administrator");
+    }
+
     [Fact]
     public void ToolCliRunner_ParseArgs_SupportsResourceId()
     {
