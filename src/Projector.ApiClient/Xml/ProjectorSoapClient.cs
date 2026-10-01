@@ -383,6 +383,17 @@ public sealed class ProjectorSoapClient :
         };
     }
 
+    public async Task<ProjectTaskPlan?> GetProjectTaskPlanAsync(
+        ProjectorConnection connection,
+        string projectCode,
+        CancellationToken cancellationToken = default)
+    {
+        var xml = ProjectorEnvelopeBuilders.BuildGetProjectWithTasks(connection.SessionTicket, projectCode);
+        var doc = await PostEnvelopeAsync(connection, "PwsGetProject", xml, cancellationToken);
+        ProjectorSoapHttp.ThrowIfResultError(XmlNodeHelpers.LocalNode(doc, "PwsGetProjectResult"));
+        return ProjectorResponseParsers.ParseProjectTaskPlan(doc);
+    }
+
     private static List<string> NormalizeProjectCodes(IReadOnlyList<string> projectCodes) =>
         projectCodes
             .Where(c => !string.IsNullOrWhiteSpace(c))

@@ -580,16 +580,33 @@ public sealed class ProjectorToolService
     public async Task<object> ListProjectRolesAsync(
         string connectionId,
         IReadOnlyList<string> projectCodes,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool includeTaskPlan = false)
     {
         var sw = Stopwatch.StartNew();
-        var connection = await RequireAsync(connectionId, ct);
-        var listed = await WithRefreshAsync(connection, c =>
-            _soap.ListProjectRolesAsync(c, projectCodes, ct), ct);
         var codeCount = projectCodes
             .Where(c => !string.IsNullOrWhiteSpace(c))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
+        if (includeTaskPlan && codeCount != 1)
+        {
+            throw new ArgumentException(
+                "include_task_plan works for one project at a time: pass a single project_code " +
+                "(call the tool once per project).");
+        }
+
+        var connection = await RequireAsync(connectionId, ct);
+        var listed = await WithRefreshAsync(connection, c =>
+            _soap.ListProjectRolesAsync(c, projectCodes, ct), ct);
+        object? taskPlan = null;
+        if (includeTaskPlan)
+        {
+            var code = projectCodes.First(c => !string.IsNullOrWhiteSpace(c)).Trim();
+            var plan = await WithRefreshAsync(connection, c => _soap.GetProjectTaskPlanAsync(c, code, ct), ct)
+                ?? throw new ProjectorApiException($"Project '{code}' was not found.", "AtLeastOneItemNotFound");
+            taskPlan = MapTaskPlan(plan, listed.Roles);
+        }
+
         var searchedScope =
             $"assigned project roles for {codeCount} project code(s) via PwsGetProjectRoles Mode=A; not date-window booked hours";
         var coverage = SearchCoverage.FromTruncation(
@@ -611,8 +628,125 @@ public sealed class ProjectorToolService
                 email = r.Email
             }).ToList(),
             count = listed.Roles.Count,
+            taskPlan,
             searchCoverage = SearchCoverageDto.From(coverage)
         }, sw);
+    }
+
+    /// <summary>
+    /// The task plan as the Task Planning tab shows it: one row per task in WBS order, effort in hours (a summary
+    /// task shows the total of its sub-tasks), duration in project days, and who does the work (the role's person
+    /// comes from the role roster, which the task data does not carry).
+    /// </summary>
+    private static object MapTaskPlan(ProjectTaskPlan plan, IReadOnlyList<ProjectRoleAssignment> roster)
+    {
+        var personByRole = roster
+            .Where(r => !string.IsNullOrWhiteSpace(r.RoleUid))
+            .GroupBy(r => r.RoleUid!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var byUid = plan.Tasks
+            .Where(t => t.TaskUid is not null)
+            .GroupBy(t => t.TaskUid!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var children = plan.Tasks
+            .Where(t => t.ParentTaskUid is not null)
+            .ToLookup(t => t.ParentTaskUid!, StringComparer.Ordinal);
+
+        int EffortWithSubTasks(ProjectPlanTask task, int depth = 0) =>
+            task.Roles.Sum(r => r.EffortMinutes)
+            + (task.TaskUid is null || depth > 20 ? 0 : children[task.TaskUid].Sum(c => EffortWithSubTasks(c, depth + 1)));
+
+        string Path(ProjectPlanTask task)
+        {
+            var names = new List<string>();
+            for (var current = task; current is not null && names.Count < 20;
+                current = current.ParentTaskUid is not null ? byUid.GetValueOrDefault(current.ParentTaskUid) : null)
+            {
+                names.Insert(0, current.TaskName ?? "?");
+            }
+
+            return string.Join(" > ", names);
+        }
+
+        static double Hours(int minutes) => Math.Round(minutes / 60.0, 2);
+
+        var rows = plan.Tasks
+            .OrderBy(t => t.WbsCode, WbsComparer.Instance)
+            .Select(t =>
+            {
+                var summary = t.TaskUid is not null && children[t.TaskUid].Any();
+                var predecessors = t.PredecessorTaskUids
+                    .Select(uid => byUid.GetValueOrDefault(uid)?.WbsCode)
+                    .Where(w => w is not null)
+                    .ToList();
+                return new
+                {
+                    wbsCode = t.WbsCode,
+                    taskName = t.TaskName,
+                    taskPath = Path(t),
+                    summaryTask = summary,
+                    taskType = t.TaskTypeName,
+                    plannedStartDate = t.PlannedStartDate,
+                    plannedEndDate = t.PlannedEndDate,
+                    earliestStartDate = t.EarliestStartDate,
+                    durationDays = t.DurationMinutes is { } d ? Math.Round(d / (double)plan.MinutesPerDay, 2) : (double?)null,
+                    effortHours = Hours(EffortWithSubTasks(t)),
+                    openForTime = t.OpenForTime,
+                    completed = t.Completed,
+                    predecessors = predecessors.Count > 0 ? predecessors : null,
+                    roles = t.Roles.Count == 0
+                        ? null
+                        : t.Roles.Select(r =>
+                        {
+                            var person = r.RoleUid is not null ? personByRole.GetValueOrDefault(r.RoleUid) : null;
+                            return new
+                            {
+                                roleName = r.RoleName ?? person?.RoleName,
+                                displayName = person?.DisplayName,
+                                effortHours = Hours(r.EffortMinutes),
+                                completed = r.Completed
+                            };
+                        }).ToList()
+                };
+            })
+            .ToList();
+
+        return new
+        {
+            projectCode = plan.ProjectCode,
+            projectName = plan.ProjectName,
+            planStartDate = plan.PlanStartDate,
+            planEndDate = plan.PlanEndDate,
+            hoursPerDay = Hours(plan.MinutesPerDay),
+            taskCount = rows.Count,
+            totalEffortHours = Hours(plan.Tasks.Sum(t => t.Roles.Sum(r => r.EffortMinutes))),
+            note = "Effort is planned hours per assigned role; a summary task shows the total of its sub-tasks. " +
+                   "Planned effort is not booked hours (list_proj_bookings) or posted time (list_timecards).",
+            tasks = rows
+        };
+    }
+
+    /// <summary>Orders WBS codes by their numbers ("5.1.10" after "5.1.9", "10" after "9").</summary>
+    private sealed class WbsComparer : IComparer<string?>
+    {
+        public static readonly WbsComparer Instance = new();
+
+        public int Compare(string? x, string? y)
+        {
+            var a = (x ?? "").Split('.');
+            var b = (y ?? "").Split('.');
+            for (var i = 0; i < Math.Min(a.Length, b.Length); i++)
+            {
+                var bothNumbers = int.TryParse(a[i], out var na) & int.TryParse(b[i], out var nb);
+                var c = bothNumbers ? na.CompareTo(nb) : string.CompareOrdinal(a[i], b[i]);
+                if (c != 0)
+                {
+                    return c;
+                }
+            }
+
+            return a.Length.CompareTo(b.Length);
+        }
     }
 
     public async Task<object> ListProjectBookingsAsync(
@@ -634,7 +768,7 @@ public sealed class ProjectorToolService
             .Count();
         var failed = listed.FailedProjectCodes;
         var searchedScope =
-            $"nonzero booked-hour rows for {codeCount} project code(s) from {start} through {end}; zero-hour roles omitted";
+            $"booked-hour rows (and weeks that only carry a booking note) for {codeCount} project code(s) from {start} through {end}; roles without hours or notes omitted";
         if (failed.Count > 0)
         {
             searchedScope += $"; {failed.Count} project code(s) failed and were skipped";
@@ -681,7 +815,8 @@ public sealed class ProjectorToolService
                 dailyWeeklyFlag = b.DailyWeeklyFlag,
                 schedulingMode = b.SchedulingMode,
                 scheduledMinutes = b.ScheduledMinutes,
-                scheduledHours = b.ScheduledHours
+                scheduledHours = b.ScheduledHours,
+                notes = b.Notes
             }).ToList(),
             count = listed.Bookings.Count,
             startDate = start,

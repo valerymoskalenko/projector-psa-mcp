@@ -506,6 +506,7 @@ public static class ProjectorResponseParsers
             {
                 var scheduled = XmlNodeHelpers.Int(b, "ScheduledMinutes");
                 var dailyWeeklyFlag = XmlNodeHelpers.Value(b, "DailyWeeklyFlag");
+                var bookingDate = XmlNodeHelpers.ShortDate(XmlNodeHelpers.Value(b, "Date"));
                 bookings.Add(new ScheduleBooking
                 {
                     ProjectCode = projectCode,
@@ -514,10 +515,10 @@ public static class ProjectorResponseParsers
                     BookingStatus = XmlNodeHelpers.Value(b, "BookingStatus"),
                     DailyWeeklyFlag = dailyWeeklyFlag,
                     SchedulingMode = MapDailyWeeklyFlag(dailyWeeklyFlag),
-                    Date = XmlNodeHelpers.ShortDate(XmlNodeHelpers.Value(b, "Date")),
+                    Date = bookingDate,
                     ScheduledMinutes = scheduled,
                     ScheduledHours = ProjectorDateHelpers.MinutesAsHours(scheduled),
-                    Notes = GetScheduleBookingNotes(b)
+                    Notes = GetScheduleBookingNotes(b, bookingDate, dailyWeeklyFlag)
                 });
             }
         }
@@ -752,6 +753,7 @@ public static class ProjectorResponseParsers
             rows.Add(new ProjectRoleAssignment
             {
                 ProjectCode = projectCode,
+                RoleUid = XmlNodeHelpers.Value(detail, "ProjectRoleUid"),
                 RoleName = roleName,
                 ResourceId = resourceId,
                 DisplayName = displayName,
@@ -760,6 +762,106 @@ public static class ProjectorResponseParsers
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// The task plan from PwsGetProject with sub-entities: tasks with WBS, planned dates, duration and the effort of
+    /// each assigned role. Role and task type names come from the project's own lists in the same response; the
+    /// rates in it are not read. Null when the response has no project.
+    /// </summary>
+    public static ProjectTaskPlan? ParseProjectTaskPlan(XDocument response)
+    {
+        var project = XmlNodeHelpers.LocalNode(response, "PwsProjectElement");
+        if (project is null)
+        {
+            return null;
+        }
+
+        static XElement? Child(XElement? parent, string name) =>
+            parent?.Elements().FirstOrDefault(e => e.Name.LocalName == name);
+
+        static string? Text(XElement? parent, string name)
+        {
+            var value = Child(parent, name)?.Value;
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
+        var detail = Child(project, "ProjectDetail");
+
+        var roleNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var role in XmlNodeHelpers.ChildLocalNodes(Child(project, "Roles"), "PwsProjectRoleElement"))
+        {
+            var roleDetail = Child(role, "ProjectRoleDetail");
+            if (Text(roleDetail, "ProjectRoleUid") is { } uid && Text(roleDetail, "RoleName") is { } name)
+            {
+                roleNames[uid] = name;
+            }
+        }
+
+        var taskTypeNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var type in XmlNodeHelpers.LocalNodes(Child(project, "TaskTypes"), "ProjectTaskTypeDetail"))
+        {
+            if (Text(type, "ProjectTaskTypeUid") is { } uid && Text(type, "ProjectTaskTypeName") is { } name)
+            {
+                taskTypeNames[uid] = name;
+            }
+        }
+
+        var tasks = new List<ProjectPlanTask>();
+        foreach (var element in XmlNodeHelpers.ChildLocalNodes(Child(project, "Tasks"), "PwsProjectTaskElement"))
+        {
+            var task = Child(element, "ProjectTaskDetail");
+            if (task is null)
+            {
+                continue;
+            }
+
+            var roles = new List<ProjectPlanTaskRole>();
+            foreach (var taskRole in XmlNodeHelpers.LocalNodes(Child(element, "ProjectTaskRoles"), "ProjectTaskRoleDetail"))
+            {
+                var roleUid = Text(Child(taskRole, "ProjectRoleIdentity"), "ProjectRoleUid");
+                roles.Add(new ProjectPlanTaskRole
+                {
+                    RoleUid = roleUid,
+                    RoleName = roleUid is not null ? roleNames.GetValueOrDefault(roleUid) : null,
+                    EffortMinutes = int.TryParse(Text(taskRole, "EffortMinutes"), out var effort) ? effort : 0,
+                    Completed = string.Equals(Text(taskRole, "CompletedFlag"), "true", StringComparison.OrdinalIgnoreCase)
+                });
+            }
+
+            var typeUid = Text(Child(task, "ProjectTaskTypeIdentity"), "ProjectTaskTypeUid");
+            var openForTime = Text(task, "OpenForTimeFlag");
+            tasks.Add(new ProjectPlanTask
+            {
+                TaskUid = Text(task, "ProjectTaskUid"),
+                ParentTaskUid = Text(Child(task, "ParentTaskIdentity"), "ProjectTaskUid"),
+                WbsCode = Text(task, "FullWbsCode"),
+                TaskName = Text(task, "TaskName"),
+                TaskTypeName = typeUid is not null ? taskTypeNames.GetValueOrDefault(typeUid) : null,
+                DurationMinutes = int.TryParse(Text(task, "DurationMinutes"), out var duration) ? duration : null,
+                EarliestStartDate = XmlNodeHelpers.ShortDate(Text(task, "EarliestStartDate")),
+                PlannedStartDate = XmlNodeHelpers.ShortDate(Text(task, "PlannedStartDateTime")),
+                PlannedEndDate = XmlNodeHelpers.ShortDate(Text(task, "PlannedEndDateTime")),
+                OpenForTime = openForTime is null ? null : string.Equals(openForTime, "true", StringComparison.OrdinalIgnoreCase),
+                Completed = string.Equals(Text(task, "CompletedFlag"), "true", StringComparison.OrdinalIgnoreCase),
+                PredecessorTaskUids = XmlNodeHelpers.LocalNodes(Child(task, "Predecessors"), "ProjectTaskUid")
+                    .Select(e => e.Value.Trim())
+                    .Where(v => v.Length > 0)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList(),
+                Roles = roles
+            });
+        }
+
+        return new ProjectTaskPlan
+        {
+            ProjectCode = Text(detail, "ProjectCode"),
+            ProjectName = Text(detail, "ProjectName"),
+            PlanStartDate = XmlNodeHelpers.ShortDate(Text(project, "TaskPlanStartDate")),
+            PlanEndDate = XmlNodeHelpers.ShortDate(Text(project, "TaskPlanEndDate")),
+            MinutesPerDay = int.TryParse(Text(detail, "MinutesPerDay"), out var perDay) && perDay > 0 ? perDay : 480,
+            Tasks = tasks
+        };
     }
 
     public static IReadOnlyList<ProjectBookingRow> ParseResourceSchedulingRoleData(
@@ -800,7 +902,29 @@ public static class ProjectorResponseParsers
                 email = mapped;
             }
 
+            // Booking notes (the comment on a week cell of the Resource Scheduling grid): one bucket per week.
+            var notesByWeek = new Dictionary<string, IReadOnlyList<BookingDayNote>>(StringComparer.Ordinal);
+            var notesBuckets = role.Elements().FirstOrDefault(e => e.Name.LocalName == "NotesBuckets");
+            foreach (var bucket in XmlNodeHelpers.LocalNodes(notesBuckets, "PwsProjectRoleNotesBucket"))
+            {
+                var weekStart = XmlNodeHelpers.ShortDate(XmlNodeHelpers.Value(bucket, "BucketStartDate"));
+                if (string.IsNullOrWhiteSpace(weekStart) || !InWindow(weekStart))
+                {
+                    continue;
+                }
+
+                var notes = LabelWeekNotes(ReadNoteStrings(bucket), weekStart);
+                if (notes is not null)
+                {
+                    notesByWeek[weekStart] = notes;
+                }
+            }
+
+            bool InWindow(string bucketStart) =>
+                string.CompareOrdinal(bucketStart, startKey) >= 0 && string.CompareOrdinal(bucketStart, endKey) <= 0;
+
             var bookedBuckets = role.Elements().FirstOrDefault(e => e.Name.LocalName == "BookedBuckets");
+            string? roleSchedulingMode = null;
             foreach (var bucket in XmlNodeHelpers.LocalNodes(bookedBuckets, "PwsProjectRoleHoursBucket"))
             {
                 var bucketStart = XmlNodeHelpers.ShortDate(XmlNodeHelpers.Value(bucket, "BucketStartDate"));
@@ -809,8 +933,8 @@ public static class ProjectorResponseParsers
                     continue;
                 }
 
-                if (string.CompareOrdinal(bucketStart, startKey) < 0
-                    || string.CompareOrdinal(bucketStart, endKey) > 0)
+                roleSchedulingMode ??= XmlNodeHelpers.Value(bucket, "SchedulingMode");
+                if (!InWindow(bucketStart))
                 {
                     continue;
                 }
@@ -854,7 +978,29 @@ public static class ProjectorResponseParsers
                     DailyWeeklyFlag = mode,
                     SchedulingMode = MapDailyWeeklyFlag(mode),
                     ScheduledMinutes = minutes,
-                    ScheduledHours = ProjectorDateHelpers.MinutesAsHours(minutes)
+                    ScheduledHours = ProjectorDateHelpers.MinutesAsHours(minutes),
+                    Notes = notesByWeek.GetValueOrDefault(bucketStart)
+                });
+                notesByWeek.Remove(bucketStart);
+            }
+
+            // A week can carry notes without booked hours: keep the note, with zero hours.
+            foreach (var (weekStart, notes) in notesByWeek.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                rows.Add(new ProjectBookingRow
+                {
+                    ProjectCode = projectCode,
+                    ProjectName = projectName,
+                    RoleName = roleName,
+                    ResourceId = resourceId,
+                    DisplayName = displayName,
+                    Email = email,
+                    Date = weekStart,
+                    DailyWeeklyFlag = roleSchedulingMode,
+                    SchedulingMode = MapDailyWeeklyFlag(roleSchedulingMode),
+                    ScheduledMinutes = 0,
+                    ScheduledHours = 0,
+                    Notes = notes
                 });
             }
         }
@@ -1241,10 +1387,11 @@ public static class ProjectorResponseParsers
         return (clientName, clientNumber);
     }
 
-    private static IReadOnlyList<string>? GetScheduleBookingNotes(XElement booking)
+    /// <summary>The note strings of a Notes element: one child per day, or the element's own text.</summary>
+    private static List<string> ReadNoteStrings(XElement? parent)
     {
         var notes = new List<string>();
-        var notesNode = booking.Elements().FirstOrDefault(e => e.Name.LocalName == "Notes");
+        var notesNode = parent?.Elements().FirstOrDefault(e => e.Name.LocalName == "Notes");
         if (notesNode is not null)
         {
             foreach (var child in notesNode.Elements())
@@ -1258,18 +1405,59 @@ public static class ProjectorResponseParsers
             }
         }
 
-        while (notes.Count < 7)
-        {
-            notes.Add("");
-        }
-
-        if (notes.Count > 7)
-        {
-            notes = notes.Take(7).ToList();
-        }
-
-        return notes.Any(n => !string.IsNullOrWhiteSpace(n)) ? notes : null;
+        return notes;
     }
+
+    private static IReadOnlyList<BookingDayNote>? GetScheduleBookingNotes(XElement booking, string? bookingDate, string? dailyWeeklyFlag)
+    {
+        var notes = ReadNoteStrings(booking);
+        var filled = notes.Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
+
+        // A daily booking is one day: a single note belongs to that day, whatever its position.
+        if (filled.Count == 1
+            && string.Equals(dailyWeeklyFlag, "D", StringComparison.OrdinalIgnoreCase)
+            && TryParseShortDate(bookingDate, out var day))
+        {
+            return [new BookingDayNote(day.DayOfWeek.ToString(), bookingDate, filled[0].Trim())];
+        }
+
+        return LabelWeekNotes(notes, bookingDate);
+    }
+
+    /// <summary>
+    /// Projector keeps seven booking notes per role and week, Sunday first. Returns the days that have a note,
+    /// each with its weekday and date; null when the week has none.
+    /// </summary>
+    internal static IReadOnlyList<BookingDayNote>? LabelWeekNotes(IReadOnlyList<string> notes, string? dateInWeek)
+    {
+        DateTime? sunday = TryParseShortDate(dateInWeek, out var date)
+            ? date.AddDays(-(int)date.DayOfWeek)
+            : null;
+
+        var labelled = new List<BookingDayNote>();
+        for (var i = 0; i < notes.Count && i < 7; i++)
+        {
+            if (string.IsNullOrWhiteSpace(notes[i]))
+            {
+                continue;
+            }
+
+            labelled.Add(new BookingDayNote(
+                ((DayOfWeek)i).ToString(),
+                sunday?.AddDays(i).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                notes[i].Trim()));
+        }
+
+        return labelled.Count > 0 ? labelled : null;
+    }
+
+    private static bool TryParseShortDate(string? value, out DateTime date) =>
+        DateTime.TryParseExact(
+            value is { Length: >= 10 } ? value[..10] : value,
+            "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out date);
 
     private static double? GetUtilizationPercent(XElement parent, string group)
     {

@@ -200,6 +200,12 @@ public interface IProjectorEngagementClient
         string startDate,
         string endDate,
         CancellationToken cancellationToken = default);
+
+    /// <summary>One project's task plan (tasks, planned dates, effort per role); null when the project is not found.</summary>
+    Task<ProjectTaskPlan?> GetProjectTaskPlanAsync(
+        ProjectorConnection connection,
+        string projectCode,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IProjectorHolidayClient

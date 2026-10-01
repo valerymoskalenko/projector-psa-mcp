@@ -58,10 +58,14 @@ public static class ToolOutputSchemas
         "managers and projects may then be missing), searchCoverage, resource_links. " + SearchCoverageRule;
 
     public const string ProjectRolesSchemaHint =
-        "Output keys: roles[], count, searchCoverage. " + SearchCoverageRule;
+        "Output keys: roles[], count, taskPlan (only with include_task_plan: projectCode, planStartDate, planEndDate, "
+        + "hoursPerDay, taskCount, totalEffortHours, tasks[] with wbsCode, taskName, taskPath, summaryTask, taskType, "
+        + "plannedStartDate, plannedEndDate, earliestStartDate, durationDays, effortHours, openForTime, completed, "
+        + "predecessors, roles[] with roleName, displayName, effortHours), searchCoverage. " + SearchCoverageRule;
 
     public const string ProjectBookingsSchemaHint =
-        "Output keys: bookings[], count, startDate, endDate, failed_project_codes, searchCoverage. "
+        "Output keys: bookings[] (each with notes[] when the week has booking notes), count, startDate, endDate, "
+        + "failed_project_codes, searchCoverage. "
         + SearchCoverageRule;
 
     public const string TimeProjectsSchemaHint =

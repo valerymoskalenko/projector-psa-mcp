@@ -240,7 +240,7 @@ public static class ToolCatalog
         IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
     {
         var tools = services.GetRequiredService<ProjectorToolService>();
-        return tools.ListProjectRolesAsync(connectionId, ParseProjectCodes(args), ct);
+        return tools.ListProjectRolesAsync(connectionId, ParseProjectCodes(args), ct, GetBool(args, "include_task_plan"));
     }
 
     private static Task<object> ListProjectBookingsAsync(

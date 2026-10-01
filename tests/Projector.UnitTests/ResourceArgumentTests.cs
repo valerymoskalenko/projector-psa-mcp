@@ -217,6 +217,98 @@ public class ResourceArgumentTests
     }
 
     [Fact]
+    public async Task ListProjectRoles_WithTaskPlan_ReturnsTasksInWbsOrderWithEffortAndPeople()
+    {
+        var (service, soap) = Create();
+        soap.ProjectRoles.AddRange(
+        [
+            new Projector.Domain.Engagements.ProjectRoleAssignment { ProjectCode = "P005678-001", RoleUid = "r1", RoleName = "Solution Developer", DisplayName = "Jane Doe", ResourceId = "10001" },
+            new Projector.Domain.Engagements.ProjectRoleAssignment { ProjectCode = "P005678-001", RoleUid = "r2", RoleName = "Project Coordinator", DisplayName = "Carol Jones", ResourceId = "10002" },
+        ]);
+        soap.TaskPlan = new Projector.Domain.Engagements.ProjectTaskPlan
+        {
+            ProjectCode = "P005678-001",
+            ProjectName = "Operations",
+            PlanStartDate = "2026-10-05",
+            PlanEndDate = "2026-10-16",
+            MinutesPerDay = 480,
+            Tasks =
+            [
+                PlanTask("t10", "2.10", "Build and Deploy", parent: "t2", duration: 480, predecessors: ["t21"], roles: [("r1", "Solution Developer", 60)]),
+                PlanTask("t2", "2", "Ticket 1001 Invoice Automation", parent: null, duration: null),
+                PlanTask("t21", "2.2", "Project proposal journal", parent: "t2", duration: 4320, roles: [("r1", "Solution Developer", 120), ("r2", "Project Coordinator", 60)]),
+            ]
+        };
+
+        var result = Json(await service.ListProjectRolesAsync(
+            ConnectionId, ["P005678-001"], CancellationToken.None, includeTaskPlan: true));
+
+        soap.Calls.Should().Equal("ListProjectRolesAsync", "GetProjectTaskPlanAsync(P005678-001)");
+        var plan = result.GetProperty("taskPlan");
+        plan.GetProperty("taskCount").GetInt32().Should().Be(3);
+        plan.GetProperty("totalEffortHours").GetDouble().Should().Be(4);
+        var tasks = plan.GetProperty("tasks").EnumerateArray().ToList();
+        tasks.Select(t => t.GetProperty("wbsCode").GetString()).Should().Equal("2", "2.2", "2.10");
+
+        tasks[0].GetProperty("summaryTask").GetBoolean().Should().BeTrue();
+        tasks[0].GetProperty("effortHours").GetDouble().Should().Be(4, "a summary task shows the total of its sub-tasks");
+        tasks[0].GetProperty("durationDays").ValueKind.Should().Be(JsonValueKind.Null);
+
+        tasks[1].GetProperty("taskPath").GetString().Should().Be("Ticket 1001 Invoice Automation > Project proposal journal");
+        tasks[1].GetProperty("durationDays").GetDouble().Should().Be(9);
+        tasks[1].GetProperty("effortHours").GetDouble().Should().Be(3);
+        var roles = tasks[1].GetProperty("roles").EnumerateArray().ToList();
+        roles.Select(r => r.GetProperty("displayName").GetString()).Should().Equal("Jane Doe", "Carol Jones");
+        roles.Select(r => r.GetProperty("effortHours").GetDouble()).Should().Equal(2, 1);
+
+        tasks[2].GetProperty("predecessors").EnumerateArray().Select(p => p.GetString()).Should().Equal("2.2");
+    }
+
+    [Fact]
+    public async Task ListProjectRoles_WithoutTaskPlan_MakesNoTaskCall()
+    {
+        var (service, soap) = Create();
+
+        var result = Json(await service.ListProjectRolesAsync(
+            ConnectionId, ["P005678-001", "P005678-002"], CancellationToken.None));
+
+        soap.Calls.Should().Equal("ListProjectRolesAsync");
+        result.GetProperty("taskPlan").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task ListProjectRoles_TaskPlanForSeveralProjects_IsRefusedBeforeAnyCall()
+    {
+        var (service, soap) = Create();
+
+        var act = () => service.ListProjectRolesAsync(
+            ConnectionId, ["P005678-001", "P005678-002"], CancellationToken.None, includeTaskPlan: true);
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("one project at a time");
+        soap.Calls.Should().BeEmpty();
+    }
+
+    private static Projector.Domain.Engagements.ProjectPlanTask PlanTask(
+        string uid, string wbs, string name, string? parent, int? duration,
+        string[]? predecessors = null, (string Uid, string Name, int Minutes)[]? roles = null) => new()
+    {
+        TaskUid = uid,
+        ParentTaskUid = parent,
+        WbsCode = wbs,
+        TaskName = name,
+        DurationMinutes = duration,
+        PlannedStartDate = "2026-10-05",
+        PlannedEndDate = "2026-10-16",
+        PredecessorTaskUids = predecessors ?? [],
+        Roles = (roles ?? []).Select(r => new Projector.Domain.Engagements.ProjectPlanTaskRole
+        {
+            RoleUid = r.Uid,
+            RoleName = r.Name,
+            EffortMinutes = r.Minutes
+        }).ToList()
+    };
+
+    [Fact]
     public void TimeEntryPrompts_SayAnswersAreNotApproval()
     {
         var rule = Projector.Mcp.Server.Prompts.ProjectorPrompts.SaveConfirmationRule;
@@ -341,6 +433,10 @@ public class ResourceArgumentTests
 
         public List<Projector.Domain.Engagements.EngagementSummary> Engagements { get; } = [];
 
+        public List<Projector.Domain.Engagements.ProjectRoleAssignment> ProjectRoles { get; } = [];
+
+        public Projector.Domain.Engagements.ProjectTaskPlan? TaskPlan { get; set; }
+
         /// <summary>The detail call hangs until its token is cancelled, like a Projector call that never answers.</summary>
         public bool EngagementDetailsNeverAnswer { get; set; }
 
@@ -366,6 +462,12 @@ public class ResourceArgumentTests
                     return EngagementDetailsNeverAnswer
                         ? NeverAnswer((CancellationToken)args![2]!)
                         : Task.FromResult<IReadOnlyList<Projector.Domain.Engagements.EngagementDetail>>([]);
+                case nameof(IProjectorSoapClient.ListProjectRolesAsync):
+                    Calls.Add("ListProjectRolesAsync");
+                    return Task.FromResult(new Projector.Domain.Engagements.ProjectRoleListResult { Roles = ProjectRoles.ToList() });
+                case nameof(IProjectorSoapClient.GetProjectTaskPlanAsync):
+                    Calls.Add($"GetProjectTaskPlanAsync({args![1]})");
+                    return Task.FromResult(TaskPlan);
                 case nameof(IProjectorSoapClient.GetProjectsByCodeAsync):
                     return Task.FromResult<IReadOnlyList<Projector.Domain.Engagements.ProjectSummary>>([]);
                 default:

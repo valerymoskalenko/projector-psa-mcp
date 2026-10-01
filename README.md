@@ -12,7 +12,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Pr
 |------|-----------------|
 | `list_resources` | Find people (resources) by name or other text |
 | `get_resource` | One person's profile, by id, full name or email |
-| `get_schedule` | One person's schedule for a window: working hours, holidays, PTO, bookings |
+| `get_schedule` | One person's schedule for a window: working hours, holidays, PTO, bookings with their booking notes |
 | `check_availability` | Free capacity for 1–20 people against N hours per week |
 | `get_overview` | One-call bundle: profile, timecards, schedule and time off for a person |
 | `list_timecards` | Work timecards for a person and date range |
@@ -21,8 +21,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Pr
 | `list_holidays` | Company holiday calendars by location |
 | `list_engagements` | Engagements with managers and nested projects |
 | `get_engagement` | One engagement with contracts, cost center and projects |
-| `list_project_roles` | Who is assigned to one or more projects |
-| `list_proj_bookings` | Booked hours on one or more projects in a date window |
+| `list_project_roles` | Who is assigned to one or more projects; with `include_task_plan`, one project's task plan (tasks, planned dates, effort hours per role) |
+| `list_proj_bookings` | Booked hours and booking notes on one or more projects in a date window |
 | `list_time_projects` | Projects I can enter time on for a date, with my roles |
 | `get_timecard_options` | One project's tasks, rate types and time-entry rules for me on a date |
 | `save_timecard` | **Write.** Create a Draft time card, or update my Draft/Rejected card. Never submits |

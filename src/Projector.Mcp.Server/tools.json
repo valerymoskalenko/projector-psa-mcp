@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.6.7"
+    "version": "0.6.8"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -131,7 +131,7 @@
       "requiredScopes": [
         "scheduleResources"
       ],
-      "description": "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes and hours, holidays, PTO, roles (with engagement/client/managers/stage), bookings (dailyWeeklyFlag D/W plus schedulingMode daily/weekly, with notes), plus daily/weekly capacity summaries (state, booked/available minutes). Cap is eight weeks. Prefer check_availability for multi-person capacity questions. Booked minutes are planned resource bookings (the resource plan), not time posted on timecards; use list_timecards for posted hours.",
+      "description": "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes and hours, holidays, PTO, roles (with engagement/client/managers/stage), bookings (dailyWeeklyFlag D/W plus schedulingMode daily/weekly, with the booking notes of the week: notes[] of day, date, text), plus daily/weekly capacity summaries (state, booked/available minutes). Cap is eight weeks. Prefer check_availability for multi-person capacity questions. Booked minutes are planned resource bookings (the resource plan), not time posted on timecards; use list_timecards for posted hours.",
       "whenNotToUse": "Do not use for multi-person availability comparisons. Do not use for historical time entry totals; use list_timecards. Do not use for a project team roster; use list_project_roles. Do not use for project booked hours across teammates; use list_proj_bookings.",
       "inputSchema": {
         "type": "object",
@@ -428,7 +428,7 @@
         "viewProjects",
         "scheduleEngagements"
       ],
-      "description": "Lists many booked/assigned project role rows for one or more project codes (role name, resource id/name, optional email). Uses PwsGetProjectRoles Mode=A. Does not return date-window booked hours. Includes searchCoverage (status full/partial; when partial, do not present as complete).",
+      "description": "Lists many booked/assigned project role rows for one or more project codes (role name, resource id/name, optional email). Uses PwsGetProjectRoles Mode=A. Does not return date-window booked hours. With include_task_plan = true (one project only) it also returns taskPlan, the project's task plan (the Task Planning tab): every task with WBS code, task path, task type, planned start and end, duration in days, planned effort hours in total and per assigned role with the person, open for time, completed, predecessors. Includes searchCoverage (status full/partial; when partial, do not present as complete).",
       "whenNotToUse": "Do not use for October-style booked hours; use list_proj_bookings. Do not use for one person's assigned projects; use get_schedule. Do not use for capacity; use check_availability.",
       "inputSchema": {
         "type": "object",
@@ -451,6 +451,11 @@
               }
             ],
             "description": "One project code or 1–100 project codes (e.g. P001234-001)."
+          },
+          "include_task_plan": {
+            "type": "boolean",
+            "default": false,
+            "description": "true = also return taskPlan (tasks, planned dates, effort hours per role); one project code only."
           }
         }
       }
@@ -466,7 +471,7 @@
         "viewProjects",
         "scheduleEngagements"
       ],
-      "description": "Lists many booked-hour rows for one or more project codes in an inclusive date window (role, resource, date, scheduled minutes/hours). Uses PwsGetResourceSchedulingRoleData mode A; one SOAP call per project with bounded concurrency. Zero-hour buckets are omitted. Accepts many project_codes in one MCP call. Includes searchCoverage (status full/partial; honor partial coverage — do not invent missing projects).",
+      "description": "Lists many booked-hour rows for one or more project codes in an inclusive date window (role, resource, date, scheduled minutes/hours). Uses PwsGetResourceSchedulingRoleData mode A; one SOAP call per project with bounded concurrency. Each row carries the booking notes of its week (notes[]: day, date, text — the comment on a week cell of the Resource Scheduling grid); a week with notes but no hours is listed with zero hours. Other zero-hour buckets are omitted. Accepts many project_codes in one MCP call. Includes searchCoverage (status full/partial; honor partial coverage — do not invent missing projects).",
       "whenNotToUse": "Do not use for assignment roster without hours; use list_project_roles. Do not use for one person's load; use get_schedule. Do not use for actual timecards; use list_timecards.",
       "inputSchema": {
         "type": "object",

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetProjectResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetProjectResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/Scheduling/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <a:Projects xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <b:PwsProjectElement>
+            <b:ProjectDetail>
+              <b:ProjectCode>P001234-001</b:ProjectCode>
+              <b:ProjectUid>2100000000000000001</b:ProjectUid>
+              <b:ProjectName>Contoso - ERP Rollout Program 1</b:ProjectName>
+              <b:MinutesPerDay>480</b:MinutesPerDay>
+            </b:ProjectDetail>
+            <b:Roles>
+              <b:PwsProjectRoleElement>
+                <b:ProjectRoleDetail>
+                  <b:ProjectRoleUid>2200000000000000001</b:ProjectRoleUid>
+                  <b:ResourceIdentity i:nil="true" />
+                  <b:RoleName>Application Specialist - Team 1</b:RoleName>
+                  <b:RateExceptions>
+                    <b:PwsProjectRoleRateException>
+                      <b:ContractHourlyRate>999</b:ContractHourlyRate>
+                    </b:PwsProjectRoleRateException>
+                  </b:RateExceptions>
+                </b:ProjectRoleDetail>
+              </b:PwsProjectRoleElement>
+              <b:PwsProjectRoleElement>
+                <b:ProjectRoleDetail>
+                  <b:ProjectRoleUid>2200000000000000002</b:ProjectRoleUid>
+                  <b:ResourceIdentity i:nil="true" />
+                  <b:RoleName>PMO Oversight</b:RoleName>
+                </b:ProjectRoleDetail>
+              </b:PwsProjectRoleElement>
+            </b:Roles>
+            <b:TaskTypes>
+              <b:PwsProjectTaskTypeElement>
+                <b:ProjectTaskTypeDetail>
+                  <b:ProjectTaskTypeUid>2300000000000000001</b:ProjectTaskTypeUid>
+                  <b:ProjectTaskTypeName>Invoice Automation</b:ProjectTaskTypeName>
+                </b:ProjectTaskTypeDetail>
+              </b:PwsProjectTaskTypeElement>
+            </b:TaskTypes>
+            <b:Tasks>
+              <b:PwsProjectTaskElement>
+                <b:ProjectTaskDetail>
+                  <b:ProjectTaskUid>2400000000000000010</b:ProjectTaskUid>
+                  <b:CompletedFlag>false</b:CompletedFlag>
+                  <b:DurationMinutes>2400</b:DurationMinutes>
+                  <b:EarliestStartDate i:nil="true" />
+                  <b:FullWbsCode>2.10</b:FullWbsCode>
+                  <b:OpenForTimeFlag>true</b:OpenForTimeFlag>
+                  <b:ParentTaskIdentity>
+                    <b:ProjectTaskUid>2400000000000000002</b:ProjectTaskUid>
+                  </b:ParentTaskIdentity>
+                  <b:PlannedEndDateTime>2026-10-09T08:00:00Z</b:PlannedEndDateTime>
+                  <b:PlannedStartDateTime>2026-10-05T00:00:00Z</b:PlannedStartDateTime>
+                  <b:Predecessors>
+                    <b:PwsProjectTaskPredecessor>
+                      <b:PredecessorTaskIdentity>
+                        <b:ProjectTaskUid>2400000000000000003</b:ProjectTaskUid>
+                      </b:PredecessorTaskIdentity>
+                    </b:PwsProjectTaskPredecessor>
+                  </b:Predecessors>
+                  <b:ProjectTaskTypeIdentity>
+                    <b:ProjectTaskTypeUid>2300000000000000001</b:ProjectTaskTypeUid>
+                  </b:ProjectTaskTypeIdentity>
+                  <b:TaskName>Build and Deploy</b:TaskName>
+                </b:ProjectTaskDetail>
+                <b:ProjectTaskRoles>
+                  <b:PwsProjectTaskRoleElement>
+                    <b:ProjectTaskRoleDetail>
+                      <b:ProjectRoleIdentity>
+                        <b:ProjectRoleUid>2200000000000000001</b:ProjectRoleUid>
+                      </b:ProjectRoleIdentity>
+                      <b:ProjectTaskIdentity>
+                        <b:ProjectTaskUid>2400000000000000010</b:ProjectTaskUid>
+                      </b:ProjectTaskIdentity>
+                      <b:CompletedFlag>false</b:CompletedFlag>
+                      <b:EffortMinutes>60</b:EffortMinutes>
+                    </b:ProjectTaskRoleDetail>
+                  </b:PwsProjectTaskRoleElement>
+                </b:ProjectTaskRoles>
+              </b:PwsProjectTaskElement>
+              <b:PwsProjectTaskElement>
+                <b:ProjectTaskDetail>
+                  <b:ProjectTaskUid>2400000000000000002</b:ProjectTaskUid>
+                  <b:CompletedFlag>false</b:CompletedFlag>
+                  <b:DurationMinutes i:nil="true" />
+                  <b:EarliestStartDate>2026-10-05T00:00:00Z</b:EarliestStartDate>
+                  <b:FullWbsCode>2</b:FullWbsCode>
+                  <b:OpenForTimeFlag i:nil="true" />
+                  <b:ParentTaskIdentity i:nil="true" />
+                  <b:PlannedEndDateTime>2026-10-09T08:00:00Z</b:PlannedEndDateTime>
+                  <b:PlannedStartDateTime>2026-10-05T00:00:00Z</b:PlannedStartDateTime>
+                  <b:Predecessors />
+                  <b:ProjectTaskTypeIdentity>
+                    <b:ProjectTaskTypeUid>2300000000000000001</b:ProjectTaskTypeUid>
+                  </b:ProjectTaskTypeIdentity>
+                  <b:TaskName>Ticket 1001 Invoice Automation</b:TaskName>
+                </b:ProjectTaskDetail>
+                <b:ProjectTaskRoles />
+              </b:PwsProjectTaskElement>
+              <b:PwsProjectTaskElement>
+                <b:ProjectTaskDetail>
+                  <b:ProjectTaskUid>2400000000000000003</b:ProjectTaskUid>
+                  <b:CompletedFlag>true</b:CompletedFlag>
+                  <b:DurationMinutes>4320</b:DurationMinutes>
+                  <b:EarliestStartDate i:nil="true" />
+                  <b:FullWbsCode>2.2</b:FullWbsCode>
+                  <b:OpenForTimeFlag>true</b:OpenForTimeFlag>
+                  <b:ParentTaskIdentity>
+                    <b:ProjectTaskUid>2400000000000000002</b:ProjectTaskUid>
+                  </b:ParentTaskIdentity>
+                  <b:PlannedEndDateTime>2026-10-09T08:00:00Z</b:PlannedEndDateTime>
+                  <b:PlannedStartDateTime>2026-10-05T00:00:00Z</b:PlannedStartDateTime>
+                  <b:Predecessors />
+                  <b:ProjectTaskTypeIdentity>
+                    <b:ProjectTaskTypeUid>2300000000000000001</b:ProjectTaskTypeUid>
+                  </b:ProjectTaskTypeIdentity>
+                  <b:TaskName>Project proposal journal</b:TaskName>
+                </b:ProjectTaskDetail>
+                <b:ProjectTaskRoles>
+                  <b:PwsProjectTaskRoleElement>
+                    <b:ProjectTaskRoleDetail>
+                      <b:ProjectRoleIdentity>
+                        <b:ProjectRoleUid>2200000000000000001</b:ProjectRoleUid>
+                      </b:ProjectRoleIdentity>
+                      <b:CompletedFlag>false</b:CompletedFlag>
+                      <b:EffortMinutes>120</b:EffortMinutes>
+                    </b:ProjectTaskRoleDetail>
+                  </b:PwsProjectTaskRoleElement>
+                  <b:PwsProjectTaskRoleElement>
+                    <b:ProjectTaskRoleDetail>
+                      <b:ProjectRoleIdentity>
+                        <b:ProjectRoleUid>2200000000000000002</b:ProjectRoleUid>
+                      </b:ProjectRoleIdentity>
+                      <b:CompletedFlag>true</b:CompletedFlag>
+                      <b:EffortMinutes>60</b:EffortMinutes>
+                    </b:ProjectTaskRoleDetail>
+                  </b:PwsProjectTaskRoleElement>
+                </b:ProjectTaskRoles>
+              </b:PwsProjectTaskElement>
+            </b:Tasks>
+            <b:TaskPlanEndDate>2026-10-09T00:00:00Z</b:TaskPlanEndDate>
+            <b:TaskPlanStartDate>2026-10-05T00:00:00Z</b:TaskPlanStartDate>
+          </b:PwsProjectElement>
+        </a:Projects>
+      </PwsGetProjectResult>
+    </PwsGetProjectResponse>
+  </s:Body>
+</s:Envelope>

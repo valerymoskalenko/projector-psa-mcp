@@ -81,7 +81,8 @@ public sealed class AgentTools
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
         "Returns the schedule of one person (default: the signed-in user) for a date window: working/utilization minutes " +
-        "and hours (expected hours), holidays, PTO, roles, bookings, plus daily/weekly capacity summaries. " +
+        "and hours (expected hours), holidays, PTO, roles, bookings with their booking notes (bookings[].notes: day, " +
+        "date, text — what the scheduler wrote for that week), plus daily/weekly capacity summaries. " +
         "Cap is eight weeks. Booked minutes are planned resource bookings (the resource plan), not time posted on " +
         "timecards; use list_timecards for posted hours. " +
         "WhenNotToUse: Do not use for multi-person availability comparisons. " +
@@ -228,6 +229,9 @@ public sealed class AgentTools
         "Lists many booked/assigned project role rows for one or more project codes " +
         "(role name, resource id/name, optional email). Uses PwsGetProjectRoles Mode=A. " +
         "Does not return date-window booked hours. " +
+        "With include_task_plan = true (one project only) it also returns the project's task plan (the Task Planning " +
+        "tab): every task with WBS code, task path, task type, planned start and end, duration in days, planned " +
+        "effort hours in total and per assigned role with the person, open for time, completed, predecessors. " +
         ToolOutputSchemas.ProjectRolesSchemaHint + " " +
         "WhenNotToUse: Do not use for October-style booked hours; use list_proj_bookings. " +
         "Do not use for one person's assigned projects; use get_schedule. " +
@@ -235,16 +239,19 @@ public sealed class AgentTools
     public Task<CallToolResult> ListProjectRoles(
         [Description("One project code (e.g. P001234-001)")] string? project_code = null,
         [Description("1–100 project codes")] string[]? project_codes = null,
+        [Description("true = also return taskPlan (tasks, planned dates, effort hours per role); one project code only")] bool include_task_plan = false,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _tools.ListProjectRolesAsync(
-            ct.ConnectionId, NormalizeProjectCodes(project_code, project_codes), ct.Token), cancellationToken);
+            ct.ConnectionId, NormalizeProjectCodes(project_code, project_codes), ct.Token, include_task_plan), cancellationToken);
 
     [McpServerTool(Name = "list_proj_bookings", Title = "List Projector project bookings",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
         "Lists many booked-hour rows for one or more project codes in an inclusive date window " +
         "(role, resource, date, scheduled minutes/hours). Uses PwsGetResourceSchedulingRoleData mode A; " +
-        "one SOAP call per project with bounded concurrency. Zero-hour buckets are omitted. " +
+        "one SOAP call per project with bounded concurrency. Each row carries the booking notes of its week " +
+        "(notes[]: day, date, text — the comment on a week cell of the Resource Scheduling grid); a week with notes " +
+        "but no hours is listed with zero hours. Other zero-hour buckets are omitted. " +
         "Accepts many project_codes in one MCP call. " +
         ToolOutputSchemas.ProjectBookingsSchemaHint + " " +
         "WhenNotToUse: Do not use for assignment roster without hours; use list_project_roles. " +

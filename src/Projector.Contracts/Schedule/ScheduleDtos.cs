@@ -61,4 +61,4 @@ public sealed record ScheduleBookingDto(
     string? Date,
     int ScheduledMinutes,
     double ScheduledHours,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Notes = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Projector.Domain.Schedule.BookingDayNote>? Notes = null);

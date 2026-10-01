@@ -168,13 +168,104 @@ public class FixtureParserTests
     }
 
     [Fact]
+    public void ParseProjectBookings_ReadsBookingNotesByDay()
+    {
+        var rows = ProjectorResponseParsers.ParseResourceSchedulingRoleData(
+            ReadFixture("project_bookings.xml"), "2026-10-01", "2026-10-31");
+
+        var booked = rows.Single(r => r.DisplayName == "Jane Doe" && r.Date == "2026-10-04");
+        booked.Notes.Should().BeEquivalentTo(
+        [
+            new Projector.Domain.Schedule.BookingDayNote("Monday", "2026-10-05", "Ticket 1001 Invoice layout Hrs.8"),
+            new Projector.Domain.Schedule.BookingDayNote("Tuesday", "2026-10-06", "Ticket 1002 Credit note flow Hrs.4"),
+        ], o => o.WithStrictOrdering());
+
+        var noteOnly = rows.Single(r => r.Date == "2026-10-18");
+        noteOnly.DisplayName.Should().Be("Jane Doe");
+        noteOnly.ScheduledMinutes.Should().Be(0, "a week with a note but no hours is still listed");
+        noteOnly.SchedulingMode.Should().Be("weekly");
+        noteOnly.Notes.Should().ContainSingle().Which.Should().Be(
+            new Projector.Domain.Schedule.BookingDayNote("Friday", "2026-10-23", "Waiting for the customer sign-off"));
+
+        rows.Single(r => r.DisplayName == "Carol Jones").Notes.Should().BeNull();
+        rows.Should().NotContain(r => r.Date == "2026-11-01", "notes outside the window are left out");
+        rows.Should().NotContain(r => r.Date == "2026-10-11", "an empty notes bucket adds no row");
+    }
+
+    [Fact]
+    public void ParseResourceSchedule_LabelsBookingNotesByDay()
+    {
+        var schedule = ProjectorResponseParsers.ParseResourceSchedule(ReadFixture("resource_schedule.xml"));
+
+        var weekly = schedule.Bookings.Single(b => b.DailyWeeklyFlag == "W");
+        weekly.Notes.Should().ContainSingle().Which.Should().Be(
+            new Projector.Domain.Schedule.BookingDayNote("Sunday", "2026-01-04", "Start of investigation"),
+            "the first of the seven notes is Sunday of the booking's week");
+        schedule.Bookings.Single(b => b.DailyWeeklyFlag == "D").Notes.Should().BeNull();
+    }
+
+    [Fact]
+    public void LabelWeekNotes_NoNotes_IsNull()
+    {
+        ProjectorResponseParsers.LabelWeekNotes(["", " ", ""], "2026-10-04").Should().BeNull();
+        ProjectorResponseParsers.LabelWeekNotes(["", "Review"], null).Should().ContainSingle()
+            .Which.Should().Be(new Projector.Domain.Schedule.BookingDayNote("Monday", null, "Review"));
+    }
+
+    [Fact]
+    public void ParseProjectRoles_ReadsTheRoleUid()
+    {
+        var roles = ProjectorResponseParsers.ParseProjectRoles(ReadFixture("project_roles.xml"));
+        roles.Select(r => r.RoleUid).Should().Equal("2200000000000000001", "2200000000000000002");
+    }
+
+    [Fact]
+    public void ParseProjectTaskPlan_ReadsTasksDatesAndEffortPerRole()
+    {
+        var plan = ProjectorResponseParsers.ParseProjectTaskPlan(ReadFixture("project_task_plan.xml"))!;
+
+        plan.ProjectCode.Should().Be("P001234-001");
+        plan.PlanStartDate.Should().Be("2026-10-05");
+        plan.PlanEndDate.Should().Be("2026-10-09");
+        plan.MinutesPerDay.Should().Be(480);
+        plan.Tasks.Should().HaveCount(3);
+
+        var journal = plan.Tasks.Single(t => t.WbsCode == "2.2");
+        journal.TaskName.Should().Be("Project proposal journal");
+        journal.TaskTypeName.Should().Be("Invoice Automation");
+        journal.ParentTaskUid.Should().Be("2400000000000000002");
+        journal.DurationMinutes.Should().Be(4320);
+        journal.PlannedStartDate.Should().Be("2026-10-05");
+        journal.PlannedEndDate.Should().Be("2026-10-09");
+        journal.Completed.Should().BeTrue();
+        journal.OpenForTime.Should().BeTrue();
+        journal.Roles.Select(r => (r.RoleName, r.EffortMinutes)).Should().Equal(
+            ("Application Specialist - Team 1", 120), ("PMO Oversight", 60));
+
+        var summary = plan.Tasks.Single(t => t.WbsCode == "2");
+        summary.ParentTaskUid.Should().BeNull();
+        summary.DurationMinutes.Should().BeNull("a summary task has no duration of its own");
+        summary.OpenForTime.Should().BeNull();
+        summary.EarliestStartDate.Should().Be("2026-10-05");
+        summary.Roles.Should().BeEmpty();
+
+        plan.Tasks.Single(t => t.WbsCode == "2.10").PredecessorTaskUids.Should().Equal("2400000000000000003");
+    }
+
+    [Fact]
+    public void ParseProjectTaskPlan_NoProject_IsNull()
+    {
+        ProjectorResponseParsers.ParseProjectTaskPlan(ReadFixture("project_roles.xml")).Should().BeNull();
+    }
+
+    [Fact]
     public void ParseProjectBookings_FiltersWindowAndDropsZeroHours()
     {
         var rows = ProjectorResponseParsers.ParseResourceSchedulingRoleData(
             ReadFixture("project_bookings.xml"), "2026-10-01", "2026-10-31");
-        rows.Should().HaveCount(2);
+        rows.Where(r => r.ScheduledMinutes > 0).Should().HaveCount(2);
 
-        var jane = rows.Single(r => r.DisplayName == "Jane Doe");
+        var jane = rows.Single(r => r.DisplayName == "Jane Doe" && r.ScheduledMinutes > 0);
         jane.ScheduledMinutes.Should().Be(720);
         jane.ScheduledHours.Should().Be(12);
         jane.Email.Should().Be("jane.doe@example.com");

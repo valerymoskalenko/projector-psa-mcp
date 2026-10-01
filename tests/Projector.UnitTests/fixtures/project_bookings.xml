@@ -42,6 +42,45 @@
             <b:ProjectIdentity>
               <b:ProjectCode>P001234-001</b:ProjectCode>
             </b:ProjectIdentity>
+            <b:NotesBuckets>
+              <b:PwsProjectRoleNotesBucket>
+                <b:BucketStartDate>2026-10-04T00:00:00Z</b:BucketStartDate>
+                <b:Notes xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                  <c:string i:nil="true" />
+                  <c:string>Ticket 1001 Invoice layout Hrs.8</c:string>
+                  <c:string>Ticket 1002 Credit note flow Hrs.4</c:string>
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                </b:Notes>
+              </b:PwsProjectRoleNotesBucket>
+              <b:PwsProjectRoleNotesBucket>
+                <b:BucketStartDate>2026-10-18T00:00:00Z</b:BucketStartDate>
+                <b:Notes xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                  <c:string>Waiting for the customer sign-off</c:string>
+                  <c:string i:nil="true" />
+                </b:Notes>
+              </b:PwsProjectRoleNotesBucket>
+              <b:PwsProjectRoleNotesBucket>
+                <b:BucketStartDate>2026-11-01T00:00:00Z</b:BucketStartDate>
+                <b:Notes xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                  <c:string>Outside the window</c:string>
+                </b:Notes>
+              </b:PwsProjectRoleNotesBucket>
+              <b:PwsProjectRoleNotesBucket>
+                <b:BucketStartDate>2026-10-11T00:00:00Z</b:BucketStartDate>
+                <b:Notes xmlns:c="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                  <c:string i:nil="true" />
+                  <c:string i:nil="true" />
+                </b:Notes>
+              </b:PwsProjectRoleNotesBucket>
+            </b:NotesBuckets>
             <b:ProjectName>Contoso - ERP Rollout Program 1</b:ProjectName>
             <b:ProjectRoleIdentity>
               <b:ProjectRoleUid>2200000000000000010</b:ProjectRoleUid>

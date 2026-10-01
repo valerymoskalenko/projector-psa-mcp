@@ -19,6 +19,7 @@ User asks which people have bookings on a project in a month/week, or wants sche
 
 - Sum `scheduledHours` (or `scheduledMinutes` / 60) per resource or per project as needed.
 - Zero-hour buckets are omitted by the tool — “October bookings” means people actually booked.
+- Each row carries the booking notes of its week in `notes` (day, date, text): what the scheduler wrote on that week in the Resource Scheduling grid. A week with notes but no hours is listed with zero hours.
 - Not actuals: do not use `list_timecards` for staffing hours.
 
 ## Do not use

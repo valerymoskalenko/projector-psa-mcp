@@ -14,6 +14,7 @@ User asks “who is on project X?”, “who is staffed on …?”, or wants a t
 ## Tools
 
 1. **`list_project_roles`** with `project_code` / `project_codes` (1–100).
+2. For the task plan (the Task Planning tab: tasks with WBS, planned start and end, duration in days, planned effort hours per role and person), add `include_task_plan: true` with **one** `project_code`; the plan is in `taskPlan`. Planned effort is not booked hours and not posted time.
 
 ## Do not use
 

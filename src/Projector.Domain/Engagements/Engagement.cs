@@ -135,6 +135,8 @@ public sealed class ProjectRoleAssignment
 {
     public string? ProjectCode { get; init; }
 
+    public string? RoleUid { get; init; }
+
     public string? RoleName { get; init; }
 
     public string? ResourceId { get; init; }
@@ -168,6 +170,9 @@ public sealed class ProjectBookingRow
     public int ScheduledMinutes { get; init; }
 
     public double ScheduledHours { get; init; }
+
+    /// <summary>Booking notes of the week, one entry per day that has a note.</summary>
+    public IReadOnlyList<Schedule.BookingDayNote>? Notes { get; init; }
 }
 
 public sealed class UtilizationYear

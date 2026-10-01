@@ -113,5 +113,12 @@ public sealed class ScheduleBooking
 
     public double ScheduledHours { get; init; }
 
-    public IReadOnlyList<string>? Notes { get; init; }
+    /// <summary>Booking notes of the week, one entry per day that has a note.</summary>
+    public IReadOnlyList<BookingDayNote>? Notes { get; init; }
 }
+
+/// <summary>
+/// A booking note for one day of a booked week. Projector stores seven notes per role and week (Sunday to Saturday),
+/// shown in the Resource Scheduling grid as the comment on a week cell.
+/// </summary>
+public sealed record BookingDayNote(string Day, string? Date, string Text);

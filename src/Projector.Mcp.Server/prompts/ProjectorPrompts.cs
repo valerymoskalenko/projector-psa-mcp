@@ -158,6 +158,7 @@ public sealed class ProjectorPrompts
         => new(ChatRole.User,
             $"Who is staffed on project {project_code}? " +
             "Use list_project_roles only. Do not use get_schedule or check_availability. " +
+            "For the task plan (tasks, planned dates, effort hours per role) add include_task_plan = true. " +
             "For booked hours in a date window use list_proj_bookings.");
 
     [McpServerPrompt(Name = "projector_project_bookings"), Description(
@@ -169,6 +170,7 @@ public sealed class ProjectorPrompts
         => new(ChatRole.User,
             $"Which resources have bookings on {project_code} from {start_date} to {end_date}? " +
             "Use list_proj_bookings. Sum scheduledHours. Exclude zero-hour roles. Not timecards. " +
+            "Quote booking notes (notes[]) with their day when a row has them. " +
             "For assignment roster without hours use list_project_roles.");
 
     [McpServerPrompt(Name = "projector_teammates_on_persons_projects"), Description(
