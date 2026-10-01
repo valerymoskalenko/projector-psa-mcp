@@ -149,11 +149,30 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Health_ReturnsOk()
+    public async Task Health_ReturnsOk_AndTheServerVersion()
     {
         var client = _factory.CreateClient();
         var response = await client.GetAsync("/health");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("status").GetString().Should().Be("ok");
+        body.GetProperty("version").GetString().Should().Be(Projector.Mcp.Server.Hosting.ServerVersion.Current);
+    }
+
+    [Fact]
+    public async Task Root_And_Initialize_ReportTheSameVersion()
+    {
+        var client = _factory.CreateClient();
+        var root = JsonDocument.Parse(await client.GetStringAsync("/")).RootElement;
+        root.GetProperty("version").GetString().Should().Be(Projector.Mcp.Server.Hosting.ServerVersion.Current);
+
+        var token = _factory.Services.GetRequiredService<Projector.Mcp.Server.Auth.McpJwtIssuer>()
+            .CreateAccessToken("protocol-test-connection");
+        var init = await PostMcpAsync(client, token,
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"protocol-test","version":"1.0"}}}""");
+        init.GetProperty("result").GetProperty("serverInfo").GetProperty("version").GetString()
+            .Should().Be(Projector.Mcp.Server.Hosting.ServerVersion.Current);
     }
 }
 

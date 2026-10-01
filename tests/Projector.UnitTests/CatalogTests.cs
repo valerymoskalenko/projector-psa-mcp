@@ -30,6 +30,14 @@ public class CatalogTests
     }
 
     [Fact]
+    public void ToolsJsonVersion_IsTheServerVersion()
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(ToolsJsonPath));
+        doc.RootElement.GetProperty("server").GetProperty("version").GetString()
+            .Should().Be(Projector.Mcp.Server.Hosting.ServerVersion.Current, "a release bumps ServerVersion.Current and tools.json together");
+    }
+
+    [Fact]
     public void CanonicalAgentTools_MatchToolsJsonOrderAndNames()
     {
         using var doc = JsonDocument.Parse(File.ReadAllText(ToolsJsonPath));

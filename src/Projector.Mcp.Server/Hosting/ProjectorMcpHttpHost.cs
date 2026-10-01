@@ -120,7 +120,7 @@ public static class ProjectorMcpHttpHost
 
         builder.Services.AddMcpServer(options =>
             {
-                options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.6" };
+                options.ServerInfo = new() { Name = ServerVersion.Name, Version = ServerVersion.Current };
             })
             .WithHttpTransport(options =>
             {
@@ -190,7 +190,8 @@ public static class ProjectorMcpHttpHost
 
         app.MapGet("/", () => Results.Json(new
         {
-            name = "Projector PSA MCP Server",
+            name = ServerVersion.Name,
+            version = ServerVersion.Current,
             mcp = "/mcp",
             oauthAuthorize = "/oauth/authorize",
             oauthToken = "/oauth/token",
@@ -200,7 +201,8 @@ public static class ProjectorMcpHttpHost
             docs = "See README.md and infrastructure/README.md"
         }));
 
-        app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+        // The version is public (the repository and its releases are), so one call without a token shows what runs.
+        app.MapGet("/health", () => Results.Ok(new { status = "ok", version = ServerVersion.Current }));
 
         app.MapOAuthBroker();
         app.MapMcp("/mcp").RequireAuthorization().RequireCors("McpCors");

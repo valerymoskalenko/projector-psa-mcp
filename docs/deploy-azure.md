@@ -87,7 +87,7 @@ Re-run only this script for new versions of the server.
 
 ```powershell
 $base = 'https://contoso-projector-mcp.azurewebsites.net'
-Invoke-RestMethod "$base/health"
+Invoke-RestMethod "$base/health"      # status = ok, version = the server version that is running
 Invoke-RestMethod "$base/.well-known/oauth-authorization-server"
 Invoke-RestMethod "$base/.well-known/oauth-protected-resource"
 # Expect 401 with a WWW-Authenticate header:
