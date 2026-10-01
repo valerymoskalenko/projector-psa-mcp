@@ -42,8 +42,9 @@ public static class ProjectorDateHelpers
         if (days > maxDays)
         {
             throw new ProjectorApiException(
-                $"Date range spans {days} days; maximum allowed is {maxDays} (~8 weeks).",
-                "DateWindowExceeded");
+                $"Date window is {days} days; this tool allows at most {maxDays} days. " +
+                $"Use a shorter window (split a longer period into windows of {maxDays} days or less).",
+                "date_window_exceeded");
         }
     }
 

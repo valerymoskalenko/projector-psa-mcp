@@ -120,7 +120,7 @@ public static class ProjectorMcpHttpHost
 
         builder.Services.AddMcpServer(options =>
             {
-                options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.5" };
+                options.ServerInfo = new() { Name = "Projector PSA MCP Server", Version = "0.6.6" };
             })
             .WithHttpTransport(options =>
             {

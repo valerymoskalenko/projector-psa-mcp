@@ -125,6 +125,110 @@ public class ResourceArgumentTests
     }
 
     [Fact]
+    public void DateWindow_TooLong_SaysTheLimitAndHowToSplit()
+    {
+        var act = () => Projector.ApiClient.Xml.ProjectorDateHelpers.AssertDateWindow("2025-09-21", "2026-09-30", 366);
+
+        var ex = act.Should().Throw<Projector.Domain.Exceptions.ProjectorApiException>().Which;
+        ex.ErrorCode.Should().Be("date_window_exceeded");
+        ex.Message.Should().Contain("375 days").And.Contain("at most 366 days").And.Contain("windows of 366 days or less")
+            .And.NotContain("8 weeks");
+    }
+
+    [Theory]
+    [InlineData(null, null, null)]
+    [InlineData("", " ", null)]
+    [InlineData("me", null, null)]
+    [InlineData(null, " Me ", null)]
+    public void GetResource_WithoutAPerson_SaysOwnDataNeedsNoLookup(string? resourceId, string? fullName, string? email)
+    {
+        var act = () => Projector.Mcp.Server.Tools.ResourceTools.LookupCandidates(resourceId, fullName, email);
+
+        act.Should().Throw<ArgumentException>().Which.Message
+            .Should().Contain("list_timecards").And.Contain("without resource_id").And.Contain("e-mail or full name");
+    }
+
+    [Fact]
+    public void GetResource_SeveralIdentifiers_AreTriedFastestFirst()
+    {
+        Projector.Mcp.Server.Tools.ResourceTools.LookupCandidates(null, "Jane Doe", "jane@example.com")
+            .Should().Equal("Jane Doe", "jane@example.com");
+        Projector.Mcp.Server.Tools.ResourceTools.LookupCandidates(" 10001 ", "Jane Doe", null)
+            .Should().Equal("10001", "Jane Doe");
+        Projector.Mcp.Server.Tools.ResourceTools.LookupCandidates(null, null, "jane@example.com")
+            .Should().Equal("jane@example.com");
+    }
+
+    [Fact]
+    public async Task ListEngagements_SlowDetails_ReturnsTheListRowsWithANote()
+    {
+        var (service, soap) = Create();
+        service.EngagementDetailBudget = TimeSpan.FromMilliseconds(50);
+        soap.Engagements.Add(new Projector.Domain.Engagements.EngagementSummary { EngagementCode = "E005678", EngagementName = "Contoso rollout" });
+        soap.EngagementDetailsNeverAnswer = true;
+
+        var result = Json(await service.ListEngagementsAsync(
+            ConnectionId, "Contoso", null, null, null, 50, CancellationToken.None));
+
+        result.GetProperty("count").GetInt32().Should().Be(1);
+        result.GetProperty("engagements")[0].GetProperty("EngagementCode").GetString().Should().Be("E005678");
+        result.GetProperty("note").GetString().Should().Contain("list only").And.Contain("get_engagement");
+    }
+
+    [Fact]
+    public async Task ListEngagements_DetailsInTime_HasNoNote()
+    {
+        var (service, soap) = Create();
+        soap.Engagements.Add(new Projector.Domain.Engagements.EngagementSummary { EngagementCode = "E005678", EngagementName = "Contoso rollout" });
+
+        var result = Json(await service.ListEngagementsAsync(
+            ConnectionId, "Contoso", null, null, null, 50, CancellationToken.None));
+
+        result.GetProperty("count").GetInt32().Should().Be(1);
+        result.GetProperty("note").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task ListEngagements_SlowDetails_ManagerSearch_SaysItTimedOut()
+    {
+        var (service, soap) = Create();
+        service.EngagementDetailBudget = TimeSpan.FromMilliseconds(50);
+        soap.Engagements.Add(new Projector.Domain.Engagements.EngagementSummary { EngagementCode = "E005678", EngagementName = "Contoso rollout" });
+        soap.EngagementDetailsNeverAnswer = true;
+
+        var act = () => service.ListEngagementsAsync(
+            ConnectionId, null, "Jane Doe", null, null, 50, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<Projector.Domain.Exceptions.ProjectorApiException>()).Which.ErrorCode
+            .Should().Be("projector_timeout", "manager names come only from the details, so the list alone can't answer");
+    }
+
+    [Fact]
+    public async Task ListEngagements_CallerCancels_IsNotTurnedIntoAPartialResult()
+    {
+        var (service, soap) = Create();
+        soap.Engagements.Add(new Projector.Domain.Engagements.EngagementSummary { EngagementCode = "E005678" });
+        soap.EngagementDetailsNeverAnswer = true;
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        var act = () => service.ListEngagementsAsync(ConnectionId, "Contoso", null, null, null, 50, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public void TimeEntryPrompts_SayAnswersAreNotApproval()
+    {
+        var rule = Projector.Mcp.Server.Prompts.ProjectorPrompts.SaveConfirmationRule;
+        rule.Should().Contain("not approval").And.Contain("Save these N cards?");
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDaySteps.Should().Contain(rule);
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.LogTime("2026-09-24", 1, "P005678-001", "Work").Text
+            .Should().Contain(rule);
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.MyTimecards("2026-09-01", "2026-09-30").Text
+            .Should().Contain("without resource_id").And.NotContain("get_resource email");
+    }
+
+    [Fact]
     public async Task ListTimecards_Query_FiltersOnWholeWords()
     {
         var (service, soap) = Create();
@@ -235,6 +339,11 @@ public class ResourceArgumentTests
 
         public List<Timecard> Timecards { get; } = [];
 
+        public List<Projector.Domain.Engagements.EngagementSummary> Engagements { get; } = [];
+
+        /// <summary>The detail call hangs until its token is cancelled, like a Projector call that never answers.</summary>
+        public bool EngagementDetailsNeverAnswer { get; set; }
+
         public static RecordingSoap Create() => (RecordingSoap)(object)Create<IProjectorSoapClient, RecordingSoap>();
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
@@ -251,9 +360,23 @@ public class ResourceArgumentTests
                     var id = (string)args![1]!;
                     Calls.Add($"GetResourceAsync({id})");
                     return Task.FromResult(ResourcesByName.GetValueOrDefault(id));
+                case nameof(IProjectorSoapClient.ListEngagementsAsync):
+                    return Task.FromResult(new Projector.Domain.Engagements.EngagementListResult { Engagements = Engagements.ToList() });
+                case nameof(IProjectorSoapClient.GetEngagementsByCodeAsync):
+                    return EngagementDetailsNeverAnswer
+                        ? NeverAnswer((CancellationToken)args![2]!)
+                        : Task.FromResult<IReadOnlyList<Projector.Domain.Engagements.EngagementDetail>>([]);
+                case nameof(IProjectorSoapClient.GetProjectsByCodeAsync):
+                    return Task.FromResult<IReadOnlyList<Projector.Domain.Engagements.ProjectSummary>>([]);
                 default:
                     throw new NotSupportedException($"Unexpected Projector call {targetMethod.Name}");
             }
+        }
+
+        private static async Task<IReadOnlyList<Projector.Domain.Engagements.EngagementDetail>> NeverAnswer(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return [];
         }
     }
 

@@ -54,7 +54,8 @@ public static class ToolOutputSchemas
         + " Resource history is omitted. " + SearchCoverageRule;
 
     public const string EngagementsSchemaHint =
-        "Output keys: engagements, count, has_more, searchCoverage, resource_links. " + SearchCoverageRule;
+        "Output keys: engagements, count, has_more, note (set when Projector did not return the details in time: " +
+        "managers and projects may then be missing), searchCoverage, resource_links. " + SearchCoverageRule;
 
     public const string ProjectRolesSchemaHint =
         "Output keys: roles[], count, searchCoverage. " + SearchCoverageRule;

@@ -22,14 +22,14 @@ public sealed class ProjectorPrompts
             "Report states available/partially_available/fully_booked/overallocated/non_working — not UI colors.");
 
     [McpServerPrompt(Name = "projector_my_timecards"), Description(
-        "Returns the signed-in user's timecards for a date window (resolve me via email first).")]
+        "Returns the signed-in user's timecards for a date window.")]
     public static ChatMessage MyTimecards(
-        [Description("Signed-in user email")] string email,
         [Description("Start date yyyy-MM-dd")] string start_date,
-        [Description("End date yyyy-MM-dd")] string end_date)
+        [Description("End date yyyy-MM-dd")] string end_date,
+        [Description("Not needed: the tools default to the signed-in user")] string? email = null)
         => new(ChatRole.User,
             $"What are my time cards from {start_date} to {end_date}? " +
-            $"Resolve me with get_resource email={email}, then list_timecards. " +
+            "Call list_timecards without resource_id (it defaults to me; do not look me up with get_resource). " +
             "Sum workMinutes; do not invent dollar budgets.");
 
     [McpServerPrompt(Name = "projector_log_time"), Description(
@@ -44,7 +44,8 @@ public sealed class ProjectorPrompts
             "Steps: (1) list_time_projects with work_date (query = the project words) to find the project_code and my role; " +
             "(2) get_timecard_options with project_code and work_date (add query with task words, a WBS code or the parent's name " +
             "on big projects) to pick a task by its task_path (summary tasks are not listed; where tasks show assigned, use one with assigned = true; the rate type is always the task's default; don't ask me about it); " +
-            "if several fit, ask me; (3) show me date, hours, project, task path, role and narrative and wait for my yes; " +
+            "if several fit, ask me; (3) show me date, hours, project, task path, role and narrative and wait for my yes. " +
+            SaveConfirmationRule + " " +
             "(4) save_timecard with cards = [this card] (WBS code as task); then tell me the card's status, the day's total hours and any warnings. " +
             "It saves a Draft only; tell me to submit in Projector. " +
             TimeEntryToolService.NoSaveToolHint + " " +
@@ -61,6 +62,13 @@ public sealed class ProjectorPrompts
                 ? "Review my Projector PSA time for today (before 06:00 use the previous working day; say which date you used). "
                 : $"Review my Projector PSA time for {work_date.Trim()}. ") +
             ReviewMyDaySteps);
+
+    /// <summary>
+    /// An agent saved 13 cards after the user had only answered its questions (2026-09-30): answers are not approval.
+    /// </summary>
+    internal const string SaveConfirmationRule =
+        "My answers to your questions are not approval to save: apply them, show me the final numbered list of cards and " +
+        "ask once \"Save these N cards?\"; call save_timecard only after I say yes. The same goes for changes to existing cards.";
 
     /// <summary>The daily review, generic for any MCP client (evidence from whatever sources it can reach).</summary>
     internal const string ReviewMyDaySteps =
@@ -88,6 +96,7 @@ public sealed class ProjectorPrompts
         "fix; C) numbered proposals: hours | project | task path (WBS) | role | description | evidence | confidence; D) numbered " +
         "questions, one per possible card, with options; E) what could not be confirmed and why. Then stop and ask which entries " +
         "to save. " +
+        SaveConfirmationRule + " " +
         "5) Save all approved cards in one save_timecard call (cards = [...], WBS code as task). Report each card's status " +
         "(saved, invalid, failed, not_attempted) with its reason, and the day totals against my expected hours. Fix invalid cards " +
         "with me and send them in one more call. Cards are Drafts; I submit in Projector. " +

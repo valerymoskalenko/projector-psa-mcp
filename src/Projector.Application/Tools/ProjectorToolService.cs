@@ -323,7 +323,39 @@ public sealed class ProjectorToolService
             candidates = await FetchAsync(null, maxRows);
         }
 
-        var enriched = await EnrichEngagementsAsync(connection, candidates, detailsAlreadyLoaded: false, ct);
+        // The list itself is fast; the detail calls behind it (PwsGetEngagement, PwsGetProject) sometimes take longer
+        // than their timeout (production 2026-10-01: 3 attempts, error after 31 s). They get a budget, and when it
+        // runs out the list rows are returned without the details instead of failing the call.
+        string? detailsNote = null;
+        IReadOnlyList<EngagementSummary> enriched;
+        using (var detailCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            detailCts.CancelAfter(EngagementDetailBudget);
+            try
+            {
+                enriched = await EnrichEngagementsAsync(
+                    connection, candidates, detailsAlreadyLoaded: false, detailCts.Token);
+            }
+            catch (Exception ex) when (IsDetailTimeout(ex, ct))
+            {
+                if (!string.IsNullOrWhiteSpace(effectiveManagerQuery))
+                {
+                    throw new ProjectorApiException(
+                        $"Projector did not return the engagement details within {EngagementDetailBudget.TotalSeconds:0} s, " +
+                        "and manager names come only from those details. Retry once, or add " +
+                        "query='<client, engagement, or project code>' so fewer engagements need details.",
+                        "projector_timeout",
+                        ex);
+                }
+
+                enriched = candidates;
+                detailsNote =
+                    $"Projector did not return the engagement details within {EngagementDetailBudget.TotalSeconds:0} s, " +
+                    "so these rows come from the list only: managers, project managers and project dates may be missing. " +
+                    "Do not present missing fields as empty in Projector. Call get_engagement for one engagement, or " +
+                    "retry with a narrower query.";
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(effectiveManagerQuery))
         {
@@ -369,6 +401,7 @@ public sealed class ProjectorToolService
             engagements = dtos,
             count = pageResult.Count,
             has_more = pageResult.HasMore,
+            note = detailsNote,
             searchCoverage = SearchCoverageDto.From(pageResult.SearchCoverage),
             resource_links = dtos.Select(e => new
             {
@@ -377,6 +410,15 @@ public sealed class ProjectorToolService
             }).ToList()
         }, sw);
     }
+
+    /// <summary>How long list_engagements waits for the detail calls before it returns the list rows alone.</summary>
+    internal TimeSpan EngagementDetailBudget { get; set; } = TimeSpan.FromSeconds(12);
+
+    /// <summary>A detail call ran out of time (our budget or the HTTP timeout), not a cancellation by the caller.</summary>
+    private static bool IsDetailTimeout(Exception ex, CancellationToken callerToken) =>
+        !callerToken.IsCancellationRequested
+        && (ex is OperationCanceledException or TimeoutException
+            || ex.GetType().Name == "TimeoutRejectedException");
 
     public async Task<object> GetEngagementAsync(string connectionId, string code, CancellationToken ct)
     {

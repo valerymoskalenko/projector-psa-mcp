@@ -125,7 +125,7 @@ public static class ToolCatalog
     {
         var svc = services.GetRequiredService<ResourceService>();
         var id = GetOneOf(args, "resource_id", "full_name", "email", "id")
-            ?? throw new ArgumentException("Provide exactly one of resource_id, full_name, or email.");
+            ?? throw new ArgumentException(Tools.ResourceTools.NoPersonMessage);
         var includeHistory = GetBool(args, "include_history");
         var includeUdfs = !args.ContainsKey("include_udfs") || GetBool(args, "include_udfs");
         return await svc.GetAsync(

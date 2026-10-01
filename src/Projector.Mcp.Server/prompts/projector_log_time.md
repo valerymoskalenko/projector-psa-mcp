@@ -11,7 +11,7 @@ User says "log 2 hours on Contoso yesterday for the data migration" or "fix my r
 
 1. **`list_time_projects`** with `work_date` (and `query` from the user's words) → `project_code` and the user's role(s).
 2. **`get_timecard_options`** with `project_code` and `work_date` (add `query` with part of the task name, WBS code or parent name on big projects) → tasks that take time, with `task_path` and `default_rate_type`, rules (time increment, UDFs, location). Summary tasks (with sub-tasks) are never listed. Where the project allows time only on assigned tasks, pick a task with `assigned: true`.
-3. Show the user date, hours, project, task path, role and narrative; wait for an explicit yes. The rate type is not a choice: the server uses the task's default.
+3. Show the user date, hours, project, task path, role and narrative; wait for an explicit yes. An answer to a question is not that yes: show the final card(s) and ask once "Save these N cards?". The rate type is not a choice: the server uses the task's default.
 4. **`save_timecard`** with `cards`: every card the user approved, in one call (one approval). Each card has all required fields; `task` is best given as the WBS code (it also accepts the UID, the `task_path` or a unique name); role accepts the UID or the exact name. Add `dry_run: true` to check the cards and see the day totals without saving.
 5. Report from the result, card by card: its `status` (saved, invalid, failed, not_attempted), error or warnings, and the day totals from `days`.
 

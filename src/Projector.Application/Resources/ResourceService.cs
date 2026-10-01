@@ -135,7 +135,7 @@ public sealed class ResourceService
         if (detail is null)
         {
             throw new ProjectorApiException(
-                $"Resource '{request.Id}' was not found.",
+                $"Resource '{request.Id}' was not found. {OwnDataHint}",
                 "AtLeastOneItemNotFound");
         }
 
@@ -155,6 +155,14 @@ public sealed class ResourceService
     }
 
     /// <summary>
+    /// Added to "not found": agents look the signed-in user up first, and a user whose Projector permissions hide the
+    /// resource list finds nobody (seen in production 2026-10-01), although their own data needs no lookup.
+    /// </summary>
+    internal const string OwnDataHint =
+        "If this is the signed-in user, no lookup is needed for their own time cards, schedule or PTO: " +
+        "call list_timecards, get_schedule or list_upcoming_pto without resource_id.";
+
+    /// <summary>
     /// PwsGetResource cannot take an email, so an email is resolved through the resource list
     /// (<see cref="ResourceEmailResolver"/>) and the detail is then loaded by ResourceReferenceSystemId.
     /// </summary>
@@ -170,7 +178,7 @@ public sealed class ResourceService
             if (string.IsNullOrWhiteSpace(match?.ResourceReferenceSystemId))
             {
                 throw new ProjectorApiException(
-                    $"No resource has the email '{id}'. Try full_name or list_resources.",
+                    $"No resource has the email '{id}'. Try full_name or list_resources. {OwnDataHint}",
                     "AtLeastOneItemNotFound");
             }
 

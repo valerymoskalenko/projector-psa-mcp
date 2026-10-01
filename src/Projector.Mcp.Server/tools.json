@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.6.5"
+    "version": "0.6.6"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -50,7 +50,7 @@
       "requiredScopes": [
         "browseResources"
       ],
-      "description": "Gets one Projector resource. Provide exactly one of: resource_id (ResourceReferenceSystemId or ResourceUid, preferred/fastest), full_name (exact display name, preferred/fast), or email (slower — uses resource list search then detail). Optionally includes history and UDFs. Human “user” maps here. Does not return timecards.",
+      "description": "Gets one Projector resource (a person's profile). Provide one of: resource_id (ResourceReferenceSystemId or ResourceUid, preferred/fastest), full_name (exact display name, preferred/fast), or email (slower — uses resource list search then detail). There is no lookup of the signed-in user: their own time cards, schedule and PTO need no resource id (omit resource_id on list_timecards, get_schedule, list_upcoming_pto). Optionally includes history and UDFs. Human “user” maps here. Does not return timecards.",
       "whenNotToUse": "Do not use for timecards, schedules, or multi-person search lists (use list_resources / list_timecards).",
       "inputSchema": {
         "type": "object",
