@@ -447,9 +447,11 @@ public static class OAuthBrokerEndpoints
                     pending.ProjectorAccountCode ?? connection.ProjectorAccountCode ?? options.Value.AccountCode);
 
                 logger.LogInformation(
-                    "Token exchange succeeded for connection {ConnectionId} (tid={TenantId}).",
+                    "Token exchange succeeded for connection {ConnectionId} (tid={TenantId}, client_id={ClientId}, {Client}).",
                     pending.ConnectionId,
-                    pending.TenantId ?? connection.TenantId);
+                    pending.TenantId ?? connection.TenantId,
+                    string.IsNullOrEmpty(clientId) ? "(none)" : clientId,
+                    TokenClient(request));
 
                 return Results.Json(new
                 {
@@ -495,7 +497,13 @@ public static class OAuthBrokerEndpoints
 
                 var accessToken = jwtIssuer.CreateAccessToken(connectionId, tid, oid, account);
                 var newRefresh = jwtIssuer.CreateRefreshToken(connectionId, tid, oid, account);
-                logger.LogInformation("Token refresh succeeded for connection {ConnectionId}.", connectionId);
+                // Which client refreshes (and which signs in again instead) is only visible here: name it.
+                var refreshClientId = form["client_id"].ToString();
+                logger.LogInformation(
+                    "Token refresh succeeded for connection {ConnectionId} (client_id={ClientId}, {Client}).",
+                    connectionId,
+                    string.IsNullOrEmpty(refreshClientId) ? "(none)" : refreshClientId,
+                    TokenClient(request));
                 return Results.Json(new
                 {
                     access_token = accessToken,
@@ -771,6 +779,10 @@ public static class OAuthBrokerEndpoints
             ?? throw new InvalidOperationException("id_token missing oid");
         return (tid, oid);
     }
+
+    /// <summary>The caller of the token endpoint for the log: it sends no MCP client name, only a User-Agent.</summary>
+    private static string TokenClient(HttpRequest request) =>
+        Tools.ToolCallLogFilter.ClientName(null, null, request.Headers.UserAgent.FirstOrDefault());
 
     private static bool IsAllowedRedirect(ProjectorOptions opts, string redirectUri)
     {

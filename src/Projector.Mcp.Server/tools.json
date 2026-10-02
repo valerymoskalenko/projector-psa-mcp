@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.6.9"
+    "version": "0.6.10"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -617,7 +617,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Saves 1–20 work time cards on the signed-in user's own time sheet in one call (PwsSaveTimeCards per card, SubmitFlag=false): each card is created as Draft, or updates one of the user's own Draft or Rejected cards when its timecard_uid is given. Never submits, approves or deletes; no resource parameter. Show the user every card and get one confirmation, then send all approved cards in one call. Every card is checked first (task, role, hours, summary tasks, tasks the user is not assigned to, duplicates): invalid cards are reported and not sent, valid ones are saved one by one and never retried; after an unknown outcome the remaining cards are not attempted. The rate type is always the task's default. dry_run = true checks everything and shows the day totals without saving.",
+      "description": "Saves 1–20 work time cards on the signed-in user's own time sheet in one call (PwsSaveTimeCards per card, SubmitFlag=false): each card is created as Draft, or updates one of the user's own Draft or Rejected cards when its timecard_uid is given. Never submits, approves or deletes; no resource parameter. To remove a card, tell the user to delete it in Projector: this tool can't delete, and a card can't be saved with 0 hours. Show the user every card and get one confirmation, then send all approved cards in one call. Every card is checked first (task, role, hours, summary tasks, tasks the user is not assigned to, duplicates): invalid cards are reported and not sent, valid ones are saved one by one and never retried; after an unknown outcome the remaining cards are not attempted. The rate type is always the task's default. dry_run = true checks everything and shows the day totals without saving.",
       "whenNotToUse": "Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.",
       "inputSchema": {
         "type": "object",

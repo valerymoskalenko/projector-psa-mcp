@@ -85,7 +85,8 @@ public sealed class TimeEntryTools
     [Description(
         "Saves 1–20 work time cards on the signed-in user's own time sheet in one call: each card is created as Draft, " +
         "or updates one of the user's own Draft or Rejected cards when its timecard_uid is given (from list_timecards). " +
-        "Never submits, approves or deletes; the user submits in Projector. Before calling, show the user every card " +
+        "Never submits, approves or deletes; the user submits in Projector. To remove a card, tell the user to " +
+        "delete it in Projector: this tool can't delete, and a card can't be saved with 0 hours. Before calling, show the user every card " +
         "(date, hours, project, task path, role, narrative) and get one explicit confirmation; then send all approved " +
         "cards in one call. Find the values with list_time_projects, then get_timecard_options; task accepts the WBS " +
         "code (preferred), the UID, the task_path (or its end) or a unique name; role accepts the UID or the exact name. " +

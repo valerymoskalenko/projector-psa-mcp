@@ -23,7 +23,7 @@ To change an existing card: **`list_timecards`** (every status, Rejected include
 - Task names repeat under different parents (many "Development" tasks); use the `task_path` or WBS code, not the bare name.
 - `list_time_projects`: pick projects with `chargeable: true`; Projector refuses time where the user has no role.
 - Creates Draft cards; updates only Draft or Rejected cards. Saving a Rejected card makes it a Draft again; the user resubmits it in Projector.
-- Never submits, approves or deletes. Tell the user to submit in Projector.
+- Never submits, approves or deletes. Tell the user to submit in Projector, and to delete a card they don't want in Projector (the tool can't delete, and hours can't be 0).
 - Hours must fit the account's time increment (e.g. 15 minutes = multiples of 0.25).
 - `write_outcome_unknown`: the save may or may not have happened. Check `list_timecards` before trying again.
 - `no_default_rate_type`: the task has no default rate type in Projector and more than one is possible; nothing was saved. Tell the user to enter that card in Projector.
