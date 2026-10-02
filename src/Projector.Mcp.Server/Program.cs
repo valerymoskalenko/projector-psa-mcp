@@ -87,6 +87,26 @@ pwsCommand.SetAction(async (parseResult, ct) =>
 });
 root.Subcommands.Add(pwsCommand);
 
+var asmxCommand = new Command("asmx", "Dev only (Development environment): POST a legacy (ASMX) report or export request with the local OAuth session and print the response XML. Read methods only; SubmitReportSpec and SubmitOlapGinsuExport need --run");
+var asmxMethodArg = new Argument<string>("method") { Description = "Legacy method, e.g. GetReportStatus or ExportProjectList" };
+var asmxParamsArg = new Argument<string>("params-file") { Description = "XML file with the parameter elements, e.g. <data:MaxRowsToReturn>10</data:MaxRowsToReturn>; may be empty" };
+var asmxRunOption = new Option<bool>("--run") { Description = "Allow a method that starts a report run or an export batch" };
+asmxCommand.Arguments.Add(asmxMethodArg);
+asmxCommand.Arguments.Add(asmxParamsArg);
+asmxCommand.Options.Add(asmxRunOption);
+asmxCommand.SetAction(async (parseResult, ct) =>
+{
+    var method = parseResult.GetValue(asmxMethodArg)!;
+    var paramsFile = parseResult.GetValue(asmxParamsArg)!;
+    var allowRun = parseResult.GetValue(asmxRunOption);
+    return await RunWithHostAsync(async sp =>
+    {
+        var runner = sp.GetRequiredService<PwsCliRunner>();
+        return await runner.RunAsmxAsync(method, paramsFile, allowRun, ct);
+    }, ct);
+});
+root.Subcommands.Add(asmxCommand);
+
 var serveCommand = new Command("serve", "Run the MCP server");
 var stdioOption = new Option<bool>("--stdio") { Description = "Serve over stdio (logs on stderr)" };
 var httpOption = new Option<bool>("--http") { Description = "Serve Streamable HTTP on 127.0.0.1:5180" };
@@ -158,7 +178,7 @@ static async Task<int> RunStdioAsync(CancellationToken ct)
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()
-        .WithRequestFilters(filters => filters.AddCallToolFilter(ToolCallLogFilter.Filter).AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ToolArgumentFilter.Filter))
+        .WithRequestFilters(filters => filters.AddCallToolFilter(ToolCallLogFilter.Filter).AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ReportAccessFilter.CallFilter).AddCallToolFilter(ToolArgumentFilter.Filter).AddListToolsFilter(ReportAccessFilter.ListFilter))
         .WithResourcesFromAssembly()
         .WithPromptsFromAssembly();
 

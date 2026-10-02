@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.6.11"
+    "version": "0.7.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -687,6 +687,120 @@
           "dry_run": {
             "type": "boolean",
             "description": "true: check every card and show the day totals, but save nothing"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_report",
+      "aliases": [
+        "get_report"
+      ],
+      "title": "Get a Projector report or export",
+      "requiredScopes": [
+        "V:exportData"
+      ],
+      "description": "Returns large, cross-person results as rows, with the signed-in user's own Projector permissions. Without arguments it lists the datasets (columns, example) and the user's recent report runs. Datasets: ginsu (SubmitOlapGinsuExport: posted and planned hours, time off and revenue by person, project and period, grouped by the chosen columns), projects (ExportProjectList), time_cards (ExportTimeCards: approved cards only), report (PwsGetReportOutput: a report the user saved in Projector, by web service code, spec UID or output UID). A large result comes in parts through next_cursor: projects and time_cards continue with Projector's own paging; a saved report and a cleaned Ginsu batch are kept for ten minutes per user in memory. A report run or an export batch that is not finished within about 20 seconds answers status running with a cursor to ask again. Read-only: starting a run changes no business data. Hosted servers show the tool only to the users in the setting Projector:GetReportUsers (* = everyone).",
+      "whenNotToUse": "Do not use for one person's time cards, schedule or PTO; use list_timecards, get_schedule, list_upcoming_pto. Do not use for one engagement or one project's team; use get_engagement, list_project_roles.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "enum": [
+              "report",
+              "ginsu",
+              "projects",
+              "time_cards"
+            ],
+            "description": "Omit to list the datasets and the user's recent report runs"
+          },
+          "code": {
+            "type": "string",
+            "description": "report: the web service code set on the report's Output tab (returns the latest run)"
+          },
+          "spec_uid": {
+            "type": "string",
+            "description": "report: the Report Spec UID; runs the user's own report now"
+          },
+          "output_uid": {
+            "type": "string",
+            "description": "report: the output UID of one finished run"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "ginsu, time_cards: inclusive start date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "ginsu, time_cards: inclusive end date, at most 366 days after start_date"
+          },
+          "cutoff_date": {
+            "type": "string",
+            "format": "date",
+            "description": "ginsu: last day of actual hours; later days are planned hours"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "quarter",
+              "year",
+              "none"
+            ],
+            "default": "month"
+          },
+          "cost_center": {
+            "type": "string",
+            "description": "ginsu: cost center number"
+          },
+          "by": {
+            "type": "string",
+            "enum": [
+              "projects",
+              "resources"
+            ],
+            "default": "projects"
+          },
+          "billable_only": {
+            "type": "boolean",
+            "default": false
+          },
+          "include_unapproved": {
+            "type": "boolean",
+            "default": true
+          },
+          "include_time_off": {
+            "type": "boolean",
+            "default": false
+          },
+          "include_closed": {
+            "type": "boolean",
+            "default": false
+          },
+          "query": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Columns to return; for ginsu they also group the rows"
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "next_cursor of the previous answer; every other argument is then ignored"
           }
         }
       }

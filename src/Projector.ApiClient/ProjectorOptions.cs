@@ -40,6 +40,12 @@ public sealed class ProjectorOptions
     /// <summary>Base64 AES key for encrypting Projector tokens at rest. Empty = no SQL encryption (local only).</summary>
     public string TokenEncryptionKey { get; set; } = "";
 
+    /// <summary>
+    /// Who sees the get_report tool on the hosted server: Entra object ids separated by commas or semicolons,
+    /// or <c>*</c> for everyone. Empty = no hosted user. Local stdio and the CLI always have the tool.
+    /// </summary>
+    public string GetReportUsers { get; set; } = "";
+
     /// <summary>Azure Key Vault URI, e.g. https://my-vault.vault.azure.net/. Empty = skip KV load.</summary>
     public string? KeyVaultUri { get; set; }
 

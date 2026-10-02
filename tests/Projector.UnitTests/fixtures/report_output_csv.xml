@@ -1,0 +1,26 @@
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetReportOutputResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetReportOutputResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/Report/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" />
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <ServerTimestampUtc xmlns="http://projectorpsa.com/CommonServices/">2026-01-15T10:00:00Z</ServerTimestampUtc>
+        <a:Report>
+          <ReportId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+          <ReportUid i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+          <WebServiceCode i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+          <a:ReportData>Resource Display Name,Customer,Project Name,Description,Work Date,Person Hours
+Jane Doe,Contoso (C000001),Contoso - Rollout,"Reviewed the setup, sent notes",2026-01-12 00:00:00,1.5
+Jane Doe,Contoso (C000001),Contoso - Rollout,"Workshop: agenda
+and ""follow-up"" list",2026-01-13 00:00:00,2
+John Roe,Fabrikam (C000002),Fabrikam - Support,,2026-01-13 00:00:00,0.25
+John Roe,Fabrikam (C000002),Fabrikam - Support,Ticket 1001 triage,2026-01-14 00:00:00,3
+</a:ReportData>
+          <a:ReportFile i:nil="true" />
+        </a:Report>
+        <a:RedirectUrl i:nil="true" />
+      </PwsGetReportOutputResult>
+    </PwsGetReportOutputResponse>
+  </s:Body>
+</s:Envelope>

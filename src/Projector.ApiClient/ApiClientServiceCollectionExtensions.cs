@@ -46,6 +46,9 @@ public static class ApiClientServiceCollectionExtensions
             .AddHttpMessageHandler<ProjectorCallStatsHandler>();
         services.AddTransient<IProjectorTimeEntryClient, ProjectorTimeEntryClient>();
 
+        // get_report: saved reports and legacy exports (starting a run goes through the write transport).
+        services.AddTransient<IProjectorReportClient, ProjectorReportClient>();
+
         return services;
     }
 
@@ -55,7 +58,12 @@ public static class ApiClientServiceCollectionExtensions
     /// </summary>
     public static readonly TimeSpan LongReadTimeout = TimeSpan.FromSeconds(25);
 
-    private static readonly HashSet<string> LongReadActions = new(StringComparer.Ordinal) { "PwsGetEngagementList" };
+    // The get_report reads return whole outputs or pages of heavy rows (measured 2026-10-02: a 9,644-row report
+    // 5 s as CSV, 1,000 projects 16 s).
+    private static readonly HashSet<string> LongReadActions = new(StringComparer.Ordinal)
+    {
+        "PwsGetEngagementList", "PwsGetReportOutput", "ExportProjectList", "ExportTimeCards", "ExportOlapGinsuRecords"
+    };
 
     /// <summary>True when the request is a SOAP call listed in <see cref="LongReadActions"/>.</summary>
     internal static bool IsLongRead(HttpRequestMessage? request) =>

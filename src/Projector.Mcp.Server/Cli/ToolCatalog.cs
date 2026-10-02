@@ -49,7 +49,8 @@ public static class ToolCatalog
         "list_proj_bookings",
         "list_time_projects",
         "get_timecard_options",
-        "save_timecard"
+        "save_timecard",
+        "get_report"
     ];
 
     public static string Canonicalize(string name)
@@ -96,6 +97,7 @@ public static class ToolCatalog
             "list_time_projects" => await ListTimeProjectsAsync(services, connectionId, args, cancellationToken),
             "get_timecard_options" => await GetTimecardOptionsAsync(services, connectionId, args, cancellationToken),
             "save_timecard" => await SaveTimecardAsync(services, connectionId, args, cancellationToken),
+            "get_report" => await GetReportAsync(services, connectionId, args, cancellationToken),
             _ => throw new ArgumentException(
                 $"Unknown tool '{canonical}'. Known: {string.Join(", ", CanonicalAgentTools)}")
         };
@@ -313,6 +315,42 @@ public static class ToolCatalog
                     udf2)
             ],
             dryRun,
+            ct);
+    }
+
+    private static Task<object> GetReportAsync(
+        IServiceProvider services,
+        string connectionId,
+        IReadOnlyDictionary<string, string> args,
+        CancellationToken ct)
+    {
+        string? Text(string key) => args.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+
+        return services.GetRequiredService<ReportToolService>().GetReportAsync(
+            connectionId,
+            new ReportRequest
+            {
+                Dataset = Text("dataset"),
+                Code = Text("code"),
+                SpecUid = Text("spec_uid"),
+                OutputUid = Text("output_uid"),
+                StartDate = Text("start_date"),
+                EndDate = Text("end_date"),
+                CutoffDate = Text("cutoff_date"),
+                Bucket = Text("bucket"),
+                CostCenter = Text("cost_center"),
+                By = Text("by"),
+                BillableOnly = GetBool(args, "billable_only"),
+                // On unless switched off: --include-unapproved false
+                IncludeUnapproved = !args.TryGetValue("include_unapproved", out var unapproved)
+                    || !string.Equals(unapproved, "false", StringComparison.OrdinalIgnoreCase),
+                IncludeTimeOff = GetBool(args, "include_time_off"),
+                IncludeClosed = GetBool(args, "include_closed"),
+                Query = Text("query"),
+                Columns = Text("columns")?.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                MaxRows = GetInt(args, "max_rows", ReportToolService.DefaultMaxRows),
+                Cursor = Text("cursor")
+            },
             ct);
     }
 

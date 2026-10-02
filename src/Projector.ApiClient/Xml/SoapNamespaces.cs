@@ -10,9 +10,13 @@ public static class SoapNamespaces
     public static readonly XNamespace Com = "http://projectorpsa.com/DataContracts/Shared/Common/";
     public static readonly XNamespace Tim = "http://projectorpsa.com/DataContracts/Shared/TimeAndCost/";
     public static readonly XNamespace Sch = "http://projectorpsa.com/DataContracts/Shared/Scheduling/";
+    public static readonly XNamespace Rep = "http://projectorpsa.com/DataContracts/Shared/Report/";
     public static readonly XNamespace Data = "http://www.opsplanning.com/webservices/public/data";
 
     public const string WcfSoapActionPrefix = "http://projectorpsa.com/PwsProjectorServices/IPwsProjectorServices/";
     public const string AsmxExportResourcesAction = "http://www.opsplanning.com/webservices/public/data/ExportResources";
     public const string AsmxExportScheduledTimeoffAction = "http://www.opsplanning.com/webservices/public/data/ExportScheduledTimeoff";
+
+    /// <summary>The SOAP action of a legacy (ASMX) method.</summary>
+    public static string AsmxAction(string method) => "http://www.opsplanning.com/webservices/public/data/" + method;
 }

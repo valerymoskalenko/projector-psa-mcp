@@ -73,7 +73,7 @@ internal static class ToolCallLogFilter
     {
         "max_rows", "max_tasks", "offset", "compact", "include_closed", "include_inactive", "chargeable_only",
         "dry_run", "include_history", "include_udfs", "include_task_plan", "show_availability_days", "status",
-        "manager_role"
+        "manager_role", "dataset", "bucket", "by", "billable_only", "include_unapproved", "include_time_off"
     };
 
     internal static ArgumentInfo DescribeArguments(IEnumerable<KeyValuePair<string, JsonElement>>? arguments)

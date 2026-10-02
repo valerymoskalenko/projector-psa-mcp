@@ -37,7 +37,11 @@ public static class ProjectorCallStats
         ["PwsSearchProjects"] = ["PwsProjectDescriptor"],
         ["PwsGetTimeEntryProjectRole"] = ["PwsProjectTask"],
         ["ExportResources"] = ["Resource"],
-        ["ExportScheduledTimeoff"] = ["ScheduledTimeoff"]
+        ["ExportScheduledTimeoff"] = ["ScheduledTimeoff"],
+        ["ExportProjectList"] = ["Project"],
+        ["ExportTimeCards"] = ["TimeCard"],
+        ["ExportOlapGinsuRecords"] = ["OlapGinsuRecord"],
+        ["GetReportStatus"] = ["ReportOutput"]
     };
 
     /// <summary>Starts collecting for the current async flow (one tool call).</summary>

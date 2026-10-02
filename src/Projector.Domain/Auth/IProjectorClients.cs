@@ -2,6 +2,7 @@ using Projector.Domain.Auth;
 using Projector.Domain.Availability;
 using Projector.Domain.Engagements;
 using Projector.Domain.Holidays;
+using Projector.Domain.Reports;
 using Projector.Domain.Resources;
 using Projector.Domain.Schedule;
 using Projector.Domain.Timecards;
@@ -222,6 +223,70 @@ public interface IProjectorHolidayClient
         ProjectorConnection connection,
         string dateBookmark,
         int maxRows = 10000,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Large, cross-person reads for get_report: the user's saved reports and the legacy exports.
+/// Starting a report run or an export batch is not retried; it changes no business data.
+/// </summary>
+public interface IProjectorReportClient
+{
+    /// <summary>A saved report's stored output as a table (CSV with a header row), by web service code or output UID.</summary>
+    Task<ReportTable> GetReportOutputAsync(
+        ProjectorConnection connection,
+        string? webServiceCode,
+        string? outputUid,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Runs the caller's own saved report; returns the new output UID.</summary>
+    Task<string> SubmitReportSpecAsync(
+        ProjectorConnection connection,
+        string specUid,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>One run by output UID, or the caller's recent runs (without UIDs) when <paramref name="outputUid"/> is null.</summary>
+    Task<IReadOnlyList<ReportRun>> GetReportStatusAsync(
+        ProjectorConnection connection,
+        string? outputUid,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Starts a Ginsu batch export; returns its request id.</summary>
+    Task<string> SubmitGinsuExportAsync(
+        ProjectorConnection connection,
+        GinsuExportRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<BatchPage> GetGinsuRecordsAsync(
+        ProjectorConnection connection,
+        string requestId,
+        long startAfterRowIndex,
+        int maxRows,
+        bool onlyCount,
+        CancellationToken cancellationToken = default);
+
+    Task<ExportPage> ExportProjectListAsync(
+        ProjectorConnection connection,
+        bool openForTimeOnly,
+        string? projectCodesAfter,
+        int maxRows,
+        bool onlyCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Approved time cards in a work-date range, continued after the last card's approval time and id.</summary>
+    Task<ExportPage> ExportTimeCardsAsync(
+        ProjectorConnection connection,
+        string minWorkDate,
+        string maxWorkDate,
+        string? approvedMinTimestamp,
+        string? approvedIdsAfter,
+        int maxRows,
+        bool onlyCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Resource reference id → display name (ExportResources), for turning ids in exports into names.</summary>
+    Task<IReadOnlyDictionary<string, string>> ExportResourceNamesAsync(
+        ProjectorConnection connection,
         CancellationToken cancellationToken = default);
 }
 

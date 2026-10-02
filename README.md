@@ -26,6 +26,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Pr
 | `list_time_projects` | Projects I can enter time on for a date, with my roles |
 | `get_timecard_options` | One project's tasks, rate types and time-entry rules for me on a date |
 | `save_timecard` | **Write.** Create a Draft time card, or update my Draft/Rejected card. Never submits |
+| `get_report` | Large, cross-person results as rows: hours and revenue by person, project and period (Ginsu export), all projects with managers, approved time cards of many people, or a report I saved in Projector |
+
+`get_report` reads four datasets in the user's own session; a result comes in parts through a cursor. Starting a saved report or an export changes no business data, so the tool is read-only. On a hosted server it is shown only to the users listed in the setting `Projector:GetReportUsers` (Entra object ids separated by commas, or `*` for everyone; empty = nobody). The exports need the user's Projector permission *Export Data*.
 
 The server also publishes MCP **prompts** (recipes such as `projector_availability`, `projector_project_bookings`) and **resources** (`projector://resources/{id}`, reference catalogs).
 

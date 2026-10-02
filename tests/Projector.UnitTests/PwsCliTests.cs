@@ -26,7 +26,7 @@ public class PwsCliTests
     public async Task WriteMethod_IsRefusedBeforeAnyCall()
     {
         var body = WriteBody("<pws:PwsSaveTimeCards><pws:serviceRequest/></pws:PwsSaveTimeCards>");
-        var runner = new PwsCliRunner(null!, null!, new Env("Development"));
+        var runner = new PwsCliRunner(null!, null!, null!, new Env("Development"));
 
         (await runner.RunAsync("PwsSaveTimeCards", body, CancellationToken.None)).Should().Be(2);
     }
@@ -35,7 +35,7 @@ public class PwsCliTests
     public async Task ReadMethodName_WithAWriteBody_IsRefused()
     {
         var body = WriteBody("<pws:PwsSaveTimeCards><pws:serviceRequest/></pws:PwsSaveTimeCards>");
-        var runner = new PwsCliRunner(null!, null!, new Env("Development"));
+        var runner = new PwsCliRunner(null!, null!, null!, new Env("Development"));
 
         (await runner.RunAsync("PwsGetTimeCards", body, CancellationToken.None)).Should().Be(2);
     }
@@ -44,7 +44,7 @@ public class PwsCliTests
     public async Task OutsideDevelopment_NothingRuns()
     {
         var body = WriteBody("<pws:PwsGetTimeCards><pws:serviceRequest/></pws:PwsGetTimeCards>");
-        var runner = new PwsCliRunner(null!, null!, new Env("Production"));
+        var runner = new PwsCliRunner(null!, null!, null!, new Env("Production"));
 
         (await runner.RunAsync("PwsGetTimeCards", body, CancellationToken.None)).Should().Be(2);
     }

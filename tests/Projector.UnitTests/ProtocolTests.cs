@@ -129,7 +129,31 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
             .Should().BeTrue("clients such as VS Code only call tools/list when initialize advertises tools");
 
         var list = await PostMcpAsync(client, token, """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""");
-        list.GetProperty("result").GetProperty("tools").GetArrayLength().Should().Be(16);
+        // Development opens get_report to everyone (Projector:GetReportUsers = *).
+        list.GetProperty("result").GetProperty("tools").GetArrayLength().Should().Be(17);
+    }
+
+    [Fact]
+    public async Task GetReport_IsListedAndCallableOnlyForTheUsersInTheSetting()
+    {
+        using var factory = _factory.WithWebHostBuilder(b => b.UseSetting("Projector:GetReportUsers", "oid-allowed"));
+        var client = factory.CreateClient();
+        var issuer = factory.Services.GetRequiredService<Projector.Mcp.Server.Auth.McpJwtIssuer>();
+        const string listRequest = """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""";
+        const string callRequest = """{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_report","arguments":{}}}""";
+
+        var allowed = issuer.CreateAccessToken("protocol-test-connection", tenantId: "tenant", entraObjectId: "oid-allowed");
+        var allowedTools = (await PostMcpAsync(client, allowed, listRequest)).GetProperty("result").GetProperty("tools");
+        allowedTools.EnumerateArray().Select(t => t.GetProperty("name").GetString()).Should().Contain("get_report");
+
+        var other = issuer.CreateAccessToken("protocol-test-connection", tenantId: "tenant", entraObjectId: "oid-other");
+        var otherTools = (await PostMcpAsync(client, other, listRequest)).GetProperty("result").GetProperty("tools");
+        otherTools.GetArrayLength().Should().Be(16);
+        otherTools.EnumerateArray().Select(t => t.GetProperty("name").GetString()).Should().NotContain("get_report");
+
+        var refused = (await PostMcpAsync(client, other, callRequest)).GetProperty("result");
+        refused.GetProperty("isError").GetBoolean().Should().BeTrue();
+        refused.GetProperty("content")[0].GetProperty("text").GetString().Should().Contain("unknown_tool");
     }
 
     private static async Task<JsonElement> PostMcpAsync(HttpClient client, string token, string body)

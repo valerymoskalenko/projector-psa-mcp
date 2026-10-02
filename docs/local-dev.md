@@ -90,3 +90,13 @@ dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- pws PwsGetT
 - Read-only: only `PwsGet…` and `PwsSearch…` methods are sent, and the body element must match the method. Saves, deletes, submits and approvals are refused before any call.
 - Runs only with `ASPNETCORE_ENVIRONMENT=Development`.
 - It runs as you, with your Projector permissions. Don't commit captured responses: turn them into fixtures with invented names and ids.
+
+The legacy (ASMX) report and export methods behind `get_report` have their own command. The file holds the parameter elements and may be empty:
+
+```powershell
+# params.xml: <data:MaxRowsToReturn>10</data:MaxRowsToReturn><data:OnlyCountRows>false</data:OnlyCountRows>
+dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- asmx ExportProjectList params.xml
+```
+
+- Sent without a switch: `GetReportStatus`, `ExportProjectList`, `ExportTimeCards`, `ExportOlapGinsuRecords`, `ExportResources`, `ExportScheduledTimeoff`.
+- `SubmitReportSpec` and `SubmitOlapGinsuExport` start a run in Projector (no business data changes) and are sent only with `--run`. Every other method is refused.
