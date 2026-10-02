@@ -22,8 +22,12 @@ public static class ApiClientServiceCollectionExtensions
         // Per-user cap on concurrent Projector calls, shared by every SOAP transport.
         services.AddSingleton<ProjectorCallLimiter>();
 
+        // Duration, size and rows of every Projector call; added first, so it wraps the retries.
+        services.AddTransient<ProjectorCallStatsHandler>();
+
         // Shared SOAP transport.
         services.AddHttpClient<ProjectorSoapHttp>()
+            .AddHttpMessageHandler<ProjectorCallStatsHandler>()
             .AddStandardResilienceHandler(ConfigureSoapRetry);
 
         // Existing resource list/get (keeps working for MCP tools already wired).
@@ -31,13 +35,15 @@ public static class ApiClientServiceCollectionExtensions
 
         // Full SOAP surface.
         services.AddHttpClient<ProjectorSoapClient>()
+            .AddHttpMessageHandler<ProjectorCallStatsHandler>()
             .AddStandardResilienceHandler(ConfigureSoapRetry);
         services.AddTransient<IProjectorSoapClient>(sp => sp.GetRequiredService<ProjectorSoapClient>());
         services.AddTransient<IProjectorUserClient>(sp => sp.GetRequiredService<ProjectorSoapClient>());
 
         // Writes: no resilience handler, so a save is never retried (a timed-out save may have committed).
         // One attempt, bounded below Copilot's own tool timeout.
-        services.AddHttpClient<ProjectorSoapWriteHttp>(client => client.Timeout = WriteTimeout);
+        services.AddHttpClient<ProjectorSoapWriteHttp>(client => client.Timeout = WriteTimeout)
+            .AddHttpMessageHandler<ProjectorCallStatsHandler>();
         services.AddTransient<IProjectorTimeEntryClient, ProjectorTimeEntryClient>();
 
         return services;

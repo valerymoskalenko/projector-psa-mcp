@@ -1880,4 +1880,148 @@ public class TimeEntryTests
             return Task.FromException<HttpResponseMessage>(failure);
         }
     }
+
+    // ---- size and rows in the logs: per tool call and per Projector call -------------------
+
+    [Fact]
+    public void ProjectorRows_AreTheMethodsRecordElements_WithOrWithoutPrefix()
+    {
+        const string xml =
+            "<s:Envelope><a:PwsResourceSummary><a:Name>x</a:Name></a:PwsResourceSummary>" +
+            "<PwsResourceSummary></PwsResourceSummary><a:PwsResourceSummaryExtra></a:PwsResourceSummaryExtra>" +
+            "<a:PwsResourceSummary i:nil=\"true\"/></s:Envelope>";
+
+        ProjectorCallStats.CountRows("PwsGetResourceList", xml).Should().Be(2, "only closed PwsResourceSummary elements are rows");
+        ProjectorCallStats.CountRows("PwsGetTimeCards", "<a:PwsTimecardDetail></a:PwsTimecardDetail><a:PwsTimeOffCardDetail></a:PwsTimeOffCardDetail>")
+            .Should().Be(2, "work and time-off cards come from the same method");
+        ProjectorCallStats.CountRows("PwsSaveTimeCards", xml).Should().BeNull("a method without a record element has no row count");
+        ProjectorCallStats.CountRows("PwsGetResourceList", "").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ProjectorCall_IsMeasured_AndTheCallerStillReadsTheResponse()
+    {
+        const string body =
+            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><R>" +
+            "<PwsResourceSummary><Name>a</Name></PwsResourceSummary><PwsResourceSummary><Name>b</Name></PwsResourceSummary>" +
+            "</R></s:Body></s:Envelope>";
+        var handler = new ScriptedHandler(() => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
+        var services = new ServiceCollection().AddLogging();
+        services.AddProjectorApiClient();
+        services.AddHttpClient<ProjectorSoapHttp>().ConfigurePrimaryHttpMessageHandler(() => handler);
+        using var provider = services.BuildServiceProvider();
+        var soap = provider.GetRequiredService<ProjectorSoapHttp>();
+
+        var collector = ProjectorCallStats.Begin();
+        var doc = await soap.PostWcfAsync(Connection(), "PwsGetResourceList", new XElement("x"));
+
+        doc.Descendants("PwsResourceSummary").Should().HaveCount(2);
+        var stat = collector.Calls.Should().ContainSingle().Subject;
+        stat.Action.Should().Be("PwsGetResourceList");
+        stat.Status.Should().Be("200");
+        stat.Rows.Should().Be(2);
+        stat.ResponseBytes.Should().Be(System.Text.Encoding.UTF8.GetByteCount(body));
+    }
+
+    [Fact]
+    public async Task FailedProjectorCall_IsMeasuredToo_WithoutSizeOrRows()
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.AddProjectorApiClient();
+        services.AddHttpClient<ProjectorSoapHttp>()
+            .ConfigurePrimaryHttpMessageHandler(() => new CountingHandler(new HttpRequestException("connection reset")));
+        using var provider = services.BuildServiceProvider();
+        var soap = provider.GetRequiredService<ProjectorSoapHttp>();
+
+        var collector = ProjectorCallStats.Begin();
+        var act = () => soap.PostWcfAsync(Connection(), "PwsGetEngagementList", new XElement("x"));
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+        var stat = collector.Calls.Should().ContainSingle().Subject;
+        stat.Status.Should().Be("exception:HttpRequestException");
+        stat.ResponseBytes.Should().BeNull();
+        stat.Rows.Should().BeNull();
+    }
+
+    [Fact]
+    public void ToolCallArguments_LogTheShape_NeverNamesCodesOrSearchText()
+    {
+        JsonElement J(string json) => JsonDocument.Parse(json).RootElement;
+        var args = new Dictionary<string, JsonElement>
+        {
+            ["start_date"] = J("\"2026-09-01\""),
+            ["end_date"] = J("\"2026-09-30\""),
+            ["resource_id"] = J("\"Jane Doe\""),
+            ["query"] = J("\"invoice export\""),
+            ["compact"] = J("true"),
+            ["max_rows"] = J("50"),
+            ["project_codes"] = J("[\"P001234-001\",\"P005678-001\"]"),
+            ["status"] = J("null")
+        };
+
+        var info = Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeArguments(args);
+
+        info.Names.Should().Be("compact,end_date,max_rows,project_codes,query,resource_id,start_date");
+        info.Values.Should().Be("compact=true;max_rows=50;project_codes=[2]");
+        info.DateSpanDays.Should().Be(30);
+        info.StartDate.Should().Be("2026-09-01");
+        info.EndDate.Should().Be("2026-09-30");
+        info.WorkDate.Should().BeNull();
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeArguments(
+                new Dictionary<string, JsonElement> { ["work_date"] = J("\"2026-10-02\""), ["project_code"] = J("\"P001234-001\"") })
+            .WorkDate.Should().Be("2026-10-02");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeArguments(null).Names.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ToolCallOutput_HasSizeRowsAndPagingFlags()
+    {
+        static ModelContextProtocol.Protocol.CallToolResult Result(string text, bool isError = false) => new()
+        {
+            IsError = isError,
+            Content = [new ModelContextProtocol.Protocol.TextContentBlock { Text = text }]
+        };
+
+        const string cut = "{\"resources\":[1,2,3],\"count\":3,\"has_more\":false,\"searchCoverage\":{\"status\":\"partial\"}}";
+        var list = Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeOutput(Result(cut));
+        list.Bytes.Should().Be(cut.Length);
+        list.Rows.Should().Be(3);
+        list.HasMore.Should().BeFalse();
+        list.Partial.Should().BeTrue();
+
+        var tasks = Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeOutput(
+            Result("{\"tasks\":[1,2],\"tasks_count\":2,\"tasks_total\":134,\"tasks_has_more\":true}"));
+        tasks.Rows.Should().Be(2);
+        tasks.Total.Should().Be(134);
+        tasks.HasMore.Should().BeTrue();
+        tasks.Partial.Should().BeNull();
+
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeOutput(Result("{\"days\":[1,2,3,4],\"weeks\":[1]}"))
+            .Rows.Should().Be(4, "without a count the longest list is the row count");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeOutput(Result("{\"error\":\"x\",\"message\":\"y\"}", isError: true))
+            .Rows.Should().BeNull();
+    }
+
+    [Fact]
+    public void ToolCallLine_CarriesOutputAndProjectorTotals()
+    {
+        var logger = new ListLogger();
+        var call = new Projector.Mcp.Server.Tools.ToolCallLogFilter.CallInfo(
+            "list_timecards", null, "Sydney 1.0.0", "0.0.0", null, null, null, null);
+
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.Log(
+            logger, call, "ok", TimeSpan.FromMilliseconds(1500), exception: null,
+            new Projector.Mcp.Server.Tools.ToolCallLogFilter.ArgumentInfo("end_date,start_date", "", 5, "2026-09-21", "2026-09-25"),
+            new Projector.Mcp.Server.Tools.ToolCallLogFilter.OutputInfo(27 * 1024, 61, null, null, false),
+            [
+                new ProjectorCallStat("PwsGetTimeCards", 1200, 512 * 1024, 61, "200"),
+                new ProjectorCallStat("PwsGetResource", 100, 2048, null, "200")
+            ]);
+
+        logger.Entries.Should().ContainSingle().Which.Message.Should()
+            .Contain("list_timecards ok in 1500 ms, 27 KB, 61 rows")
+            .And.Contain("Projector 2 call(s), 1300 ms, 514 KB, 61 rows")
+            .And.Contain("partial False")
+            .And.Contain("args [end_date,start_date] , dates 2026-09-21..2026-09-25 (5 day(s))");
+    }
 }

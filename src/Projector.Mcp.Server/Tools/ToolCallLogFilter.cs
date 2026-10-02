@@ -1,17 +1,23 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using Projector.ApiClient.Xml;
 
 namespace Projector.Mcp.Server.Tools;
 
 /// <summary>
 /// One log line per tool call — tool, client, outcome (ok / refusal code / exception), duration, server version and
-/// the caller — so a user's problem can be found with one query. The SDK logs the client only once per session and
+/// the caller — so a user's problem can be found with one query. The line also carries the answer's size
+/// and rows, whether it was cut or has another page, the Projector calls behind it (count, time, size, rows; each
+/// call has its own line, see <see cref="ProjectorCallStatsHandler"/>) and the shape of the arguments (names, paging
+/// values, date range in days), so the logs show when a tool reaches its limits. The SDK logs the client only once per session and
 /// only "IsError = True" for a failure. The same fields are a log scope for everything logged during the call
 /// (refusals, save audit, Projector warnings), and tags on the request telemetry (user_Id / session_Id in App Insights).
 /// Only pseudonymous ids are logged: the Entra object id and the connection id, never names or e-mail addresses.
@@ -30,19 +36,135 @@ internal static class ToolCallLogFilter
             Tag(Activity.Current, call);
             using var scope = logger?.BeginScope(call.ScopeState());
 
+            // Read before the other filters change the arguments; the Projector calls of this tool call add themselves.
+            var arguments = DescribeArguments(context.Params?.Arguments);
+            var projector = ProjectorCallStats.Begin();
             var started = Stopwatch.GetTimestamp();
             try
             {
                 var result = await next(context, cancellationToken);
-                Log(logger, call, Outcome(result), Stopwatch.GetElapsedTime(started), exception: null);
+                Log(logger, call, Outcome(result), Stopwatch.GetElapsedTime(started), exception: null,
+                    arguments, DescribeOutput(result), projector.Calls);
                 return result;
             }
             catch (Exception ex)
             {
-                Log(logger, call, "exception:" + ex.GetType().Name, Stopwatch.GetElapsedTime(started), ex);
+                Log(logger, call, "exception:" + ex.GetType().Name, Stopwatch.GetElapsedTime(started), ex,
+                    arguments, output: null, projector.Calls);
                 throw;
             }
         };
+
+    /// <summary>
+    /// The shape of a call's arguments, never their contents: which arguments were given, the values of the paging
+    /// and switch arguments in <see cref="LoggedArgumentValues"/>, the length of list arguments, and the length of
+    /// the dates asked for (start_date, end_date, work_date as yyyy-MM-dd) with the length of the range in days.
+    /// </summary>
+    internal sealed record ArgumentInfo(
+        string Names,
+        string Values,
+        int? DateSpanDays,
+        string? StartDate = null,
+        string? EndDate = null,
+        string? WorkDate = null);
+
+    /// <summary>Arguments whose value says how much was asked for and nothing about a person, project or search.</summary>
+    private static readonly HashSet<string> LoggedArgumentValues = new(StringComparer.Ordinal)
+    {
+        "max_rows", "max_tasks", "offset", "compact", "include_closed", "include_inactive", "chargeable_only",
+        "dry_run", "include_history", "include_udfs", "include_task_plan", "show_availability_days", "status",
+        "manager_role"
+    };
+
+    internal static ArgumentInfo DescribeArguments(IEnumerable<KeyValuePair<string, JsonElement>>? arguments)
+    {
+        var given = (arguments ?? [])
+            .Where(a => a.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+            .OrderBy(a => a.Key, StringComparer.Ordinal)
+            .ToList();
+        var values = new List<string>();
+        foreach (var (name, value) in given)
+        {
+            if (value.ValueKind == JsonValueKind.Array)
+            {
+                values.Add($"{name}=[{value.GetArrayLength()}]");
+            }
+            else if (LoggedArgumentValues.Contains(name))
+            {
+                var text = value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText();
+                values.Add($"{name}={(text is { Length: > 20 } ? text[..20] : text)}");
+            }
+        }
+
+        DateTime? Date(string name) =>
+            given.FirstOrDefault(a => a.Key == name).Value is { ValueKind: JsonValueKind.String } v
+            && DateTime.TryParse(v.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                ? date.Date
+                : null;
+
+        static string? Text(DateTime? date) => date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        var startDate = Date("start_date");
+        var endDate = Date("end_date");
+        var days = startDate is { } start && endDate is { } end ? (int)(end - start).TotalDays + 1 : (int?)null;
+        return new ArgumentInfo(
+            string.Join(",", given.Select(a => a.Key)), string.Join(";", values), days,
+            Text(startDate), Text(endDate), Text(Date("work_date")));
+    }
+
+    /// <summary>
+    /// The size of an answer: bytes of its text (what the model reads; the same data goes out once more as structured
+    /// content), rows, and whether there is more.
+    /// </summary>
+    /// <param name="Rows">count / tasks_count of the answer, else the length of its longest list.</param>
+    /// <param name="Total">total / tasks_total: rows that matched before paging.</param>
+    /// <param name="HasMore">has_more / tasks_has_more: another page can be asked for.</param>
+    /// <param name="Partial">searchCoverage says Projector cut the list.</param>
+    internal sealed record OutputInfo(long Bytes, int? Rows, int? Total, bool? HasMore, bool? Partial);
+
+    internal static OutputInfo DescribeOutput(CallToolResult result)
+    {
+        var texts = result.Content.OfType<TextContentBlock>().Select(t => t.Text ?? string.Empty).ToList();
+        var bytes = texts.Sum(t => (long)Encoding.UTF8.GetByteCount(t));
+        if (result.IsError == true || texts.Count == 0)
+        {
+            return new OutputInfo(bytes, null, null, null, null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(texts[0]);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return new OutputInfo(bytes, null, null, null, null);
+            }
+
+            int? Number(string name) =>
+                root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : null;
+            bool? Flag(string name) =>
+                root.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : null;
+
+            var longestList = root.EnumerateObject()
+                .Where(p => p.Value.ValueKind == JsonValueKind.Array)
+                .Select(p => (int?)p.Value.GetArrayLength())
+                .Max();
+            var partial = root.TryGetProperty("searchCoverage", out var coverage) && coverage.ValueKind == JsonValueKind.Object
+                && coverage.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String
+                    ? status.GetString() == "partial"
+                    : (bool?)null;
+            return new OutputInfo(
+                bytes,
+                Number("count") ?? Number("tasks_count") ?? longestList,
+                Number("total") ?? Number("tasks_total"),
+                Flag("has_more") ?? Flag("tasks_has_more"),
+                partial);
+        }
+        catch (JsonException)
+        {
+            return new OutputInfo(bytes, null, null, null, null);
+        }
+    }
 
     internal sealed record CallInfo(
         string Tool,
@@ -183,7 +305,15 @@ internal static class ToolCallLogFilter
         }
     }
 
-    private static void Log(ILogger? logger, CallInfo call, string outcome, TimeSpan elapsed, Exception? exception)
+    internal static void Log(
+        ILogger? logger,
+        CallInfo call,
+        string outcome,
+        TimeSpan elapsed,
+        Exception? exception,
+        ArgumentInfo arguments,
+        OutputInfo? output,
+        IReadOnlyList<ProjectorCallStat> projector)
     {
         if (logger is null)
         {
@@ -193,15 +323,35 @@ internal static class ToolCallLogFilter
         var level = outcome == "ok" ? LogLevel.Information
             : exception is null ? LogLevel.Warning
             : LogLevel.Error;
+        // ProjectorMs adds the calls up, so parallel calls can make it longer than the tool call itself.
         logger.Log(
             level,
             exception,
-            "Tool call {Tool} {Outcome} in {DurationMs} ms (client {Client}, server {ServerVersion}, requested as {RequestedTool})",
+            "Tool call {Tool} {Outcome} in {DurationMs} ms, {OutputKb} KB, {OutputRows} rows " +
+            "(client {Client}, server {ServerVersion}, requested as {RequestedTool}); " +
+            "Projector {ProjectorCalls} call(s), {ProjectorMs} ms, {ProjectorKb} KB, {ProjectorRows} rows; " +
+            "total {OutputTotal}, more {HasMore}, partial {Partial}; args [{ArgNames}] {ArgValues}, " +
+            "dates {StartDate}..{EndDate} ({DateSpanDays} day(s)), work date {WorkDate}",
             call.Tool,
             outcome,
             (long)elapsed.TotalMilliseconds,
+            ProjectorCallStats.Kb(output?.Bytes),
+            output?.Rows,
             call.Client,
             call.ServerVersion,
-            call.RequestedTool ?? call.Tool);
+            call.RequestedTool ?? call.Tool,
+            projector.Count,
+            projector.Sum(p => p.DurationMs),
+            ProjectorCallStats.Kb(projector.Sum(p => p.ResponseBytes ?? 0)),
+            projector.Sum(p => p.Rows ?? 0),
+            output?.Total,
+            output?.HasMore,
+            output?.Partial,
+            arguments.Names,
+            arguments.Values,
+            arguments.StartDate,
+            arguments.EndDate,
+            arguments.DateSpanDays,
+            arguments.WorkDate);
     }
 }
