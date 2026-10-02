@@ -53,7 +53,7 @@ public sealed class AgentTools
         [Description("Inclusive start date (yyyy-MM-dd)")] string start_date,
         [Description("Inclusive end date (yyyy-MM-dd)")] string end_date,
         [Description("Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user.")] string? resource_id = null,
-        [Description("Optional card status filter")] string? status = null,
+        [Description("Optional card status filter: Draft, Submitted, Approved, Rejected or Billed")] string? status = null,
         [Description("Optional project code filter")] string? project_code = null,
         [Description("Optional words to find in the card description, project, client, task path or WBS (whole words or word starts, e.g. \"invoice export\" or a ticket number)")] string? query = null,
         [Description("true = short cards (date, hours, project, task path, WBS, role, rate type, status, description, timecardUid, editable); use it for history reads")] bool compact = false,

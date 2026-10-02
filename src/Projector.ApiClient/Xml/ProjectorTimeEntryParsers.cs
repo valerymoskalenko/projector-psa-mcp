@@ -139,9 +139,13 @@ public static class ProjectorTimeEntryParsers
             roles.Add(role);
         }
 
+        // The project's own Manager element (a sibling of ProjectDetail), not EngagementManager.
+        var manager = XmlNodeHelpers.LocalNodes(response, "Manager").FirstOrDefault();
         return new TaskAssignments(
             restricted,
-            byTask.ToDictionary(kv => kv.Key, kv => (IReadOnlySet<string>)kv.Value, StringComparer.Ordinal));
+            byTask.ToDictionary(kv => kv.Key, kv => (IReadOnlySet<string>)kv.Value, StringComparer.Ordinal),
+            ChildValue(manager, "UserDisplayName"),
+            ChildValue(manager, "EmailAddress"));
     }
 
     public static TimeEntryParameters ParseTimeEntryParameters(XDocument response)

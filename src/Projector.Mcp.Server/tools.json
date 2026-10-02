@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.6.8"
+    "version": "0.6.9"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -109,7 +109,8 @@
             "format": "date"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "description": "Optional card status filter: Draft, Submitted, Approved, Rejected or Billed"
           },
           "project_code": {
             "type": "string"
@@ -562,7 +563,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Gets one project's time-entry options for the signed-in user on one work_date (PwsGetTimeEntryProjectRole + PwsSearchProjects + PwsGetTimeEntryParameters, cached per user for a few minutes): only tasks open for time, each with task_path (parent tasks > task) and WBS code, the user's roles, and entry rules (time increment, location, UDFs). Rate types are for information only (the ones most tasks allow are listed once as rate_types; a task lists its own only when they differ): save_timecard always uses the task's default_rate_type, so don't offer rate type choices. Task names repeat under different parents, so filter with query (task name, WBS code or parent name) and page with max_tasks/offset. Call before save_timecard. Summary tasks (tasks with sub-tasks) are never listed, because Projector rejects time on them at submit (tasks_summary_hidden counts them). On projects where only people assigned to a task may post time, each task has assigned (true/false) and assignment_note explains it; save_timecard refuses assigned = false.",
+      "description": "Gets one project's time-entry options for the signed-in user on one work_date (PwsGetTimeEntryProjectRole + PwsSearchProjects + PwsGetTimeEntryParameters, cached per user for a few minutes): only tasks open for time, each with task_path (parent tasks > task) and WBS code, the user's roles, and entry rules (time increment, location, UDFs). Rate types are for information only (the ones most tasks allow are listed once as rate_types; a task lists its own only when they differ): save_timecard always uses the task's default_rate_type, so don't offer rate type choices. Task names repeat under different parents, so filter with query (task name, WBS code or parent name) and page with max_tasks/offset. Call before save_timecard. Summary tasks (tasks with sub-tasks) are never listed, because Projector rejects time on them at submit (tasks_summary_hidden counts them). On projects where only people assigned to a task may post time, each task has assigned (true/false) and assignment_note explains it; save_timecard refuses assigned = false. When the user has no role on the project, roles is empty and no_role says so and names the project manager to ask: save_timecard is refused there, so don't offer to save.",
       "whenNotToUse": "Do not use to find the user's projects; use list_time_projects. Do not use for a project's staffing roster; use list_project_roles.",
       "inputSchema": {
         "type": "object",

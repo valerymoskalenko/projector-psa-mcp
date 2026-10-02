@@ -106,9 +106,14 @@ public sealed class TimeEntryProjectSetup
 
 /// <summary>
 /// Which roles are assigned to which tasks on one project (PwsGetProject). When <paramref name="Restricted"/> is true,
-/// Projector rejects time at submit from a role that is not assigned to the task.
+/// Projector rejects time at submit from a role that is not assigned to the task. The same response names the
+/// project manager, the person who can add someone to the project.
 /// </summary>
-public sealed record TaskAssignments(bool Restricted, IReadOnlyDictionary<string, IReadOnlySet<string>> RolesByTask)
+public sealed record TaskAssignments(
+    bool Restricted,
+    IReadOnlyDictionary<string, IReadOnlySet<string>> RolesByTask,
+    string? ManagerName = null,
+    string? ManagerEmail = null)
 {
     public bool IsAssigned(string taskUid, IEnumerable<string> roleUids) =>
         RolesByTask.TryGetValue(taskUid, out var roles) && roleUids.Any(roles.Contains);

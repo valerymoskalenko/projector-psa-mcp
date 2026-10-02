@@ -401,8 +401,45 @@ public class TimeEntryTests
     {
         var (service, fake) = CreateService();
         fake.Projects = [];
+        fake.Assignments = new TaskAssignments(
+            false, new Dictionary<string, IReadOnlySet<string>>(), "Dana Whitfield", "dana.whitfield@example.com");
         var act = () => service.SaveTimecardAsync(ConnectionId, Input(), CancellationToken.None);
-        (await act.Should().ThrowAsync<ProjectorApiException>()).Which.ErrorCode.Should().Be("no_role_on_project");
+        var error = (await act.Should().ThrowAsync<ProjectorApiException>()).Which;
+        error.ErrorCode.Should().Be("no_role_on_project");
+        error.Message.Should().Contain("Dana Whitfield (dana.whitfield@example.com)");
+    }
+
+    [Fact]
+    public async Task Options_WithoutRole_SayNoRoleAndNameTheProjectManager()
+    {
+        var (service, fake) = CreateService();
+        var withRole = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None));
+        withRole.TryGetProperty("no_role", out _).Should().BeFalse();
+        fake.Calls["assignments"].Should().Be(0, "the project manager is read only when the user has no role");
+
+        // Another day: the project list is cached per date.
+        fake.Projects = [];
+        fake.Assignments = new TaskAssignments(
+            false, new Dictionary<string, IReadOnlySet<string>>(), "Dana Whitfield", "dana.whitfield@example.com");
+        var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-25", CancellationToken.None));
+
+        options.GetProperty("roles").GetArrayLength().Should().Be(0);
+        options.GetProperty("no_role").GetString().Should()
+            .Contain("no role on project P005678-001").And.Contain("Dana Whitfield (dana.whitfield@example.com)");
+        options.GetProperty("next_step").GetString().Should().StartWith("Don't call save_timecard");
+        options.GetProperty("tasks").GetArrayLength().Should().BeGreaterThan(0, "the task list still comes back");
+    }
+
+    [Fact]
+    public async Task Options_WithoutRole_StillAnswerWhenTheProjectManagerCannotBeRead()
+    {
+        var (service, fake) = CreateService();
+        fake.Projects = [];
+        fake.AssignmentsException = new ProjectorApiException("No permission to view project.", "ViewPermissionDenied");
+
+        var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None));
+
+        options.GetProperty("no_role").GetString().Should().Contain("Ask the project manager to add you");
     }
 
     [Fact]
@@ -544,6 +581,48 @@ public class TimeEntryTests
         card.TaskName.Should().Be("Analysis & Design");
         card.TaskPath.Should().Be("User Story 101 > Analysis & Design");
         card.TaskWbsCode.Should().Be("1.1");
+    }
+
+    [Fact]
+    public void ParseTimeCards_StatusRejected_ReturnsTheRejectedCardWithItsReason()
+    {
+        var doc = XDocument.Parse("""
+            <Envelope><Body><PwsGetTimeCardsResult><TimeEntryProjects><PwsTimeEntryProject>
+              <ProjectDescriptor><ProjectCode>P005678-001</ProjectCode><ProjectName>Contoso</ProjectName></ProjectDescriptor>
+              <TimeCards>
+                <PwsTimecardDetail>
+                  <TimecardUid>900</TimecardUid><WorkDate>2026-09-25T00:00:00</WorkDate><WorkMinutes>30</WorkMinutes><CardStatus>S</CardStatus>
+                </PwsTimecardDetail>
+                <PwsTimecardDetail>
+                  <TimecardUid>901</TimecardUid><RejectedReason>Wrong end customer</RejectedReason>
+                  <WorkDate>2026-09-25T00:00:00</WorkDate><WorkMinutes>30</WorkMinutes><CardStatus>R</CardStatus>
+                </PwsTimecardDetail>
+              </TimeCards>
+            </PwsTimeEntryProject></TimeEntryProjects></PwsGetTimeCardsResult></Body></Envelope>
+            """);
+
+        var card = ProjectorResponseParsers.ParseTimeCards(doc, status: "Rejected").Single();
+        card.TimecardUid.Should().Be("901");
+        card.Status.Should().Be("Rejected");
+        card.RejectedReason.Should().Be("Wrong end customer");
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(" ", null)]
+    [InlineData("rejected", "Rejected")]
+    [InlineData(" R ", "Rejected")]
+    [InlineData("DRAFT", "Draft")]
+    [InlineData("s", "Submitted")]
+    public void ListTimecards_StatusFilter_IsNormalized(string? input, string? expected) =>
+        ProjectorToolService.NormalizeCardStatus(input).Should().Be(expected);
+
+    [Fact]
+    public void ListTimecards_UnknownStatus_IsRefusedWithTheValidValues()
+    {
+        // "Reject" used to match nothing, and an empty list reads as "no rejected cards".
+        var act = () => ProjectorToolService.NormalizeCardStatus("Reject");
+        act.Should().Throw<ArgumentException>().WithMessage("*'Reject'*Draft, Submitted, Approved, Rejected*");
     }
 
     [Fact]
@@ -855,10 +934,14 @@ public class TimeEntryTests
         var doc = XDocument.Parse(
             "<Envelope><Body><R><TimeEntryRestrictedToRolesAssignedToTasksFlag>true</TimeEntryRestrictedToRolesAssignedToTasksFlag>" +
             Detail("t1", "r1") + Detail("t1", "r2") + Detail("t2", "r2") +
+            "<Manager><UserDisplayName>Dana Whitfield</UserDisplayName><EmailAddress>dana.whitfield@example.com</EmailAddress></Manager>" +
+            "<EngagementManager><UserDisplayName>Someone Else</UserDisplayName></EngagementManager>" +
             "</R></Body></Envelope>");
 
         var assignments = ProjectorTimeEntryParsers.ParseTaskAssignments(doc);
 
+        assignments.ManagerName.Should().Be("Dana Whitfield");
+        assignments.ManagerEmail.Should().Be("dana.whitfield@example.com");
         assignments.Restricted.Should().BeTrue();
         assignments.IsAssigned("t1", ["r1"]).Should().BeTrue();
         assignments.IsAssigned("t2", ["r1"]).Should().BeFalse();

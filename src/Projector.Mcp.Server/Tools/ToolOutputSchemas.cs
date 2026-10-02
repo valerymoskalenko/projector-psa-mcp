@@ -76,6 +76,8 @@ public static class ToolOutputSchemas
 
     public const string TimecardOptionsSchemaHint =
         "Output keys: work_date, project (open_for_time, narrative_required), roles[] (role_uid, role_name), "
+        + "no_role (set when roles[] is empty: save_timecard is refused on this project until the project manager "
+        + "named there adds the user), "
         + "rate_types[] (the set most tasks allow), task_query, "
         + "tasks[] (task_uid, task_name, task_path, wbs_code, task_type, rate_types[] only when that task differs from the top-level set, "
         + "default_rate_type, assigned), tasks_count, tasks_total, tasks_has_more, tasks_next_offset, "

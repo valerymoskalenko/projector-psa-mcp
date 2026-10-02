@@ -234,7 +234,10 @@ public static class ProjectorMcpHttpHost
         ConfigurationManager configuration,
         IHostEnvironment? environment = null)
     {
-        using var bootstrapLoggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Information));
+        using var bootstrapLoggerFactory = LoggerFactory.Create(b => b
+            // stderr: in stdio mode stdout carries the MCP messages, and the pws / tool CLIs print their result there.
+            .AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace)
+            .SetMinimumLevel(LogLevel.Information));
         var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("KeyVault");
         await KeyVaultSecretsLoader.ApplyAsync(configuration, bootstrapLogger, environment);
 

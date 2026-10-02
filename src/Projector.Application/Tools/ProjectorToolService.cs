@@ -52,6 +52,7 @@ public sealed class ProjectorToolService
         bool compact = false)
     {
         var sw = Stopwatch.StartNew();
+        status = NormalizeCardStatus(status);
         var connection = await RequireAsync(connectionId, ct);
         var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
         var listed = await WithRefreshAsync(connection, c =>
@@ -106,6 +107,26 @@ public sealed class ProjectorToolService
                 : cards.Select(t => (object)MapTimecard(t, ownCards)).ToList(),
             searchCoverage = SearchCoverageDto.From(coverage)
         }, sw);
+    }
+
+    private static readonly string[] CardStatuses = ["Draft", "Submitted", "Approved", "Rejected", "Billed", "Invoiced", "Missing"];
+
+    /// <summary>
+    /// The status filter as a Projector status name (a one-letter code such as R is accepted). An unknown value is
+    /// refused: it would match no card, and an empty list reads as "no such cards".
+    /// </summary>
+    internal static string? NormalizeCardStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return null;
+        }
+
+        var name = ApiClient.Xml.ProjectorResponseParsers.MapTimeCardStatus(status);
+        return CardStatuses.FirstOrDefault(s => string.Equals(s, name, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException(
+                $"status '{status.Trim()}' is not a card status. Use one of: {string.Join(", ", CardStatuses)}; " +
+                "or leave status out to list every card.");
     }
 
     public async Task<object> ListTimeOffAsync(

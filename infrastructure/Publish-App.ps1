@@ -191,23 +191,32 @@ Write-Host "Restarting web app..."
 az webapp restart --resource-group $ResourceGroup --name $WebAppName -o none
 
 $baseUrl = "https://$WebAppName.azurewebsites.net"
-Write-Host "Waiting for health at $baseUrl/health ..."
+# Right after the restart the old process still answers /health for a minute or two, so "200" is not enough:
+# wait until /health reports the version that was just built.
+$versionFile = Join-Path $repoRoot 'src\Projector.Mcp.Server\Hosting\ServerVersion.cs'
+$expectedVersion = if ((Get-Content $versionFile -Raw) -match 'Current\s*=\s*"([^"]+)"') { $Matches[1] } else { throw "No version found in $versionFile" }
+Write-Host "Waiting for $baseUrl/health to report version $expectedVersion ..."
 $ok = $false
-for ($i = 0; $i -lt 30; $i++) {
+$seen = ''
+for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
     try {
-        $resp = Invoke-WebRequest -Uri "$baseUrl/health" -UseBasicParsing -TimeoutSec 15
-        if ($resp.StatusCode -eq 200) {
-            Write-Host "Health OK: $($resp.Content)" -ForegroundColor Green
+        $health = Invoke-RestMethod -Uri "$baseUrl/health" -TimeoutSec 15
+        $seen = "status=$($health.status) version=$($health.version)"
+        if ($health.version -eq $expectedVersion) {
+            Write-Host "Health OK: $seen" -ForegroundColor Green
             $ok = $true
-            break
         }
     }
     catch {
-        Start-Sleep -Seconds 5
+        $seen = $_.Exception.Message
+    }
+    if (-not $ok) {
+        Write-Host "  not yet ($seen)"
+        Start-Sleep -Seconds 10
     }
 }
 if (-not $ok) {
-    Write-Warning "Health check did not return 200 yet. Inspect logs: az webapp log tail -g $ResourceGroup -n $WebAppName"
+    throw "After 5 minutes $baseUrl/health does not report version $expectedVersion (last: $seen). Inspect logs: az webapp log tail -g $ResourceGroup -n $WebAppName"
 }
 
 Write-Host ""

@@ -255,6 +255,8 @@ public sealed class TimeEntryToolService
         var (assignments, assignmentNote) = await TryGetAssignmentsAsync(connection, setup, ct);
         var roleUids = roles.Select(r => r.Uid).ToList();
         bool? Assigned(TimeEntryTask t) => assignments?.Restricted == true ? assignments.IsAssigned(t.Uid, roleUids) : null;
+        // Without a role the task list still comes back, but a save is refused: say so here, not only at save time.
+        var noRole = roles.Count == 0 ? await NoRoleMessageAsync(connection, setup.ProjectCode, date, ct) : null;
 
         // Most tasks share one set of rate types: list it once, and on a task only when that task differs.
         var commonRateTypes = CommonRateTypes(openTasks, setup);
@@ -272,6 +274,7 @@ public sealed class TimeEntryToolService
                 narrative_required = setup.DescriptionRequired
             },
             roles = roles.Select(r => new { role_uid = r.Uid, role_name = r.Name, start_date = r.StartDate, end_date = r.EndDate }).ToList(),
+            no_role = noRole,
             rate_types = commonRateTypes?.Select(r => new { rate_type_uid = r.Uid, rate_type_name = r.Name }).ToList(),
             task_query = text,
             tasks = page.Select(t => new
@@ -305,7 +308,9 @@ public sealed class TimeEntryToolService
                 udf2 = DescribeUdf(rules.Udf2, setup.Udf2Treatment)
             },
             rate_type_note = "Rate types are listed for information only: save_timecard always uses the task's default_rate_type.",
-            next_step = text is not null && matches.Count == 0
+            next_step = noRole is not null
+                ? "Don't call save_timecard for this project: it is refused while you have no role here (see no_role)."
+                : text is not null && matches.Count == 0
                 ? $"No task matches '{text}' among the {openTasks.Count} tasks that take time here. Try one word, the parent " +
                   "task's name or the WBS code; to find the task used before for this work, call list_timecards with " +
                   "project_code and query."
@@ -686,8 +691,7 @@ public sealed class TimeEntryToolService
         if (roles.Count == 0)
         {
             throw new ProjectorApiException(
-                $"You have no role on project {projectCode} on {date}, so Projector won't accept time there. " +
-                "Ask the project manager to add you, or pick a project with chargeable = true from list_time_projects.",
+                await NoRoleMessageAsync(connection, projectCode, date, ct),
                 "no_role_on_project");
         }
 
@@ -1295,6 +1299,41 @@ public sealed class TimeEntryToolService
             return (null, "This project may accept time only on tasks you are assigned to, and the assignments could " +
                 "not be read. Prefer tasks you have posted to before; Projector checks it when the time sheet is submitted.");
         }
+    }
+
+    /// <summary>
+    /// What to tell a user who has no role on the project, with the project manager's name when Projector lets the
+    /// user read the project (same cached PwsGetProject read as the task assignments; a failed read only drops the name).
+    /// </summary>
+    private async Task<string> NoRoleMessageAsync(
+        ProjectorConnection connection,
+        string projectCode,
+        string date,
+        CancellationToken ct)
+    {
+        string? manager = null;
+        try
+        {
+            var project = await _cache.GetOrLoadAsync(
+                connection, AssignmentsKind, projectCode.ToUpperInvariant(), TimeEntryCache.LookupTtl, () =>
+                    WithRefreshAsync(connection, c => _timeEntry.GetTaskAssignmentsAsync(c, projectCode, ct), ct));
+            manager = string.IsNullOrWhiteSpace(project.ManagerName)
+                ? project.ManagerEmail
+                : string.IsNullOrWhiteSpace(project.ManagerEmail)
+                    ? project.ManagerName
+                    : $"{project.ManagerName} ({project.ManagerEmail})";
+        }
+        catch (Exception ex) when (ex is ProjectorApiException or HttpRequestException or TaskCanceledException
+            && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Could not read the project manager of {ProjectCode}", projectCode);
+        }
+
+        return $"You have no role on project {projectCode} on {date}, so Projector won't accept time there. " +
+            (string.IsNullOrWhiteSpace(manager)
+                ? "Ask the project manager to add you"
+                : $"Ask the project manager, {manager}, to add you") +
+            ", or pick a project with chargeable = true from list_time_projects.";
     }
 
     private async Task<IReadOnlyList<TimeEntryRole>> GetRolesAsync(
