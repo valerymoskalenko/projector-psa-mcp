@@ -71,7 +71,7 @@ public static class ToolOutputSchemas
     public const string ReportSchemaHint =
         "Output keys: dataset, source, status (ok, running or empty), data_as_of, count, total, has_more, next_cursor, "
         + "columns[], rows[] (each row is a list of values in the order of columns), available_columns[] (first part "
-        + "only), recent_report_runs[] (name, status, completed), note. Without a dataset: datasets[] and "
+        + "only), recent_report_runs[] (name, status, completed), note. For the next part pass next_cursor as the argument cursor. Without a dataset: datasets[] and "
         + "recent_report_runs[]. Say how old the data is (data_as_of) when it is a saved report. "
         + "On error projector_permission_denied or a Projector permission message the user lacks that right in "
         + "Projector (exports need the Export Data permission): say so and do not retry.";

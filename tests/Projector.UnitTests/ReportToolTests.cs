@@ -398,6 +398,33 @@ public class ReportToolTests
     }
 
     [Fact]
+    public async Task TimeCards_OfAPersonWithoutAnEmployeeId_HaveNoPerson_AndTheAnswerSaysWhy()
+    {
+        var (service, fake) = CreateService();
+        fake.TimeCardsFixture = "export_time_cards_no_id.xml";
+
+        var answer = await CallAsync(service, new ReportRequest
+        {
+            Dataset = "time_cards", StartDate = "2026-01-12", EndDate = "2026-01-18", Columns = ["person", "role", "hours"]
+        });
+
+        answer.GetProperty("rows").GetRawText().Should().Be("""[["Jane Doe","Consultant",1.5],[null,"Alex Poe",2]]""");
+        answer.GetProperty("note").GetString().Should().Contain("1 of these cards have no person").And.Contain("ginsu");
+    }
+
+    [Fact]
+    public async Task APartialAnswer_SaysWhichArgumentTakesTheCursor()
+    {
+        var (service, _) = CreateService();
+
+        var report = await CallAsync(service, new ReportRequest { Dataset = "report", Code = "MY_CODE", MaxRows = 1 });
+        report.GetProperty("note").GetString().Should().Contain("argument cursor set to next_cursor");
+
+        var projects = await CallAsync(service, new ReportRequest { Dataset = "projects", MaxRows = 2 });
+        projects.GetProperty("note").GetString().Should().Contain("argument cursor set to next_cursor");
+    }
+
+    [Fact]
     public async Task WithoutADataset_TheCatalogAndTheRecentRunsComeBack_AndAnUnknownDatasetIsRefused()
     {
         var (service, _) = CreateService();
@@ -527,6 +554,7 @@ public class ReportToolTests
         public string? LastApprovedMinTimestamp { get; private set; }
         public string? LastApprovedIdsAfter { get; private set; }
         public ProjectorApiException? ResourceNamesError { get; set; }
+        public string TimeCardsFixture { get; set; } = "export_time_cards.xml";
 
         public Task<ReportTable> GetReportOutputAsync(
             ProjectorConnection connection, string? webServiceCode, string? outputUid, CancellationToken cancellationToken = default)
@@ -622,7 +650,7 @@ public class ReportToolTests
 
             LastApprovedMinTimestamp = approvedMinTimestamp;
             LastApprovedIdsAfter = approvedIdsAfter;
-            var doc = Fixture("export_time_cards.xml");
+            var doc = Fixture(TimeCardsFixture);
             return Task.FromResult(new ExportPage(ProjectorReportParsers.RowCount(doc), ProjectorReportParsers.ParseRows(doc, "TimeCard")));
         }
 

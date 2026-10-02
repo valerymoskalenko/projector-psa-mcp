@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.7.0"
+    "version": "0.7.1"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -800,7 +800,11 @@
           },
           "cursor": {
             "type": "string",
-            "description": "next_cursor of the previous answer; every other argument is then ignored"
+            "description": "The next_cursor value of the previous answer; every other argument is then ignored"
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "Same as cursor (accepted because agents pass the output key name)"
           }
         }
       }

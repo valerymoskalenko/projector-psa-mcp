@@ -209,7 +209,7 @@ public sealed class ReportToolService
             if (run is null || run.Status is "Queued" or "Running")
             {
                 return Running(connection, request, position with { RunId = runId }, ReportDatasets.Report,
-                    "The report is still running in Projector. Call get_report again with next_cursor in a few seconds.");
+                    "The report is still running in Projector. Call get_report again in a few seconds with only the argument cursor set to next_cursor.");
             }
 
             if (run.Status == "Empty")
@@ -342,7 +342,7 @@ public sealed class ReportToolService
             {
                 return Running(connection, request, position with { RunId = runId }, ReportDatasets.Ginsu,
                     "Projector is still preparing the data (its export queue can take from seconds to a few minutes). " +
-                    "Call get_report again with next_cursor in about 20 seconds.");
+                    "Call get_report again in about 20 seconds with only the argument cursor set to next_cursor.");
             }
 
             if (batch.Status == "Completed" && batch.RowCount > LargeBatchRows && stats.WaitMs > WaitBudget.TotalMilliseconds / 2)
@@ -350,7 +350,7 @@ public sealed class ReportToolService
                 // Waiting already used much of this call; reading a large batch on top could exceed the client's
                 // tool timeout. The batch is ready, so the next call reads it at once.
                 return Running(connection, request, position with { RunId = runId }, ReportDatasets.Ginsu,
-                    "The data is ready in Projector. Call get_report again with next_cursor now to read it.");
+                    "The data is ready in Projector. Call get_report again now with only the argument cursor set to next_cursor to read it.");
             }
 
             var asOf = DateTimeOffset.UtcNow;
@@ -507,6 +507,15 @@ public sealed class ReportToolService
         }
 
         var list = rows.ToList();
+        // Projector's exports name a person only by the resource reference id; people without one come back blank.
+        var personAt = columns.Select((c, i) => (c, i)).Where(x => x.c.Kind == ReportColumnKind.PersonName).Select(x => x.i).ToList();
+        var unnamed = personAt.Count == 0 ? 0 : list.Count(r => personAt.Any(i => r[i] is null));
+        if (unnamed > 0 && dataset == ReportDatasets.TimeCards)
+        {
+            note = Join(note, $"{unnamed} of these cards have no person: Projector's time card export identifies people only by " +
+                "their employee id, and these people have none in Projector. The role column often names them; dataset ginsu " +
+                "shows everyone by name.");
+        }
         stats.CleanRows = list.Count;
         var answer = new Dictionary<string, object?>
         {
@@ -521,6 +530,7 @@ public sealed class ReportToolService
         if (next is not null)
         {
             answer["next_cursor"] = ReportCursor.Encode(connection.UserKey, request, next);
+            note = Join(note, "For the next part call get_report with only the argument cursor set to next_cursor.");
         }
 
         answer["columns"] = columns.Select(c => c.Name).ToList();
@@ -621,8 +631,8 @@ public sealed class ReportToolService
         if (hasMore)
         {
             answer["next_cursor"] = ReportCursor.Encode(connection.UserKey, request, position with { Offset = offset + rows.Count });
-            answer["note"] = $"Rows {offset + 1}-{offset + rows.Count} of {matching.Count}. Call get_report with next_cursor " +
-                "for the next part, or narrow with query or fewer columns.";
+            answer["note"] = $"Rows {offset + 1}-{offset + rows.Count} of {matching.Count}. For the next part call get_report with " +
+                "only the argument cursor set to next_cursor, or narrow with query or fewer columns.";
         }
 
         answer["columns"] = table.Columns;

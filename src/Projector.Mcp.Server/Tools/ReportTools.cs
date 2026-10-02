@@ -46,8 +46,8 @@ public sealed class ReportTools
         "'report' = a report the user saved in Projector, by its web service code (latest run), its spec_uid (runs it now) " +
         "or an output_uid. " +
         "Use columns to choose what comes back and query to keep only matching rows. A large result comes in parts: " +
-        "when has_more is true, call again with only cursor = next_cursor. A run can take a while: status 'running' " +
-        "means call again with next_cursor after a few seconds. " +
+        "when has_more is true, call again with only the argument cursor set to the next_cursor value of the answer. " +
+        "A run can take a while: status 'running' means call again the same way after a few seconds. " +
         ToolOutputSchemas.ReportSchemaHint + " " +
         "WhenNotToUse: Do not use for one person's time cards, schedule or PTO; use list_timecards, get_schedule, " +
         "list_upcoming_pto. Do not use for one engagement or one project's team; use get_engagement, list_project_roles.")]
@@ -69,7 +69,8 @@ public sealed class ReportTools
         [Description("Optional words every returned row must contain (whole words or word starts), e.g. a person or client name")] string? query = null,
         [Description("Optional columns to return; for ginsu they also group the rows. See the dataset list for the names")] string[]? columns = null,
         [Description("Rows per answer (1-500)")] int max_rows = ReportToolService.DefaultMaxRows,
-        [Description("next_cursor of the previous answer; when given, every other argument is ignored")] string? cursor = null,
+        [Description("The next_cursor value of the previous answer; when given, every other argument is ignored")] string? cursor = null,
+        [Description("Same as cursor (accepted because agents pass the output key name)")] string? next_cursor = null,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _reports.GetReportAsync(
             ct.ConnectionId,
@@ -92,7 +93,7 @@ public sealed class ReportTools
                 Query = query,
                 Columns = columns,
                 MaxRows = max_rows,
-                Cursor = cursor
+                Cursor = string.IsNullOrWhiteSpace(cursor) ? next_cursor : cursor
             },
             ct.Token), cancellationToken);
 

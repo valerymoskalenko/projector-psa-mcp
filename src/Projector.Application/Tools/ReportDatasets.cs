@@ -102,7 +102,7 @@ public static class ReportDatasets
         new
         {
             dataset = Ginsu,
-            answers = "Hours across people and projects for any date range: posted (approved, unapproved) and planned (booked) hours, time off and holidays, with revenue. Rows are grouped by the chosen columns and the numbers added up. No card descriptions.",
+            answers = "Hours across people and projects for any date range: posted (approved, unapproved) and planned (booked) hours, time off and holidays, with revenue. Rows are grouped by the chosen columns and the numbers added up. No card descriptions. There is no team filter: to narrow to a group, pass cost_center (with by = resources for people), or add cost_center, department or title to columns and use query.",
             parameters = "start_date, end_date (required); cutoff_date (last day of actuals; later days are planned hours), bucket (day, week, month, quarter, year, none), cost_center, by (projects or resources), billable_only, include_unapproved, include_time_off; query, columns, max_rows",
             columns = GinsuCleaner.Dimensions.Select(d => d.Name).Concat(GinsuCleaner.Measures.Select(m => m.Name)).ToArray(),
             default_columns = GinsuCleaner.DefaultColumns,
@@ -120,7 +120,7 @@ public static class ReportDatasets
         new
         {
             dataset = TimeCards,
-            answers = "Approved time cards of everyone the user may see, card by card with the description. Unapproved cards are not included: use ginsu for hours in every status, or list_timecards for one person.",
+            answers = "Approved time cards of everyone the user may see, card by card with the description. Unapproved cards are not included: use ginsu for hours in every status, or list_timecards for one person. People without an employee id in Projector come back without a name here (ginsu names them).",
             parameters = "start_date, end_date (required); query, columns, max_rows",
             columns = TimeCardColumns.Select(c => c.Name).ToArray(),
             default_columns = TimeCardDefaultColumns,
