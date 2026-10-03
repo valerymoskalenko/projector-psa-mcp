@@ -35,7 +35,7 @@ public sealed record TimecardDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Editable = null);
 
 /// <summary>
-/// list_timecards with compact=true: what a history read needs (style examples, task picks, fixes), about half the size of
+/// list_timecards with compact=true: short cards (fixes and lookups; group_by=task is the history read), about half the size of
 /// <see cref="TimecardDto"/>.
 /// </summary>
 public sealed record CompactTimecardDto(

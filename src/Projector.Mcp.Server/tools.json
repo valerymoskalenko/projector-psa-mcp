@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.7.1"
+    "version": "0.8.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -87,7 +87,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Does not infer expected workdays; pair with get_schedule if you need utilization-basis days vs cards. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector. by_date gives posted hours per day (and per status), so days can be compared with get_schedule's expected hours without adding cards up.",
+      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector. by_date gives posted hours per day (and per status) with expected_hours from the schedule and short_by on working days below expected; working days without cards are listed with 0 hours (ranges of up to 56 days without status, project_code or query filters; expected_note says why it is missing otherwise). group_by = task returns one row per project and task (card_count, hours, first and last date, last description) instead of the cards: use it for history reads.",
       "whenNotToUse": "Do not use for capacity or bookings; use check_availability or get_schedule. Do not use for PTO cards; use list_time_off.",
       "inputSchema": {
         "type": "object",
@@ -121,7 +121,12 @@
           },
           "compact": {
             "type": "boolean",
-            "description": "true = short cards (date, hours, project, task path, WBS, role, rate type, status, description, timecardUid, editable); use it for history reads"
+            "description": "true = short cards (date, hours, project, task path, WBS, role, rate type, status, description, timecardUid, editable)"
+          },
+          "group_by": {
+            "type": "string",
+            "enum": ["task"],
+            "description": "task = one row per project and task instead of the cards; use it for history reads"
           }
         }
       }
@@ -563,7 +568,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Gets one project's time-entry options for the signed-in user on one work_date (PwsGetTimeEntryProjectRole + PwsSearchProjects + PwsGetTimeEntryParameters, cached per user for a few minutes): only tasks open for time, each with task_path (parent tasks > task) and WBS code, the user's roles, and entry rules (time increment, location, UDFs). Rate types are for information only (the ones most tasks allow are listed once as rate_types; a task lists its own only when they differ): save_timecard always uses the task's default_rate_type, so don't offer rate type choices. Task names repeat under different parents, so filter with query (task name, WBS code or parent name) and page with max_tasks/offset. Call before save_timecard. Summary tasks (tasks with sub-tasks) are never listed, because Projector rejects time on them at submit (tasks_summary_hidden counts them). On projects where only people assigned to a task may post time, each task has assigned (true/false) and assignment_note explains it; save_timecard refuses assigned = false. When the user has no role on the project, roles is empty and no_role says so and names the project manager to ask: save_timecard is refused there, so don't offer to save.",
+      "description": "Gets one project's time-entry options for the signed-in user on one work_date (PwsGetTimeEntryProjectRole + PwsSearchProjects + PwsGetTimeEntryParameters, cached per user for a few minutes): only tasks open for time, each with task_path (parent tasks > task) and WBS code, the user's roles, and entry rules (time increment, location, UDFs). Each task shows its default_rate_type: save_timecard always uses it, so don't offer rate type choices. Task names repeat under different parents, so filter with query (task name, WBS code or parent name) and page with max_tasks/offset. Call before save_timecard. Summary tasks (tasks with sub-tasks) are never listed, because Projector rejects time on them at submit (tasks_summary_hidden counts them). On projects where only people assigned to a task may post time, each task has assigned (true/false) and assignment_note explains it; save_timecard refuses assigned = false. When the user has no role on the project, roles is empty and no_role says so and names the project manager to ask: save_timecard is refused there, so don't offer to save.",
       "whenNotToUse": "Do not use to find the user's projects; use list_time_projects. Do not use for a project's staffing roster; use list_project_roles.",
       "inputSchema": {
         "type": "object",
@@ -617,7 +622,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Saves 1–20 work time cards on the signed-in user's own time sheet in one call (PwsSaveTimeCards per card, SubmitFlag=false): each card is created as Draft, or updates one of the user's own Draft or Rejected cards when its timecard_uid is given. Never submits, approves or deletes; no resource parameter. To remove a card, tell the user to delete it in Projector: this tool can't delete, and a card can't be saved with 0 hours. Show the user every card and get one confirmation, then send all approved cards in one call. Every card is checked first (task, role, hours, summary tasks, tasks the user is not assigned to, duplicates): invalid cards are reported and not sent, valid ones are saved one by one and never retried; after an unknown outcome the remaining cards are not attempted. The rate type is always the task's default. dry_run = true checks everything and shows the day totals without saving.",
+      "description": "Saves 1–20 work time cards on the signed-in user's own time sheet in one call (PwsSaveTimeCards per card, SubmitFlag=false): each card is created as Draft, or updates one of the user's own Draft or Rejected cards when its timecard_uid is given. Never submits, approves or deletes; no resource parameter. To remove a card, tell the user to delete it in Projector: this tool can't delete, and a card can't be saved with 0 hours. Show the user every card and get one confirmation, then send all approved cards in one call. Every card is checked first (task, role, hours, summary tasks, tasks the user is not assigned to, duplicates): invalid cards are reported and not sent, valid ones are saved one by one and never retried; after an unknown outcome the remaining cards are not attempted. The rate type is always the task's default. dry_run = true checks everything and shows the day totals without saving. Each day shows expected_hours from the user's schedule; cards on a weekend or day off, a holiday or PTO, cards that take the day above its expected hours and cards near or after the end of the project or of the user's role get warnings (one schedule read per call; never blocking).",
       "whenNotToUse": "Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.",
       "inputSchema": {
         "type": "object",

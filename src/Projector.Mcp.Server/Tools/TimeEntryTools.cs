@@ -62,9 +62,8 @@ public sealed class TimeEntryTools
     [Description(
         "Gets one project's time-entry options for the signed-in user on one work_date: only tasks open for time " +
         "(name, full task_path with parent tasks, WBS code, default_rate_type), the user's roles, and entry rules " +
-        "(time increment, location, UDFs). Rate types are listed for information only (the ones most tasks allow once " +
-        "at the top; a task lists its own only when they differ): save_timecard always uses the task's " +
-        "default_rate_type, so don't offer rate type choices to the user. Task names repeat under different parents, so use query (part of a task name, WBS code or parent name) to find the " +
+        "(time increment, location, UDFs). save_timecard always uses the task's default_rate_type, so don't offer rate " +
+        "type choices to the user. Task names repeat under different parents, so use query (part of a task name, WBS code or parent name) to find the " +
         "right one; results are paged (max_tasks, offset). Call before save_timecard. " +
         ToolOutputSchemas.TimecardOptionsSchemaHint + " " +
         "WhenNotToUse: Do not use to find the user's projects; use list_time_projects. " +
@@ -93,7 +92,8 @@ public sealed class TimeEntryTools
         "The rate type is not a parameter: the server always uses the task's default rate type. On an update send the " +
         "full card. Every card is checked first: invalid cards are reported and not sent, valid ones are saved one by " +
         "one. dry_run = true checks everything and shows the day totals without saving. Relay each card's status and " +
-        "warnings (e.g. a likely duplicate) to the user. " +
+        "warnings (e.g. a likely duplicate, a weekend, holiday or PTO date, more hours than the day expects, a date " +
+        "after the project end) to the user: the cards are saved anyway, so ask whether they should stay. " +
         ToolOutputSchemas.SaveTimecardSchemaHint + " " +
         "WhenNotToUse: Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.")]
     public Task<CallToolResult> SaveTimecard(

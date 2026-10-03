@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Projector.ApiClient.Xml;
 using Projector.Application.Auth;
 using Projector.Application.Resources;
@@ -34,11 +36,15 @@ public sealed class ProjectorToolService
 
     public ProjectorToolService(
         ProjectorConnectionService connections,
-        IProjectorSoapClient soap)
+        IProjectorSoapClient soap,
+        ILogger<ProjectorToolService>? logger = null)
     {
         _connections = connections;
         _soap = soap;
+        _logger = logger ?? NullLogger<ProjectorToolService>.Instance;
     }
+
+    private readonly ILogger<ProjectorToolService> _logger;
 
     public async Task<object> ListTimecardsAsync(
         string connectionId,
@@ -49,16 +55,25 @@ public sealed class ProjectorToolService
         string? projectCode,
         CancellationToken ct,
         string? query = null,
-        bool compact = false)
+        bool compact = false,
+        string? groupBy = null)
     {
         var sw = Stopwatch.StartNew();
         status = NormalizeCardStatus(status);
+        var byTask = NormalizeGroupBy(groupBy);
         var connection = await RequireAsync(connectionId, ct);
         var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
-        var listed = await WithRefreshAsync(connection, c =>
-            _soap.ListTimecardsAsync(c, resourceId, startDate, endDate, projectCode, status, ct), ct);
         var start = Short(startDate);
         var end = Short(endDate);
+        // Expected hours only when by_date holds every card of the range: a filtered day would look short.
+        var filtered = !string.IsNullOrWhiteSpace(status) || !string.IsNullOrWhiteSpace(projectCode) || !string.IsNullOrWhiteSpace(query);
+        var expectedTask = filtered
+            ? Task.FromResult<(IReadOnlyDictionary<string, ExpectedDay>?, string?)>((null,
+                "expected_hours is left out when status, project_code or query filter the cards."))
+            : TryGetExpectedDaysAsync(connection, resourceId, start, end, ct);
+        var listed = await WithRefreshAsync(connection, c =>
+            _soap.ListTimecardsAsync(c, resourceId, startDate, endDate, projectCode, status, ct), ct);
+        var (expected, expectedNote) = await expectedTask;
         var filterBits = new List<string>();
         if (!string.IsNullOrWhiteSpace(projectCode))
         {
@@ -83,6 +98,7 @@ public sealed class ProjectorToolService
         }
 
         var ownCards = resourceId is null;
+        var tasks = byTask ? GroupByTask(cards) : null;
 
         var filterSuffix = filterBits.Count == 0 ? string.Empty : $"; filtered to {string.Join(" and ", filterBits)}";
         var searchedScope =
@@ -101,12 +117,96 @@ public sealed class ProjectorToolService
             start_date = start,
             end_date = end,
             count = cards.Count,
-            by_date = ByDate(cards),
-            timecards = compact
-                ? cards.Select(t => (object)MapCompactTimecard(t, ownCards)).ToList()
-                : cards.Select(t => (object)MapTimecard(t, ownCards)).ToList(),
+            by_date = ByDate(cards, expected),
+            expected_note = expectedNote,
+            tasks_count = tasks?.Count,
+            tasks,
+            timecards = byTask
+                ? null
+                : compact
+                    ? cards.Select(t => (object)MapCompactTimecard(t, ownCards)).ToList()
+                    : cards.Select(t => (object)MapTimecard(t, ownCards)).ToList(),
             searchCoverage = SearchCoverageDto.From(coverage)
         }, sw);
+    }
+
+    /// <summary>group_by: false for one row per card, true for one row per project and task.</summary>
+    internal static bool NormalizeGroupBy(string? groupBy) =>
+        string.IsNullOrWhiteSpace(groupBy)
+            ? false
+            : string.Equals(groupBy.Trim(), "task", StringComparison.OrdinalIgnoreCase)
+                ? true
+                : throw new ArgumentException(
+                    $"group_by '{groupBy.Trim()}' is not supported. Use task, or leave group_by out for one row per card.");
+
+    /// <summary>
+    /// One row per project and task, most recently used first: what a history read needs (task choice and description
+    /// style) at a fraction of the size of the cards.
+    /// </summary>
+    internal static IReadOnlyList<object> GroupByTask(IEnumerable<Timecard> cards) =>
+        cards
+            .GroupBy(c => (Project: c.ProjectCode?.ToUpperInvariant() ?? string.Empty,
+                Task: c.ProjectTaskUid ?? c.TaskWbsCode ?? c.TaskPath ?? c.TaskName ?? string.Empty))
+            .Select(g =>
+            {
+                var ordered = g.OrderBy(c => c.WorkDate ?? string.Empty, StringComparer.Ordinal).ToList();
+                var last = ordered[^1];
+                return new
+                {
+                    project_code = last.ProjectCode,
+                    project_name = last.ProjectName,
+                    task_path = last.TaskPath ?? last.TaskName,
+                    wbs_code = last.TaskWbsCode,
+                    role_name = last.RoleName,
+                    rate_type_name = last.RateTypeName,
+                    card_count = ordered.Count,
+                    hours = ordered.Sum(c => c.WorkMinutes) / 60.0,
+                    first_date = ordered[0].WorkDate,
+                    last_date = last.WorkDate,
+                    last_description = ordered.LastOrDefault(c => !string.IsNullOrWhiteSpace(c.Description))?.Description
+                };
+            })
+            .OrderByDescending(r => r.last_date ?? string.Empty, StringComparer.Ordinal)
+            .ThenByDescending(r => r.hours)
+            .Select(r => (object)r)
+            .ToList();
+
+    /// <summary>
+    /// Expected hours per date for by_date, read beside the cards (one schedule call, ranges of up to 56 days only).
+    /// Called without the refresh retry: it runs in parallel with the card read, which does the refresh; a failure only
+    /// leaves expected_hours out.
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<string, ExpectedDay>? Days, string? Note)> TryGetExpectedDaysAsync(
+        ProjectorConnection connection,
+        string? resourceId,
+        string start,
+        string end,
+        CancellationToken ct)
+    {
+        if (!DateTime.TryParseExact(start, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var from)
+            || !DateTime.TryParseExact(end, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var to)
+            || to < from)
+        {
+            return (null, null);
+        }
+
+        if ((to - from).TotalDays + 1 > ProjectorDateWindows.ScheduleDays)
+        {
+            return (null, $"expected_hours is given for ranges of up to {ProjectorDateWindows.ScheduleDays} days; " +
+                "use get_schedule for longer ones.");
+        }
+
+        try
+        {
+            var schedule = await _soap.GetResourceScheduleAsync(connection, resourceId, start, end, ct);
+            return (ExpectedHours.FromSchedule(schedule), null);
+        }
+        catch (Exception ex) when (ex is ProjectorApiException or HttpRequestException or TaskCanceledException
+            && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "list_timecards: could not read the schedule from {Start} to {End}", start, end);
+            return (null, "expected_hours is missing: the schedule could not be read. get_schedule shows it.");
+        }
     }
 
     private static readonly string[] CardStatuses = ["Draft", "Submitted", "Approved", "Rejected", "Billed", "Invoiced", "Missing"];
@@ -1367,21 +1467,36 @@ public sealed class ProjectorToolService
     /// Posted hours per date (and per status), so an agent compares days with get_schedule's expected hours without
     /// adding up dozens of cards itself.
     /// </summary>
-    internal static IReadOnlyList<object> ByDate(IEnumerable<Timecard> cards) =>
-        cards
-            .GroupBy(c => c.WorkDate ?? "unknown")
-            .OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(g => (object)new
+    /// <param name="expected">From the schedule: adds expected_hours and short_by, and lists working days without cards
+    /// (0 hours), so missing days show up.</param>
+    internal static IReadOnlyList<object> ByDate(
+        IEnumerable<Timecard> cards,
+        IReadOnlyDictionary<string, ExpectedDay>? expected = null)
+    {
+        var byDate = cards.GroupBy(c => c.WorkDate ?? "unknown").ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        var dates = byDate.Keys
+            .Concat(expected?.Values.Where(d => d.ExpectedHours > 0).Select(d => d.Date) ?? [])
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(d => d, StringComparer.Ordinal);
+        return dates.Select(date =>
+        {
+            var list = byDate.GetValueOrDefault(date) ?? [];
+            var hours = list.Sum(c => c.WorkMinutes) / 60.0;
+            var day = expected?.GetValueOrDefault(date);
+            return (object)new
             {
-                date = g.Key,
-                hours = g.Sum(c => c.WorkMinutes) / 60.0,
-                card_count = g.Count(),
-                hours_by_status = g
+                date,
+                hours,
+                card_count = list.Count,
+                hours_by_status = list
                     .GroupBy(c => c.Status ?? c.CardStatusCode ?? "unknown")
                     .OrderBy(s => s.Key, StringComparer.Ordinal)
-                    .ToDictionary(s => s.Key, s => s.Sum(c => c.WorkMinutes) / 60.0)
-            })
-            .ToList();
+                    .ToDictionary(s => s.Key, s => s.Sum(c => c.WorkMinutes) / 60.0),
+                expected_hours = day?.ExpectedHours,
+                short_by = day is not null && hours < day.ExpectedHours ? day.ExpectedHours - hours : (double?)null
+            };
+        }).ToList();
+    }
 
     private static TimecardDto MapTimecard(Timecard t) => MapTimecard(t, ownCards: false);
 

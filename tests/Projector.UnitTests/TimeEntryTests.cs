@@ -10,6 +10,7 @@ using Projector.Application.Auth;
 using Projector.Application.Tools;
 using Projector.Domain.Auth;
 using Projector.Domain.Exceptions;
+using Projector.Domain.Schedule;
 using Projector.Domain.Timecards;
 
 namespace Projector.UnitTests;
@@ -663,30 +664,157 @@ public class TimeEntryTests
     }
 
     [Fact]
-    public async Task Options_ListsSharedRateTypesOnce()
+    public async Task Options_ListNoRateTypes_OnlyEachTasksDefault()
     {
-        var (service, _) = CreateService(tree: true);
-        var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None));
-
-        options.GetProperty("rate_types").EnumerateArray().Select(r => r.GetProperty("rate_type_name").GetString())
-            .Should().Equal("Billable");
-        options.GetProperty("tasks").EnumerateArray()
-            .Should().AllSatisfy(t => t.TryGetProperty("rate_types", out _).Should().BeFalse());
-    }
-
-    [Fact]
-    public async Task Options_ListsRateTypesOnATaskOnlyWhenTheyDifferFromTheCommonSet()
-    {
+        // Open tasks: Development (Billable) and Project Management (no task type: Billable, Non-Chargeable). The save
+        // always uses the default, so the allowed lists are left out.
         var (service, _) = CreateService();
         var options = Json(await service.GetTimecardOptionsAsync(ConnectionId, "P005678-001", "2026-09-24", CancellationToken.None));
 
-        // Open tasks: Development (Billable) and Project Management (no task type: Billable, Non-Chargeable).
-        var common = options.GetProperty("rate_types").EnumerateArray().Select(r => r.GetProperty("rate_type_name").GetString()).ToList();
+        options.TryGetProperty("rate_types", out _).Should().BeFalse();
         var tasks = options.GetProperty("tasks").EnumerateArray().ToList();
-        tasks.Count(t => t.TryGetProperty("rate_types", out _)).Should().Be(1, "only the task that differs lists its own");
-        var own = tasks.Single(t => t.TryGetProperty("rate_types", out _)).GetProperty("rate_types").EnumerateArray()
-            .Select(r => r.GetProperty("rate_type_name").GetString()).ToList();
-        own.Should().NotEqual(common);
+        tasks.Should().AllSatisfy(t => t.TryGetProperty("rate_types", out _).Should().BeFalse());
+        tasks.Should().AllSatisfy(t => t.GetProperty("default_rate_type").GetString().Should().NotBeNullOrEmpty());
+    }
+
+    [Fact]
+    public async Task Save_WarnsOnNonWorkingHolidayAndPtoDays_ButKeepsTheCards()
+    {
+        var schedule = new FakeSchedule
+        {
+            Schedule = Schedule(
+                [("2026-09-04", 480, 0), ("2026-09-07", 480, 0), ("2026-09-24", 480, 480), ("2026-10-03", 0, 0)],
+                holidays: [("2026-09-07", "Labour Day")],
+                pto: [("2026-09-04", 480)])
+        };
+        var (service, _) = CreateService(schedule: schedule);
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId,
+            [Input(date: "2026-10-03"), Input(date: "2026-09-07"), Input(date: "2026-09-04"), Input(date: "2026-09-24")],
+            dryRun: true, CancellationToken.None));
+
+        var cards = result.GetProperty("results").EnumerateArray().ToList();
+        cards.Select(c => c.GetProperty("status").GetString()).Should().AllBe("valid", "a date warning never stops a card");
+        Warnings(cards[0]).Should().ContainSingle().Which.Should().Contain("not a working day");
+        Warnings(cards[1]).Should().ContainSingle().Which.Should().Contain("holiday").And.Contain("Labour Day");
+        Warnings(cards[2]).Should().ContainSingle().Which.Should().Contain("8 h of PTO");
+        Warnings(cards[3]).Should().BeEmpty();
+        schedule.Calls.Should().ContainSingle("one schedule read for the whole batch").Which.Should().Be("2026-09-04..2026-10-03");
+        result.GetProperty("days").EnumerateArray()
+            .Single(d => d.GetProperty("work_date").GetString() == "2026-09-24")
+            .GetProperty("expected_hours").GetDouble().Should().Be(8);
+    }
+
+    [Fact]
+    public async Task Save_WarnsWhenTheDayGoesOverExpected()
+    {
+        var schedule = new FakeSchedule { Schedule = Schedule([("2026-09-24", 480, 480)]) };
+        var (service, fake) = CreateService(schedule: schedule);
+        fake.DayCards = [DayCard("800", minutes: 420, task: "2100000000000000099", narrative: "Workshop")];
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId, [Input(hours: 1.5)], dryRun: false, CancellationToken.None));
+
+        var card = result.GetProperty("results")[0];
+        card.GetProperty("status").GetString().Should().Be("saved");
+        Warnings(card).Should().ContainSingle().Which.Should().Contain("8.5 h, more than the 8 h");
+        card.GetProperty("day").GetProperty("expected_hours").GetDouble().Should().Be(8);
+    }
+
+    [Fact]
+    public async Task Save_WarnsAfterTheRoleEnds_AndNearTheProjectClose()
+    {
+        var (service, fake) = CreateService(schedule: new FakeSchedule
+        {
+            Schedule = Schedule([("2026-09-24", 480, 480)], closeDates: [("P005678-001", "2026-09-27")])
+        });
+
+        var near = Json(await service.SaveTimecardsAsync(ConnectionId, [Input()], dryRun: true, CancellationToken.None));
+        Warnings(near.GetProperty("results")[0]).Should().ContainSingle().Which.Should().Contain("project ends on 2026-09-27");
+
+        var (after, afterFake) = CreateService(schedule: new FakeSchedule { Schedule = Schedule([("2026-09-24", 480, 480)]) });
+        afterFake.Projects = fake.Projects.Select(p => WithRoleEnd(p, "2026-09-20")).ToList();
+        var result = Json(await after.SaveTimecardsAsync(ConnectionId, [Input()], dryRun: true, CancellationToken.None));
+        Warnings(result.GetProperty("results")[0]).Should().ContainSingle()
+            .Which.Should().Contain("after the end of your role on this project (2026-09-20)");
+    }
+
+    [Fact]
+    public async Task Save_WithoutTheSchedule_StillSaves_AndSaysTheDateChecksAreMissing()
+    {
+        var (service, fake) = CreateService(schedule: new FakeSchedule
+        {
+            Exception = new ProjectorApiException("Projector is down.", "projector_unavailable")
+        });
+
+        var result = Json(await service.SaveTimecardsAsync(ConnectionId, [Input()], dryRun: false, CancellationToken.None));
+
+        result.GetProperty("saved_count").GetInt32().Should().Be(1);
+        fake.Saves.Should().ContainSingle();
+        result.GetProperty("warnings")[0].GetString().Should().Contain("schedule could not be read");
+        result.GetProperty("days")[0].TryGetProperty("expected_hours", out _).Should().BeFalse();
+    }
+
+    private static List<string> Warnings(JsonElement card) =>
+        card.TryGetProperty("warnings", out var w) && w.ValueKind == JsonValueKind.Array
+            ? w.EnumerateArray().Select(x => x.GetString()!).ToList()
+            : [];
+
+    private static TimeEntryProjectSummary WithRoleEnd(TimeEntryProjectSummary p, string end) => new()
+    {
+        ProjectCode = p.ProjectCode,
+        ProjectUid = p.ProjectUid,
+        ProjectName = p.ProjectName,
+        EngagementCode = p.EngagementCode,
+        EngagementName = p.EngagementName,
+        ClientName = p.ClientName,
+        Billable = p.Billable,
+        LocationName = p.LocationName,
+        UnavailableReasonCode = p.UnavailableReasonCode,
+        Roles = p.Roles.Select(r => r with { EndDate = end }).ToList()
+    };
+
+    internal static ResourceSchedule Schedule(
+        (string Date, int Normal, int Basis)[] dates,
+        (string Date, string Name)[]? holidays = null,
+        (string Date, int Minutes)[]? pto = null,
+        (string ProjectCode, string Close)[]? closeDates = null) => new()
+    {
+        Dates = dates.Select(d => new ScheduleDate
+        {
+            Date = d.Date, NormalWorkingMinutes = d.Normal, UtilizationBasisMinutes = d.Basis
+        }).ToList(),
+        Holidays = (holidays ?? []).Select(h => new ScheduleHoliday { Date = h.Date, HolidayName = h.Name, TimeOffMinutes = 1440 }).ToList(),
+        TimeOff = (pto ?? []).Select(t => new ScheduleTimeOff { Date = t.Date, TimeOffReason = "PTO", TimeOffMinutes = t.Minutes }).ToList(),
+        Roles = (closeDates ?? []).Select(c => new ScheduleRole { ProjectCode = c.ProjectCode, ProjectCloseDate = c.Close }).ToList()
+    };
+
+    /// <summary>The caller's schedule for the save's date checks; records each read as start..end.</summary>
+    private sealed class FakeSchedule : IProjectorScheduleClient
+    {
+        public ResourceSchedule Schedule { get; set; } = new();
+        public Exception? Exception { get; set; }
+        public List<string> Calls { get; } = [];
+
+        public Task<ResourceSchedule> GetResourceScheduleAsync(
+            ProjectorConnection connection, string? resourceReferenceSystemId, string startDate, string endDate,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"{startDate}..{endDate}");
+            return Exception is null ? Task.FromResult(Schedule) : Task.FromException<ResourceSchedule>(Exception);
+        }
+
+        public Task<Projector.Domain.Availability.AvailabilitySummary> CheckAvailabilityAsync(
+            ProjectorConnection connection, string? resourceReferenceSystemId, string startDate, string endDate,
+            string? displayName = null, string? emailAddress = null, double requiredMinutesPerWeek = 0,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Projector.Domain.Holidays.HolidayEntry>> GetResourcePtoHolidaysAsync(
+            ProjectorConnection connection, string resourceReferenceSystemId, string cutoffDate,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Projector.Domain.Engagements.UtilizationYear>> GetUtilizationAsync(
+            ProjectorConnection connection, string resourceReferenceSystemId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     [Theory]
@@ -1725,7 +1853,8 @@ public class TimeEntryTests
 
     private static (TimeEntryToolService Service, FakeTimeEntryClient Fake) CreateService(
         bool tree = false,
-        Microsoft.Extensions.Logging.ILogger<TimeEntryToolService>? logger = null)
+        Microsoft.Extensions.Logging.ILogger<TimeEntryToolService>? logger = null,
+        IProjectorScheduleClient? schedule = null)
     {
         var store = new InMemoryProjectorConnectionStore();
         store.Save(Connection());
@@ -1737,7 +1866,8 @@ public class TimeEntryTests
                 Fixture(tree ? "time_entry_project_tree.xml" : "time_entry_project_role.xml")),
             Parameters = ProjectorTimeEntryParsers.ParseTimeEntryParameters(Fixture("time_entry_parameters.xml"))
         };
-        return (new TimeEntryToolService(connections, fake, new TimeEntryCache(), logger ?? NullLogger<TimeEntryToolService>.Instance), fake);
+        return (new TimeEntryToolService(
+            connections, fake, new TimeEntryCache(), logger ?? NullLogger<TimeEntryToolService>.Instance, schedule), fake);
     }
 
     private static string ResolveDir(params string[] relative)

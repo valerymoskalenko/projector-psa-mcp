@@ -74,8 +74,10 @@ public sealed class ProjectorPrompts
     internal const string ReviewMyDaySteps =
         "Read-only until I approve entries. Time cards are a date and hours: count each activity on my local working day. " +
         "1) Projector (tools default to me): list_timecards for the day (every status; editable = false means only I can fix it " +
-        "in Projector); get_schedule for my expected hours, holidays and PTO; my last 10 working days with list_timecards, one " +
-        "week per call, as history (by_date gives the posted hours per day: flag days below expected); list_time_projects for " +
+        "in Projector); one list_timecards call with group_by = task from two weeks before the day through the day, as history " +
+        "(one row per task with the last description) and for the day's expected hours (by_date: expected_hours, and short_by " +
+        "on working days below expected, days without cards included: flag them; get_schedule only to name a holiday or PTO); " +
+        "list_time_projects for " +
         "the day (chargeable projects, most recently used first, with my recent tasks; its query also matches recent task names " +
         "and descriptions). " +
         "2) Evidence of the day's work from every source you can access: my calendar and Teams meetings (a meeting transcript, " +

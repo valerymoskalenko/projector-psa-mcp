@@ -39,6 +39,7 @@ public static class ApiClientServiceCollectionExtensions
             .AddStandardResilienceHandler(ConfigureSoapRetry);
         services.AddTransient<IProjectorSoapClient>(sp => sp.GetRequiredService<ProjectorSoapClient>());
         services.AddTransient<IProjectorUserClient>(sp => sp.GetRequiredService<ProjectorSoapClient>());
+        services.AddTransient<IProjectorScheduleClient>(sp => sp.GetRequiredService<ProjectorSoapClient>());
 
         // Writes: no resilience handler, so a save is never retried (a timed-out save may have committed).
         // One attempt, bounded below Copilot's own tool timeout.

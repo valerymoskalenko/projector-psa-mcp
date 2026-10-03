@@ -53,6 +53,9 @@ public sealed class TimeEntryToolService
     private const string SetupKind = "setup";
     private const string DayCardsKind = "day_cards";
     private const string AssignmentsKind = "assignments";
+    private const string ScheduleKind = "schedule";
+    /// <summary>A card dated this many days before the project or role end, or less, gets near_project_end.</summary>
+    private const int NearEndDays = 7;
     /// <summary>
     /// Microsoft 365 Copilot Chat lists only a connector's read tools (seen 2026-09-29): the model saw "call
     /// save_timecard" without the tool and told the user the server can't save.
@@ -71,17 +74,22 @@ public sealed class TimeEntryToolService
     private readonly IProjectorTimeEntryClient _timeEntry;
     private readonly TimeEntryCache _cache;
     private readonly ILogger<TimeEntryToolService> _logger;
+    private readonly IProjectorScheduleClient? _schedule;
 
+    /// <param name="schedule">Expected hours and project close dates for the save's date checks; without it the
+    /// checks are skipped.</param>
     public TimeEntryToolService(
         ProjectorConnectionService connections,
         IProjectorTimeEntryClient timeEntry,
         TimeEntryCache cache,
-        ILogger<TimeEntryToolService> logger)
+        ILogger<TimeEntryToolService> logger,
+        IProjectorScheduleClient? schedule = null)
     {
         _connections = connections;
         _timeEntry = timeEntry;
         _cache = cache;
         _logger = logger;
+        _schedule = schedule;
     }
 
     public async Task<object> ListTimeProjectsAsync(
@@ -258,8 +266,6 @@ public sealed class TimeEntryToolService
         // Without a role the task list still comes back, but a save is refused: say so here, not only at save time.
         var noRole = roles.Count == 0 ? await NoRoleMessageAsync(connection, setup.ProjectCode, date, ct) : null;
 
-        // Most tasks share one set of rate types: list it once, and on a task only when that task differs.
-        var commonRateTypes = CommonRateTypes(openTasks, setup);
         return new
         {
             work_date = date,
@@ -275,7 +281,6 @@ public sealed class TimeEntryToolService
             },
             roles = roles.Select(r => new { role_uid = r.Uid, role_name = r.Name, start_date = r.StartDate, end_date = r.EndDate }).ToList(),
             no_role = noRole,
-            rate_types = commonRateTypes?.Select(r => new { rate_type_uid = r.Uid, rate_type_name = r.Name }).ToList(),
             task_query = text,
             tasks = page.Select(t => new
             {
@@ -284,9 +289,6 @@ public sealed class TimeEntryToolService
                 task_path = t.Path != t.Name ? t.Path : null,
                 wbs_code = t.WbsCode,
                 task_type = t.TaskTypeName,
-                rate_types = SameRateTypes(RateTypesFor(t, setup), commonRateTypes)
-                    ? null
-                    : RateTypesFor(t, setup).Select(r => new { rate_type_uid = r.Uid, rate_type_name = r.Name }).ToList(),
                 default_rate_type = TryDefaultRateType(t, setup)?.Name,
                 assigned = Assigned(t)
             }).ToList(),
@@ -307,7 +309,7 @@ public sealed class TimeEntryToolService
                 udf1 = DescribeUdf(rules.Udf1, setup.Udf1Treatment),
                 udf2 = DescribeUdf(rules.Udf2, setup.Udf2Treatment)
             },
-            rate_type_note = "Rate types are listed for information only: save_timecard always uses the task's default_rate_type.",
+            rate_type_note = "save_timecard always uses the task's default_rate_type: don't offer rate type choices.",
             next_step = noRole is not null
                 ? "Don't call save_timecard for this project: it is refused while you have no role here (see no_role)."
                 : text is not null && matches.Count == 0
@@ -479,6 +481,15 @@ public sealed class TimeEntryToolService
             }
         }
 
+        var batchWarnings = new List<string>();
+        var (expected, closeDates) = await TryGetExpectationsAsync(
+            connection, prepared.Select(p => p.Request.WorkDate).ToList(), ct);
+        if (prepared.Count > 0 && expected is null && _schedule is not null)
+        {
+            batchWarnings.Add("Your schedule could not be read, so there is no check for weekends, holidays, PTO, " +
+                "hours above the expected day or the project end. Check the dates with get_schedule.");
+        }
+
         var stopped = false;
         foreach (var card in prepared)
         {
@@ -530,10 +541,13 @@ public sealed class TimeEntryToolService
                 warningKinds.Add("role_differs");
             }
 
+            AddDateWarnings(card, expected?.GetValueOrDefault(date), DayHoursWith(days[date], card),
+                closeDates?.GetValueOrDefault(card.Setup.ProjectCode.ToUpperInvariant()), cardWarnings, warningKinds);
+
             if (dryRun)
             {
                 AddToDay(days, date, ToTimecard(card, card.Request.TimecardUid, "D"));
-                outcomes[card.Index] = new CardOutcome(card.Index, "valid", CardView(card, "valid", card.Request.TimecardUid, "D", DayView(days, date), cardWarnings, note: null), WarningKinds: warningKinds);
+                outcomes[card.Index] = new CardOutcome(card.Index, "valid", CardView(card, "valid", card.Request.TimecardUid, "D", DayView(days, date, expected), cardWarnings, note: null), WarningKinds: warningKinds);
                 continue;
             }
 
@@ -587,21 +601,21 @@ public sealed class TimeEntryToolService
 
             var wasRejected = card.IsUpdate && string.Equals(card.Existing!.CardStatusCode, "R", StringComparison.OrdinalIgnoreCase);
             outcomes[card.Index] = new CardOutcome(card.Index, "saved", CardView(
-                card, "saved", savedUid, statusCode, DayView(days, date), cardWarnings,
+                card, "saved", savedUid, statusCode, DayView(days, date, expected), cardWarnings,
                 wasRejected
                     ? "Saved. The card was Rejected and is now a Draft again, not submitted. Resubmit it in Projector."
                     : "Saved as Draft, not submitted. Submit your time sheet in Projector when it is complete."),
                 WarningKinds: warningKinds);
         }
 
-        var dayTotals = days.Keys.OrderBy(d => d, StringComparer.Ordinal).Select(d => DayView(days, d)).OfType<object>().ToList();
+        var dayTotals = days.Keys.OrderBy(d => d, StringComparer.Ordinal).Select(d => DayView(days, d, expected)).OfType<object>().ToList();
         var auditDays = days.Where(d => d.Value is not null)
             .OrderBy(d => d.Key, StringComparer.Ordinal)
             .Select(d => (d.Key, d.Value!.Sum(c => c.WorkMinutes) / 60.0, d.Value!.Count))
             .ToList();
         var projectCodes = prepared.Select(p => p.Setup.ProjectCode).Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase).ToList();
-        return new BatchOutcome(outcomes.Select(o => o!).ToList(), dayTotals, [], projectCodes, auditDays);
+        return new BatchOutcome(outcomes.Select(o => o!).ToList(), dayTotals, batchWarnings, projectCodes, auditDays);
     }
 
     /// <summary>Every check a card needs before it may be sent; throws with the reason when it can't be saved.</summary>
@@ -788,10 +802,167 @@ public sealed class TimeEntryToolService
         list.Add(card);
     }
 
-    private static object? DayView(Dictionary<string, List<Timecard>?> days, string date) =>
+    private static object? DayView(
+        Dictionary<string, List<Timecard>?> days,
+        string date,
+        IReadOnlyDictionary<string, ExpectedDay>? expected) =>
         days.TryGetValue(date, out var list) && list is not null
-            ? new { work_date = date, total_hours = list.Sum(c => c.WorkMinutes) / 60.0, card_count = list.Count }
+            ? new
+            {
+                work_date = date,
+                total_hours = list.Sum(c => c.WorkMinutes) / 60.0,
+                card_count = list.Count,
+                expected_hours = expected?.GetValueOrDefault(date)?.ExpectedHours
+            }
             : null;
+
+    /// <summary>The day's hours once this card is saved (an update replaces its old card); null when the day is unknown.</summary>
+    private static double? DayHoursWith(List<Timecard>? dayCards, PreparedCard card) =>
+        dayCards is null
+            ? null
+            : (dayCards
+                .Where(c => card.Request.TimecardUid is null
+                    || !string.Equals(c.TimecardUid, card.Request.TimecardUid, StringComparison.Ordinal))
+                .Sum(c => c.WorkMinutes) + card.Request.WorkMinutes) / 60.0;
+
+    /// <summary>
+    /// Warnings about the work date: a weekend or day off, a holiday, PTO, more hours than the day expects, and the end of
+    /// the user's role or of the project. They never stop the save: the user may have asked for exactly that.
+    /// </summary>
+    private static void AddDateWarnings(
+        PreparedCard card,
+        ExpectedDay? day,
+        double? dayHours,
+        string? projectCloseDate,
+        List<string> warnings,
+        List<string> kinds)
+    {
+        var date = card.Request.WorkDate;
+        const string Keep = "The card is kept; check the date with the user.";
+        if (day is not null)
+        {
+            if (day.Holiday is not null)
+            {
+                warnings.Add($"{date} is a holiday in your Projector calendar ({day.Holiday}). {Keep}");
+                kinds.Add("holiday");
+            }
+            else if (day.PtoHours > 0)
+            {
+                warnings.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"You have {day.PtoHours:0.##} h of PTO on {date}. {Keep}"));
+                kinds.Add("pto");
+            }
+            else if (day.NonWorking)
+            {
+                warnings.Add($"{date} is not a working day in your Projector schedule (0 expected hours). {Keep}");
+                kinds.Add("non_working_day");
+            }
+
+            if (day.ExpectedHours > 0 && dayHours > day.ExpectedHours)
+            {
+                warnings.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"{date} now has {dayHours:0.##} h, more than the {day.ExpectedHours:0.##} h your schedule expects. The card is kept; check the hours with the user."));
+                kinds.Add("day_over_expected");
+            }
+        }
+
+        // The earlier of the role's end and the project's close date is the one that stops time entry first.
+        var ends = new[] { (Date: card.Role.EndDate, What: "your role on this project"), (Date: projectCloseDate, What: "the project") }
+            .Where(e => !string.IsNullOrWhiteSpace(e.Date))
+            .OrderBy(e => e.Date, StringComparer.Ordinal)
+            .ToList();
+        if (ends.Count == 0)
+        {
+            return;
+        }
+
+        var end = ends[0];
+        if (string.CompareOrdinal(date, end.Date) > 0)
+        {
+            warnings.Add($"{date} is after the end of {end.What} ({end.Date}): Projector may reject this time at submit. " +
+                "Check the date and project with the user.");
+            kinds.Add("after_project_end");
+        }
+        else if (DateTime.TryParseExact(end.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var endDate)
+            && DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var workDate)
+            && (endDate - workDate).TotalDays <= NearEndDays)
+        {
+            warnings.Add($"{end.What[0..1].ToUpperInvariant()}{end.What[1..]} ends on {end.Date}. " +
+                "Time after that date may be rejected.");
+            kinds.Add("near_project_end");
+        }
+    }
+
+    /// <summary>
+    /// Expected hours per date and the project close dates of the user's scheduled roles, from one schedule read over
+    /// the batch's dates (56-day chunks only when wider), cached ten minutes. Null when there is no schedule client or the
+    /// read failed: the save goes on without the date checks.
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<string, ExpectedDay>? Days, IReadOnlyDictionary<string, string>? CloseDates)>
+        TryGetExpectationsAsync(ProjectorConnection connection, IReadOnlyList<string> dates, CancellationToken ct)
+    {
+        if (_schedule is null || dates.Count == 0)
+        {
+            return (null, null);
+        }
+
+        var start = dates.Min(StringComparer.Ordinal)!;
+        var end = dates.Max(StringComparer.Ordinal)!;
+        try
+        {
+            var schedules = await _cache.GetOrLoadAsync(connection, ScheduleKind, $"{start}..{end}", TimeEntryCache.LookupTtl,
+                () => ReadScheduleAsync(connection, start, end, ct));
+            var days = new Dictionary<string, ExpectedDay>(StringComparer.Ordinal);
+            var closeDates = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var schedule in schedules)
+            {
+                foreach (var (date, day) in ExpectedHours.FromSchedule(schedule))
+                {
+                    days[date] = day;
+                }
+
+                foreach (var (code, close) in ExpectedHours.ProjectCloseDates(schedule))
+                {
+                    closeDates[code] = close;
+                }
+            }
+
+            return (days, closeDates);
+        }
+        catch (Exception ex) when (ex is ProjectorApiException or HttpRequestException or TaskCanceledException
+            && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "save_timecard: could not read the schedule from {Start} to {End}", start, end);
+            return (null, null);
+        }
+    }
+
+    /// <summary>The caller's schedule from start to end, in chunks of at most 56 days (one Projector call each).</summary>
+    private async Task<IReadOnlyList<Domain.Schedule.ResourceSchedule>> ReadScheduleAsync(
+        ProjectorConnection connection,
+        string start,
+        string end,
+        CancellationToken ct)
+    {
+        var result = new List<Domain.Schedule.ResourceSchedule>();
+        var cursor = DateTime.ParseExact(start, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var last = DateTime.ParseExact(end, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        while (cursor <= last)
+        {
+            var chunkEnd = cursor.AddDays(Domain.Common.ProjectorDateWindows.ScheduleDays - 1);
+            if (chunkEnd > last)
+            {
+                chunkEnd = last;
+            }
+
+            var from = cursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var to = chunkEnd.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            result.Add(await WithRefreshAsync(connection, c => _schedule!.GetResourceScheduleAsync(c, null, from, to, ct), ct));
+            cursor = chunkEnd.AddDays(1);
+        }
+
+        return result;
+    }
 
     private static object CardView(
         PreparedCard card,
@@ -1012,18 +1183,6 @@ public sealed class TimeEntryToolService
             .ThenBy(x => x.index)
             .Select(x => x.item)
             .ToList();
-
-    /// <summary>The set of rate types most open tasks allow; null when there are no tasks.</summary>
-    private static IReadOnlyList<TimeEntryRateType>? CommonRateTypes(IReadOnlyList<TimeEntryTask> tasks, TimeEntryProjectSetup setup) =>
-        tasks
-            .Select(t => RateTypesFor(t, setup))
-            .GroupBy(r => string.Join('|', r.Select(x => x.Uid)))
-            .OrderByDescending(g => g.Count())
-            .Select(g => g.First())
-            .FirstOrDefault();
-
-    private static bool SameRateTypes(IReadOnlyList<TimeEntryRateType> a, IReadOnlyList<TimeEntryRateType>? b) =>
-        b is not null && a.Select(r => r.Uid).SequenceEqual(b.Select(r => r.Uid));
 
     internal static string ParseWorkDate(string? workDate)
     {

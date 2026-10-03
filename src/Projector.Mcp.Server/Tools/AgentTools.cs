@@ -56,10 +56,11 @@ public sealed class AgentTools
         [Description("Optional card status filter: Draft, Submitted, Approved, Rejected or Billed")] string? status = null,
         [Description("Optional project code filter")] string? project_code = null,
         [Description("Optional words to find in the card description, project, client, task path or WBS (whole words or word starts, e.g. \"invoice export\" or a ticket number)")] string? query = null,
-        [Description("true = short cards (date, hours, project, task path, WBS, role, rate type, status, description, timecardUid, editable); use it for history reads")] bool compact = false,
+        [Description("true = short cards (date, hours, project, task path, WBS, role, rate type, status, description, timecardUid, editable)")] bool compact = false,
+        [Description("\"task\" = one row per project and task instead of the cards (card_count, hours, first and last date, last description); use it for history reads. Omit for the cards.")] string? group_by = null,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _tools.ListTimecardsAsync(
-            ct.ConnectionId, resource_id, start_date, end_date, status, project_code, ct.Token, query, compact), cancellationToken);
+            ct.ConnectionId, resource_id, start_date, end_date, status, project_code, ct.Token, query, compact, group_by), cancellationToken);
 
     [McpServerTool(Name = "list_time_off", Title = "List Projector time-off cards",
         ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]

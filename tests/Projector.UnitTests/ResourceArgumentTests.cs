@@ -389,6 +389,118 @@ public class ResourceArgumentTests
         days[1].GetProperty("hours_by_status").GetProperty("Submitted").GetDouble().Should().Be(1.5);
     }
 
+    [Fact]
+    public async Task ListTimecards_ByDate_ComparesWithTheSchedule_AndListsWorkingDaysWithoutCards()
+    {
+        var (service, soap) = Create();
+        soap.Schedule = TimeEntryTests.Schedule(
+            [("2026-09-28", 480, 480), ("2026-09-29", 480, 480), ("2026-09-30", 480, 480), ("2026-10-03", 0, 0)]);
+        soap.Timecards.AddRange(
+        [
+            Card("1", "D", minutes: 360, date: "2026-09-28", statusName: "Draft"),
+            Card("2", "D", minutes: 480, date: "2026-09-30", statusName: "Draft"),
+        ]);
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-28", "2026-10-03", null, null, CancellationToken.None));
+
+        soap.ScheduleCalls.Should().Equal("<none> 2026-09-28..2026-10-03");
+        var days = result.GetProperty("by_date").EnumerateArray().ToList();
+        days.Select(d => d.GetProperty("date").GetString()).Should().Equal("2026-09-28", "2026-09-29", "2026-09-30");
+        days[0].GetProperty("short_by").GetDouble().Should().Be(2);
+        days[1].GetProperty("hours").GetDouble().Should().Be(0);
+        days[1].GetProperty("card_count").GetInt32().Should().Be(0);
+        days[1].GetProperty("short_by").GetDouble().Should().Be(8, "a working day without cards shows up as missing");
+        days[2].GetProperty("expected_hours").GetDouble().Should().Be(8);
+        days[2].GetProperty("short_by").ValueKind.Should().Be(JsonValueKind.Null);
+        result.GetProperty("expected_note").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task ListTimecards_Filtered_LeavesExpectedHoursOut_WithoutReadingTheSchedule()
+    {
+        var (service, soap) = Create();
+        soap.Timecards.Add(Card("1", "D", "ACE mapping", date: "2026-09-28"));
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-28", "2026-10-02", null, null, CancellationToken.None, query: "ace"));
+
+        soap.ScheduleCalls.Should().BeEmpty();
+        result.GetProperty("expected_note").GetString().Should().Contain("filter");
+        result.GetProperty("by_date")[0].GetProperty("expected_hours").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task ListTimecards_LongRange_SkipsTheSchedule()
+    {
+        var (service, soap) = Create();
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-07-01", "2026-09-30", null, null, CancellationToken.None));
+
+        soap.ScheduleCalls.Should().BeEmpty();
+        result.GetProperty("expected_note").GetString().Should().Contain("56 days");
+    }
+
+    [Fact]
+    public async Task ListTimecards_ScheduleFails_KeepsTheCards()
+    {
+        var (service, soap) = Create();
+        soap.ScheduleException = new Projector.Domain.Exceptions.ProjectorApiException("No permission.", "ViewPermissionDenied");
+        soap.Timecards.Add(Card("1", "D", date: "2026-09-28", statusName: "Draft"));
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, "10001", "2026-09-28", "2026-10-02", null, null, CancellationToken.None));
+
+        result.GetProperty("count").GetInt32().Should().Be(1);
+        result.GetProperty("by_date").GetArrayLength().Should().Be(1);
+        result.GetProperty("expected_note").GetString().Should().Contain("could not be read");
+    }
+
+    [Fact]
+    public async Task ListTimecards_GroupByTask_ReturnsOneRowPerTask_MostRecentFirst()
+    {
+        var (service, soap) = Create();
+        static Timecard OnTask(string uid, string task, string path, string? wbs, string description, int minutes, string date) => new()
+        {
+            TimecardUid = uid, CardStatusCode = "D", Status = "Draft", Description = description, ProjectCode = "P005678-001",
+            WorkDate = date, WorkMinutes = minutes, WorkHours = minutes / 60.0, ProjectTaskUid = task, TaskPath = path, TaskWbsCode = wbs
+        };
+        soap.Timecards.AddRange(
+        [
+            OnTask("1", "T1", "Build > Analysis", "1.1", "Old style", 60, "2026-09-21"),
+            OnTask("2", "T1", "Build > Analysis", "1.1", "Newest style", 30, "2026-09-24"),
+            OnTask("3", "T2", "Team Meetings", null, "Meeting", 90, "2026-09-25"),
+        ]);
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-21", "2026-09-25", null, null, CancellationToken.None, groupBy: "task"));
+
+        result.TryGetProperty("timecards", out var cards).Should().BeTrue();
+        cards.ValueKind.Should().Be(JsonValueKind.Null, "group_by replaces the cards");
+        result.GetProperty("count").GetInt32().Should().Be(3);
+        result.GetProperty("tasks_count").GetInt32().Should().Be(2);
+        var tasks = result.GetProperty("tasks").EnumerateArray().ToList();
+        tasks.Select(t => t.GetProperty("task_path").GetString()).Should().Equal("Team Meetings", "Build > Analysis");
+        tasks[1].GetProperty("card_count").GetInt32().Should().Be(2);
+        tasks[1].GetProperty("hours").GetDouble().Should().Be(1.5);
+        tasks[1].GetProperty("first_date").GetString().Should().Be("2026-09-21");
+        tasks[1].GetProperty("last_date").GetString().Should().Be("2026-09-24");
+        tasks[1].GetProperty("last_description").GetString().Should().Be("Newest style");
+        tasks[1].GetProperty("wbs_code").GetString().Should().Be("1.1");
+    }
+
+    [Fact]
+    public async Task ListTimecards_UnknownGroupBy_IsRefused()
+    {
+        var (service, _) = Create();
+
+        var act = () => service.ListTimecardsAsync(
+            ConnectionId, null, "2026-09-21", "2026-09-25", null, null, CancellationToken.None, groupBy: "week");
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("group_by 'week'");
+    }
+
     private static Timecard Card(
         string uid, string status, string description = "Work", int minutes = 60, string date = "2026-09-25", string? statusName = null) => new()
     {
@@ -437,6 +549,14 @@ public class ResourceArgumentTests
 
         public Projector.Domain.Engagements.ProjectTaskPlan? TaskPlan { get; set; }
 
+        /// <summary>The schedule list_timecards reads beside the cards (not in <see cref="Calls"/>).</summary>
+        public Projector.Domain.Schedule.ResourceSchedule Schedule { get; set; } = new();
+
+        public Exception? ScheduleException { get; set; }
+
+        /// <summary>Schedule reads as "resource start..end".</summary>
+        public List<string> ScheduleCalls { get; } = [];
+
         /// <summary>The detail call hangs until its token is cancelled, like a Projector call that never answers.</summary>
         public bool EngagementDetailsNeverAnswer { get; set; }
 
@@ -449,6 +569,11 @@ public class ResourceArgumentTests
                 case nameof(IProjectorSoapClient.ListTimecardsAsync):
                     Calls.Add($"ListTimecardsAsync({(args![1] as string) ?? "<none>"})");
                     return Task.FromResult(new TimecardListResult { Timecards = Timecards.ToList() });
+                case nameof(IProjectorSoapClient.GetResourceScheduleAsync):
+                    ScheduleCalls.Add($"{(args![1] as string) ?? "<none>"} {args[2]}..{args[3]}");
+                    return ScheduleException is null
+                        ? Task.FromResult(Schedule)
+                        : Task.FromException<Projector.Domain.Schedule.ResourceSchedule>(ScheduleException);
                 case nameof(IProjectorSoapClient.CheckAvailabilityAsync):
                     Calls.Add($"CheckAvailabilityAsync({(args![1] as string) ?? "<none>"}, {args[6]})");
                     return Task.FromResult(new Projector.Domain.Availability.AvailabilitySummary { State = "available" });
