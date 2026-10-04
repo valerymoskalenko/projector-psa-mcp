@@ -1,0 +1,103 @@
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetResourceExpenseEntryInfoResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetResourceExpenseEntryInfoResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <a:Clients>
+          <a:PwsClientEngagementProjectInfoHierarchyForResourceExpenseEntry>
+            <ClientNumber xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">C000001</ClientNumber>
+            <a:ClientName>Internal</a:ClientName>
+            <a:Engagements>
+              <a:PwsEngagementProjectInfoHierarchyForResourceExpenseEntry>
+                <EngagementCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">C000001</EngagementCode>
+                <a:EngagementName>Operations</a:EngagementName>
+                <a:Projects>
+                  <a:PwsProjectInfoForResourceExpenseEntry>
+                    <ProjectCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">C000001-003</ProjectCode>
+                    <a:ProjectName>Internal - Expenses</a:ProjectName>
+                    <a:CloseDate i:nil="true" />
+                    <a:OpenDate>2021-01-01T00:00:00Z</a:OpenDate>
+                    <a:ProjectManager xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+                      <b:UserDisplayName>John Roe</b:UserDisplayName>
+                    </a:ProjectManager>
+                    <a:AllowExpenseOnAnyExpenseTypeFlag>false</a:AllowExpenseOnAnyExpenseTypeFlag>
+                    <a:AvailableExpenseTypes xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+                      <b:PwsExpenseTypeRef><b:ExpenseTypeName>Office Fee</b:ExpenseTypeName></b:PwsExpenseTypeRef>
+                      <b:PwsExpenseTypeRef><b:ExpenseTypeName>Travel - Internal</b:ExpenseTypeName></b:PwsExpenseTypeRef>
+                      <b:PwsExpenseTypeRef><b:ExpenseTypeName>Sales - Meals/Entertainment</b:ExpenseTypeName></b:PwsExpenseTypeRef>
+                      <b:PwsExpenseTypeRef><b:ExpenseTypeName>Mileage - Internal</b:ExpenseTypeName></b:PwsExpenseTypeRef>
+                    </a:AvailableExpenseTypes>
+                    <a:ExpenseApproverType>T</a:ExpenseApproverType>
+                  </a:PwsProjectInfoForResourceExpenseEntry>
+                </a:Projects>
+              </a:PwsEngagementProjectInfoHierarchyForResourceExpenseEntry>
+            </a:Engagements>
+          </a:PwsClientEngagementProjectInfoHierarchyForResourceExpenseEntry>
+          <a:PwsClientEngagementProjectInfoHierarchyForResourceExpenseEntry>
+            <ClientNumber xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">C000100</ClientNumber>
+            <a:ClientName>Contoso</a:ClientName>
+            <a:Engagements>
+              <a:PwsEngagementProjectInfoHierarchyForResourceExpenseEntry>
+                <EngagementCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">E000100</EngagementCode>
+                <a:EngagementName>Contoso - Delivery</a:EngagementName>
+                <a:Projects>
+                  <a:PwsProjectInfoForResourceExpenseEntry>
+                    <ProjectCode xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">P000100-001</ProjectCode>
+                    <a:ProjectName>Contoso - Delivery</a:ProjectName>
+                    <a:CloseDate>2026-09-30T00:00:00Z</a:CloseDate>
+                    <a:OpenDate>2026-01-01T00:00:00Z</a:OpenDate>
+                    <a:AllowExpenseOnAnyExpenseTypeFlag>true</a:AllowExpenseOnAnyExpenseTypeFlag>
+                    <a:AvailableExpenseTypes xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+                    <a:ExpenseApproverType>E</a:ExpenseApproverType>
+                  </a:PwsProjectInfoForResourceExpenseEntry>
+                </a:Projects>
+              </a:PwsEngagementProjectInfoHierarchyForResourceExpenseEntry>
+            </a:Engagements>
+          </a:PwsClientEngagementProjectInfoHierarchyForResourceExpenseEntry>
+        </a:Clients>
+        <a:CostCardLocations xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <b:PwsLocationRef><b:LocationName>US - United States</b:LocationName></b:PwsLocationRef>
+          <b:PwsLocationRef><b:LocationName>CA - Canada</b:LocationName></b:PwsLocationRef>
+        </a:CostCardLocations>
+        <a:ExpenseTypes>
+          <a:PwsExpenseTypeInfoForResource>
+            <ExpenseTypeName xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">Office Fee</ExpenseTypeName>
+            <a:DescriptionRequiredFlag>true</a:DescriptionRequiredFlag>
+            <a:ExpenseTypeGroupIdentity xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:ExpenseTypeGroupName>Internal</b:ExpenseTypeGroupName>
+            </a:ExpenseTypeGroupIdentity>
+            <a:MileageFlag>false</a:MileageFlag>
+            <a:UnitDrivenFlag>false</a:UnitDrivenFlag>
+          </a:PwsExpenseTypeInfoForResource>
+          <a:PwsExpenseTypeInfoForResource>
+            <ExpenseTypeName xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">Travel - Internal</ExpenseTypeName>
+            <a:DescriptionRequiredFlag>true</a:DescriptionRequiredFlag>
+            <a:MileageFlag>false</a:MileageFlag>
+            <a:UnitDrivenFlag>false</a:UnitDrivenFlag>
+          </a:PwsExpenseTypeInfoForResource>
+          <a:PwsExpenseTypeInfoForResource>
+            <ExpenseTypeName xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">Sales - Meals/Entertainment</ExpenseTypeName>
+            <a:DescriptionRequiredFlag>false</a:DescriptionRequiredFlag>
+            <a:ExpenseEntryInstructions>Name the guests.</a:ExpenseEntryInstructions>
+            <a:MileageFlag>false</a:MileageFlag>
+            <a:UnitDrivenFlag>false</a:UnitDrivenFlag>
+          </a:PwsExpenseTypeInfoForResource>
+          <a:PwsExpenseTypeInfoForResource>
+            <ExpenseTypeName xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">Mileage - Internal</ExpenseTypeName>
+            <a:DescriptionRequiredFlag>true</a:DescriptionRequiredFlag>
+            <a:MileageFlag>true</a:MileageFlag>
+            <a:UnitDrivenFlag>false</a:UnitDrivenFlag>
+          </a:PwsExpenseTypeInfoForResource>
+          <a:PwsExpenseTypeInfoForResource>
+            <ExpenseTypeName xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">Conference</ExpenseTypeName>
+            <a:DescriptionRequiredFlag>true</a:DescriptionRequiredFlag>
+            <a:MileageFlag>false</a:MileageFlag>
+            <a:UnitDrivenFlag>false</a:UnitDrivenFlag>
+          </a:PwsExpenseTypeInfoForResource>
+        </a:ExpenseTypes>
+      </PwsGetResourceExpenseEntryInfoResult>
+    </PwsGetResourceExpenseEntryInfoResponse>
+  </s:Body>
+</s:Envelope>

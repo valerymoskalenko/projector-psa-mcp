@@ -22,6 +22,18 @@ public class PwsCliTests
     public void OnlyReadMethodsAreAllowed(string method, bool allowed) =>
         PwsCliRunner.IsReadMethod(method).Should().Be(allowed);
 
+    [Theory]
+    [InlineData("PwsGetExpenseDocument", false, true)]
+    [InlineData("PwsSaveExpenseDocument", false, false)]
+    [InlineData("PwsSaveExpenseDocument", true, true)]
+    [InlineData("PwsDeleteExpenseDocument", true, true)]
+    [InlineData("PwsDeleteDocument", true, true)]
+    [InlineData("PwsSaveTimeCards", true, false)]
+    [InlineData("PwsSetCostCardApprovalWorkflowStatus", true, false)]
+    [InlineData("pwsSaveExpenseDocument", true, false)]
+    public void ExpenseWrites_NeedTheWriteSwitch(string method, bool allowWrite, bool sent) =>
+        (PwsCliRunner.PwsRefusal(method, allowWrite) is null).Should().Be(sent);
+
     [Fact]
     public async Task WriteMethod_IsRefusedBeforeAnyCall()
     {

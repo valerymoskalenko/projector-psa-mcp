@@ -8,5 +8,5 @@ public static class ServerVersion
 {
     public const string Name = "Projector PSA MCP Server";
 
-    public const string Current = "0.8.0";
+    public const string Current = "0.9.0";
 }

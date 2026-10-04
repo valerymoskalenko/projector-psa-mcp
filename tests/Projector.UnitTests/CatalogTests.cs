@@ -96,9 +96,17 @@ public class CatalogTests
         foreach (var name in ToolCatalog.CanonicalAgentTools)
         {
             var stripped = name[(name.IndexOf('_') + 1)..];
-            CopilotToolNameFilter.Resolve(stripped, ToolCatalog.CanonicalAgentTools).Should().Be(name);
+            string[] arguments = name.StartsWith("save_", StringComparison.Ordinal) ? ["cards"] : [];
+            CopilotToolNameFilter.Resolve(stripped, ToolCatalog.CanonicalAgentTools, arguments).Should().Be(name);
         }
     }
+
+    [Theory]
+    [InlineData(new string[0], "list_expenses")]
+    [InlineData(new[] { "report", "include_options" }, "list_expenses")]
+    [InlineData(new[] { "cards", "report_name" }, "save_expenses")]
+    public void CopilotStrippedExpenses_ResolveByArguments(string[] arguments, string expected) =>
+        CopilotToolNameFilter.Resolve("expenses", ToolCatalog.CanonicalAgentTools, arguments).Should().Be(expected);
 
     [Theory]
     [InlineData("get_resource")]

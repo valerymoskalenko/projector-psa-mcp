@@ -1,0 +1,71 @@
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsGetExpenseReportsResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsGetExpenseReportsResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/" />
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Ok</Status>
+        <ServerTimestampUtc xmlns="http://projectorpsa.com/CommonServices/">2026-10-04T15:32:07Z</ServerTimestampUtc>
+        <a:ExpenseReports>
+          <a:PwsExpenseDocument>
+            <DocumentNumber xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">ER00100</DocumentNumber>
+            <ExpenseDocumentId i:nil="true" xmlns="http://projectorpsa.com/DataContracts/Shared/Common/" />
+            <ExpenseDocumentUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">1000000000000000100</ExpenseDocumentUid>
+            <a:DocumentName>Conference trip</a:DocumentName>
+            <a:ResourceIdentity xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:ResourceDisplayName>Jane Doe</b:ResourceDisplayName>
+              <b:ResourceId i:nil="true" />
+              <b:ResourceReferenceSystemId>10001</b:ResourceReferenceSystemId>
+              <b:ResourceUid>2000000000000000001</b:ResourceUid>
+            </a:ResourceIdentity>
+            <a:CostCardCount>3</a:CostCardCount>
+            <a:CreatedByUser xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:UserDisplayName>Jane Doe</b:UserDisplayName>
+              <b:UserUid>3000000000000000001</b:UserUid>
+            </a:CreatedByUser>
+            <a:DisbursedCurrencyIdentity xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:CurrencyCode>USD</b:CurrencyCode>
+            </a:DisbursedCurrencyIdentity>
+            <a:EarliestIncurredDate>2026-07-04T00:00:00Z</a:EarliestIncurredDate>
+            <a:LatestIncurredDate>2026-07-06T00:00:00Z</a:LatestIncurredDate>
+            <a:Projects xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:PwsProjectSummary>
+                <b:ProjectCode>P000100-001</b:ProjectCode>
+                <b:EngagementIdentity><b:EngagementCode>E000100</b:EngagementCode></b:EngagementIdentity>
+                <b:ProjectName>Contoso - Delivery</b:ProjectName>
+              </b:PwsProjectSummary>
+            </a:Projects>
+            <a:ReimbursementAmount>150.5</a:ReimbursementAmount>
+            <a:Status>P</a:Status>
+            <a:TotalAmount>150.5</a:TotalAmount>
+            <a:ExpenseDocumentLockedFlag>true</a:ExpenseDocumentLockedFlag>
+          </a:PwsExpenseDocument>
+          <a:PwsExpenseDocument>
+            <DocumentNumber xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">ER00200</DocumentNumber>
+            <ExpenseDocumentUid xmlns="http://projectorpsa.com/DataContracts/Shared/Common/">1000000000000000200</ExpenseDocumentUid>
+            <a:DocumentName>Office supplies</a:DocumentName>
+            <a:ResourceIdentity xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:ResourceDisplayName>Jane Doe</b:ResourceDisplayName>
+              <b:ResourceReferenceSystemId>10001</b:ResourceReferenceSystemId>
+              <b:ResourceUid>2000000000000000001</b:ResourceUid>
+            </a:ResourceIdentity>
+            <a:CostCardCount>1</a:CostCardCount>
+            <a:DisbursedCurrencyIdentity xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:CurrencyCode>USD</b:CurrencyCode>
+            </a:DisbursedCurrencyIdentity>
+            <a:EarliestIncurredDate>2026-09-30T00:00:00Z</a:EarliestIncurredDate>
+            <a:LatestIncurredDate>2026-09-30T00:00:00Z</a:LatestIncurredDate>
+            <a:Projects xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:PwsProjectSummary><b:ProjectCode>C000001-003</b:ProjectCode><b:ProjectName>Internal - Expenses</b:ProjectName></b:PwsProjectSummary>
+            </a:Projects>
+            <a:ReimbursementAmount>20</a:ReimbursementAmount>
+            <a:Status>D</a:Status>
+            <a:TotalAmount>20</a:TotalAmount>
+            <a:ExpenseDocumentLockedFlag>false</a:ExpenseDocumentLockedFlag>
+          </a:PwsExpenseDocument>
+        </a:ExpenseReports>
+        <a:CreateExpenseReportsPermissionFlag>true</a:CreateExpenseReportsPermissionFlag>
+      </PwsGetExpenseReportsResult>
+    </PwsGetExpenseReportsResponse>
+  </s:Body>
+</s:Envelope>

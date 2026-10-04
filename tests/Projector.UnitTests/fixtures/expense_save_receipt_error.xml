@@ -1,0 +1,39 @@
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <PwsSaveExpenseDocumentResponse xmlns="http://projectorpsa.com/PwsProjectorServices/">
+      <PwsSaveExpenseDocumentResult xmlns:a="http://projectorpsa.com/DataContracts/Shared/TimeAndCost/" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <Messages xmlns="http://projectorpsa.com/CommonServices/" xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+          <b:PwsMessage>
+            <b:ErrorCode>ReceiptErrors</b:ErrorCode>
+            <b:ErrorText>One or more receipts could not be saved.</b:ErrorText>
+          </b:PwsMessage>
+        </Messages>
+        <ResponseId xmlns="http://projectorpsa.com/CommonServices/">0</ResponseId>
+        <Status xmlns="http://projectorpsa.com/CommonServices/">Fail</Status>
+        <a:CostCardResults>
+          <a:PwsSaveCostCardResult>
+            <a:ErrorDetail xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:ErrorCode>TotalAmountDisbursedCurrencyIsRequiredForNewCostCards</b:ErrorCode>
+              <b:ErrorNumber>65521</b:ErrorNumber>
+              <b:ErrorText>Total amount in disbursed currency is required for new cost cards.</b:ErrorText>
+            </a:ErrorDetail>
+            <a:ReferenceId>card1</a:ReferenceId>
+          </a:PwsSaveCostCardResult>
+        </a:CostCardResults>
+        <a:ExpenseDocument i:nil="true" />
+        <a:ExpenseDocumentIdentity i:nil="true" />
+        <a:ReceiptResults>
+          <a:PwsSaveReceiptResult>
+            <a:ErrorDetail xmlns:b="http://projectorpsa.com/DataContracts/Shared/Common/">
+              <b:ErrorCode>EntityNotFound</b:ErrorCode>
+              <b:ErrorNumber>50024</b:ErrorNumber>
+              <b:ErrorText>Receipt was not found. Another user may have deleted it.</b:ErrorText>
+            </a:ErrorDetail>
+            <a:ReferenceId>receipt0</a:ReferenceId>
+          </a:PwsSaveReceiptResult>
+        </a:ReceiptResults>
+        <a:SaveSucceededFlag>false</a:SaveSucceededFlag>
+      </PwsSaveExpenseDocumentResult>
+    </PwsSaveExpenseDocumentResponse>
+  </s:Body>
+</s:Envelope>

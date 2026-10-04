@@ -47,6 +47,11 @@ public static class ApiClientServiceCollectionExtensions
             .AddHttpMessageHandler<ProjectorCallStatsHandler>();
         services.AddTransient<IProjectorTimeEntryClient, ProjectorTimeEntryClient>();
 
+        // Expense reports: receipt files go to the document server once (no resilience handler, like the writes).
+        services.AddHttpClient<ProjectorDocumentUploadHttp>(client => client.Timeout = WriteTimeout)
+            .AddHttpMessageHandler<ProjectorCallStatsHandler>();
+        services.AddTransient<Domain.Expenses.IProjectorExpenseClient, ProjectorExpenseClient>();
+
         // get_report: saved reports and legacy exports (starting a run goes through the write transport).
         services.AddTransient<IProjectorReportClient, ProjectorReportClient>();
 

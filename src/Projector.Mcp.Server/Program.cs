@@ -70,22 +70,42 @@ toolCommand.SetAction(async (parseResult, ct) =>
 });
 root.Subcommands.Add(toolCommand);
 
-var pwsCommand = new Command("pws", "Dev only, read-only (Development environment; PwsGet*/PwsSearch* methods): POST a raw PWS request body (file) with the local OAuth session and print the response XML");
+var pwsCommand = new Command("pws", "Dev only (Development environment): POST a raw PWS request body (file) with the local OAuth session and print the response XML. PwsGet*/PwsSearch* methods; expense document saves and deletes need --write");
 var pwsMethodArg = new Argument<string>("method") { Description = "PWS method, e.g. PwsSearchProjects" };
 var pwsBodyArg = new Argument<string>("body-file") { Description = "XML file with <pws:Method>…</pws:Method>; {{ticket}} is replaced by the session ticket" };
+var pwsWriteOption = new Option<bool>("--write") { Description = "Allow PwsSaveExpenseDocument, PwsDeleteExpenseDocument and PwsDeleteDocument (sent once, never retried)" };
 pwsCommand.Arguments.Add(pwsMethodArg);
 pwsCommand.Arguments.Add(pwsBodyArg);
+pwsCommand.Options.Add(pwsWriteOption);
 pwsCommand.SetAction(async (parseResult, ct) =>
 {
     var method = parseResult.GetValue(pwsMethodArg)!;
     var bodyFile = parseResult.GetValue(pwsBodyArg)!;
+    var allowWrite = parseResult.GetValue(pwsWriteOption);
     return await RunWithHostAsync(async sp =>
     {
         var runner = sp.GetRequiredService<PwsCliRunner>();
-        return await runner.RunAsync(method, bodyFile, ct);
+        return await runner.RunAsync(method, bodyFile, allowWrite, ct);
     }, ct);
 });
 root.Subcommands.Add(pwsCommand);
+
+var uploadCommand = new Command("upload-receipt", "Dev only (Development environment): upload one file into a Projector document folder (e.g. the receipt pool from PwsGetFolder UserReceiptPoolFolder) and print the JSON answer with the DocumentRefUid");
+var uploadFileArg = new Argument<string>("file") { Description = "File to upload" };
+var uploadFolderArg = new Argument<string>("folder-uid") { Description = "FolderUid from PwsGetFolder" };
+uploadCommand.Arguments.Add(uploadFileArg);
+uploadCommand.Arguments.Add(uploadFolderArg);
+uploadCommand.SetAction(async (parseResult, ct) =>
+{
+    var file = parseResult.GetValue(uploadFileArg)!;
+    var folderUid = parseResult.GetValue(uploadFolderArg)!;
+    return await RunWithHostAsync(async sp =>
+    {
+        var runner = sp.GetRequiredService<PwsCliRunner>();
+        return await runner.RunUploadAsync(file, folderUid, ct);
+    }, ct);
+});
+root.Subcommands.Add(uploadCommand);
 
 var asmxCommand = new Command("asmx", "Dev only (Development environment): POST a legacy (ASMX) report or export request with the local OAuth session and print the response XML. Read methods only; SubmitReportSpec and SubmitOlapGinsuExport need --run");
 var asmxMethodArg = new Argument<string>("method") { Description = "Legacy method, e.g. GetReportStatus or ExportProjectList" };

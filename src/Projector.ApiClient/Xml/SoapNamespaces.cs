@@ -11,6 +11,7 @@ public static class SoapNamespaces
     public static readonly XNamespace Tim = "http://projectorpsa.com/DataContracts/Shared/TimeAndCost/";
     public static readonly XNamespace Sch = "http://projectorpsa.com/DataContracts/Shared/Scheduling/";
     public static readonly XNamespace Rep = "http://projectorpsa.com/DataContracts/Shared/Report/";
+    public static readonly XNamespace Doc = "http://projectorpsa.com/DataContracts/Shared/DocumentManagement/";
     public static readonly XNamespace Data = "http://www.opsplanning.com/webservices/public/data";
 
     public const string WcfSoapActionPrefix = "http://projectorpsa.com/PwsProjectorServices/IPwsProjectorServices/";

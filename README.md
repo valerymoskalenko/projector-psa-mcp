@@ -2,7 +2,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Projector PSA](https://www.projectorpsa.com/). It lets AI assistants — VS Code (GitHub Copilot), Cursor, Claude, and Microsoft 365 Copilot — answer questions about people, schedules, availability, time off, timecards, engagements and project bookings, and log the user's own time as draft time cards, using each user's own Projector permissions.
 
-- **One write tool, drafts only.** `save_timecard` creates a Draft work time card, or updates a Draft or Rejected one, on the signed-in user's own time sheet. It never submits, approves or deletes, and never writes for another person. Every other tool is read-only.
+- **Two write tools, drafts only.** `save_timecard` creates a Draft work time card, or updates a Draft or Rejected one, on the signed-in user's own time sheet. `save_expenses` adds or changes draft cost cards, with receipts, on the user's own expense report. Neither submits, approves or deletes, and neither writes for another person. Every other tool is read-only.
 - **Per-user sign-in.** Every user signs in to Projector with OAuth; the server never uses a shared service account.
 - **Runs in Azure** (App Service + Azure SQL + Key Vault + Application Insights), or locally for development.
 
@@ -27,6 +27,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Pr
 | `get_timecard_options` | One project's tasks, rate types and time-entry rules for me on a date |
 | `save_timecard` | **Write.** Create a Draft time card, or update my Draft/Rejected card. Never submits |
 | `get_report` | Large, cross-person results as rows: hours and revenue by person, project and period (Ginsu export), all projects with managers, approved time cards of many people, or a report I saved in Projector |
+| `list_expenses` | My (or a permitted person's) expense reports, one report's cost cards and receipts, and with `include_options` everything a save needs: projects and allowed expense types, locations, currencies, closed days, receipts in my pool |
+| `save_expenses` | **Write.** Add or change draft cost cards with receipts (files as base64) on my own expense report; foreign amounts converted with Projector's rate. Never submits |
 
 `get_report` reads four datasets in the user's own session; a result comes in parts through a cursor. Starting a saved report or an export changes no business data, so the tool is read-only. On a hosted server it is shown only to the users listed in the setting `Projector:GetReportUsers` (Entra object ids separated by commas, or `*` for everyone; empty = nobody). The exports need the user's Projector permission *Export Data*.
 

@@ -130,7 +130,7 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
 
         var list = await PostMcpAsync(client, token, """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""");
         // Development opens get_report to everyone (Projector:GetReportUsers = *).
-        list.GetProperty("result").GetProperty("tools").GetArrayLength().Should().Be(17);
+        list.GetProperty("result").GetProperty("tools").GetArrayLength().Should().Be(19);
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
 
         var other = issuer.CreateAccessToken("protocol-test-connection", tenantId: "tenant", entraObjectId: "oid-other");
         var otherTools = (await PostMcpAsync(client, other, listRequest)).GetProperty("result").GetProperty("tools");
-        otherTools.GetArrayLength().Should().Be(16);
+        otherTools.GetArrayLength().Should().Be(18);
         otherTools.EnumerateArray().Select(t => t.GetProperty("name").GetString()).Should().NotContain("get_report");
 
         var refused = (await PostMcpAsync(client, other, callRequest)).GetProperty("result");

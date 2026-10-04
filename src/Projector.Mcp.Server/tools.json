@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.8.0"
+    "version": "0.9.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -810,6 +810,170 @@
           "next_cursor": {
             "type": "string",
             "description": "Same as cursor (accepted because agents pass the output key name)"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_expenses",
+      "aliases": [
+        "list_expenses"
+      ],
+      "title": "List Projector expense reports",
+      "requiredScopes": [
+        "enterExpenses"
+      ],
+      "description": "Lists expense reports for one person (PwsGetExpenseReports; default the signed-in user, others as Projector permits) or, with report, one report's cost cards and receipts (PwsGetExpenseDocument). include_options adds what save_expenses needs: projects open for expenses with allowed expense types and expense types (PwsGetResourceExpenseEntryInfo), rules (PwsGetExpenseEntryParameters), report currency and currencies (PwsGetCurrencies), closed days (PwsGetResourceExpenseSchedule) and the user's receipt pool (PwsGetFolderContents). The caller's identity comes from their own expense reports (no API returns it), so a user without any report gets NoExpenseIdentity.",
+      "whenNotToUse": "Do not use for time cards; use list_timecards.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "description": "Optional person: resource id, full name or e-mail; omit or \"me\" for the signed-in user"
+          },
+          "report": {
+            "type": "string",
+            "description": "Optional ER number: that report's cards"
+          },
+          "months": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 12
+          },
+          "unreceived_only": {
+            "type": "boolean",
+            "default": false
+          },
+          "query": {
+            "type": "string"
+          },
+          "include_options": {
+            "type": "boolean",
+            "default": false
+          },
+          "options_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "project_code": {
+            "type": "string"
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "save_expenses",
+      "aliases": [
+        "save_expenses"
+      ],
+      "title": "Save my Projector expenses (draft)",
+      "requiredScopes": [
+        "enterExpenses"
+      ],
+      "requiredWebServicesAccess": "U",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts. The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving.",
+      "whenNotToUse": "Do not use to read reports; use list_expenses. Do not use for time; use save_timecard.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "cards"
+        ],
+        "properties": {
+          "cards": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "The cost cards to save, in the order the user approved them",
+            "items": {
+              "type": "object",
+              "required": [
+                "date",
+                "project_code",
+                "expense_type",
+                "amount"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "project_code": {
+                  "type": "string"
+                },
+                "expense_type": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "amount": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "currency": {
+                  "type": "string",
+                  "description": "Receipt currency; omit for the report currency"
+                },
+                "location": {
+                  "type": "string"
+                },
+                "card_uid": {
+                  "type": "string",
+                  "description": "Only to change a draft or rejected card"
+                },
+                "receipt": {
+                  "type": "object",
+                  "description": "Optional receipt: a file (file_name + content_base64) or receipt_uid from the pool",
+                  "properties": {
+                    "file_name": {
+                      "type": "string",
+                      "description": "File name with extension: .pdf, .png, .jpg, .jpeg or .gif"
+                    },
+                    "content_base64": {
+                      "type": "string",
+                      "contentEncoding": "base64",
+                      "description": "The file content, base64 encoded; at most 2 MB before encoding"
+                    },
+                    "receipt_uid": {
+                      "type": "string",
+                      "description": "A receipt already in the pool (list_expenses options.receipt_pool)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "report": {
+            "type": "string",
+            "description": "ER number of an existing editable report; omit for a new report"
+          },
+          "report_name": {
+            "type": "string",
+            "description": "Name of a new report (required without report)"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "default": false
           }
         }
       }

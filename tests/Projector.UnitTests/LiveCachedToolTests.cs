@@ -206,6 +206,22 @@ public class LiveCachedToolTests : IAsyncLifetime
         root.TryGetProperty("location", out _).Should().BeFalse();
     }
 
+    /// <summary>Read-only: the signed-in user's reports and the options a save needs. Writes are tested by hand only.</summary>
+    [Fact]
+    public async Task ListExpenses_ReportsAndOptions()
+    {
+        RequireLive();
+        var expenses = _sp!.GetRequiredService<ExpenseToolService>();
+        var result = await expenses.ListExpensesAsync(
+            _connectionId!, null, null, 60, false, null, true, null, null, 10, 0, CancellationToken.None);
+        var root = AsElement(result);
+        root.GetProperty("reports").GetProperty("rows").ValueKind.Should().Be(JsonValueKind.Array);
+        var options = root.GetProperty("options");
+        options.GetProperty("expense_types").GetArrayLength().Should().BeGreaterThan(0);
+        options.GetProperty("report_currency").GetString().Should().NotBeNullOrEmpty();
+        options.GetProperty("rules").GetProperty("receipt_max_kb").GetDouble().Should().BeGreaterThan(0);
+    }
+
     [Fact]
     public async Task ListEngagements_HasManagersOrProjectsAfterEnrichment()
     {

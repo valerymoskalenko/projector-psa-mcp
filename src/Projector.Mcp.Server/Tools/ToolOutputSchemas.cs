@@ -118,6 +118,34 @@ public static class ToolOutputSchemas
         + "or a task with assigned = true, or ask the user. "
         + "On error projector_busy nothing was saved: retry once after a few seconds.";
 
+    public const string ExpensesSchemaHint =
+        "Output keys: resource_id, reports (count, months, rows[] (report, name, status, dates, card_count, total, "
+        + "reimbursement when it differs, currency, projects, editable), can_create) without report; report (report, "
+        + "name, status, person, currency, total, card_count, editable, locked_reason, cards[] (card_uid, date, "
+        + "expense_type, description, amount, currency, rate, amount_report_currency, location, project_code, status, "
+        + "editable, rejected_reason, receipts), report_receipts) with report; options with include_options "
+        + "(options_date, projects[] (project_code, name, client, engagement, open, close, expense_types: names or "
+        + "\"any\"), projects_total, projects_has_more, projects_next_offset, expense_types[] (name, group, "
+        + "description_required, instructions, supported), locations, report_currency, currencies, rules "
+        + "(receipts_on_cards, receipt_max_kb, receipt_types, non_billable_allowed, outside_project_dates_allowed, "
+        + "location_required, entry_for_others_allowed), closed_days, receipt_pool[] (receipt_uid, name, size_kb, "
+        + "uploaded)), note. Expense types with supported = false (mileage, per unit) must be entered in Projector. "
+        + "On error NoExpenseIdentity: the user has no expense report yet; they create the first one in Projector.";
+
+    public const string SaveExpensesSchemaHint =
+        "Output keys: action (saved|dry_run|refused|failed), error, report (number, name, currency, total, card_count, "
+        + "status), results[] (one per card, in input order: index, status valid|invalid|saved|failed|not_applied|"
+        + "not_attempted, action create|update, card (card_uid, date, project_code, expense_type, description, amount, "
+        + "currency, rate, amount_report_currency, location), receipt (name, size_kb, receipt_uid, linked), errors, "
+        + "warnings), cards_total, saved_count, valid_count, invalid_count, failed_count, not_applied_count, "
+        + "receipts_in_pool[] (uploaded receipts not linked to a card; attach them later by receipt_uid), submitted "
+        + "(always false), note. refused = one or more cards invalid, nothing saved or uploaded: fix them and send all "
+        + "cards again. not_applied = Projector answered but the card or its receipt is not on the report as sent: tell "
+        + "the user to check the report in Projector. "
+        + "Error write_outcome_unknown: the save or upload may or may not have happened; check list_expenses with the "
+        + "report before sending again. On error web_services_access_view_only nothing was saved: tell the user their "
+        + "Projector Web Services Access is V (View), not U (Update); do not retry.";
+
     private static readonly JsonSerializerOptions SchemaOptions = new(JsonSerializerOptions.Default)
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

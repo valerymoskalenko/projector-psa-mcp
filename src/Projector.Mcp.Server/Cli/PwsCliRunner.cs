@@ -31,18 +31,46 @@ public sealed class PwsCliRunner
     /// </summary>
     private static readonly string[] AsmxRunMethods = ["SubmitReportSpec", "SubmitOlapGinsuExport"];
 
+    /// <summary>
+    /// Expense writes for probing request shapes against a test draft (sent only with <c>--write</c>, once, never
+    /// retried). No submit, approval or time card method is on the list.
+    /// </summary>
+    private static readonly string[] DevWriteMethods =
+        ["PwsSaveExpenseDocument", "PwsDeleteExpenseDocument", "PwsDeleteDocument"];
+
     private readonly LocalOAuthLoginService _login;
     private readonly ProjectorSoapHttp _soap;
     private readonly ProjectorSoapWriteHttp _submit;
     private readonly IHostEnvironment _environment;
+    private readonly IHttpClientFactory? _httpFactory;
 
     public PwsCliRunner(
-        LocalOAuthLoginService login, ProjectorSoapHttp soap, ProjectorSoapWriteHttp submit, IHostEnvironment environment)
+        LocalOAuthLoginService login, ProjectorSoapHttp soap, ProjectorSoapWriteHttp submit, IHostEnvironment environment,
+        IHttpClientFactory? httpFactory = null)
     {
         _login = login;
         _soap = soap;
         _submit = submit;
         _environment = environment;
+        _httpFactory = httpFactory;
+    }
+
+    /// <summary>Null when the PWS method may be sent; else why not.</summary>
+    internal static string? PwsRefusal(string? method, bool allowWrite)
+    {
+        if (IsReadMethod(method))
+        {
+            return null;
+        }
+
+        var name = method?.Trim() ?? string.Empty;
+        if (DevWriteMethods.Contains(name, StringComparer.Ordinal))
+        {
+            return allowWrite ? null : $"'{name}' changes Projector data; add --write to send it. Nothing was sent.";
+        }
+
+        return $"pws sends read methods only (PwsGet..., PwsSearch...) and, with --write, {string.Join(", ", DevWriteMethods)}; " +
+            $"'{name}' was refused and nothing was sent. Change Projector data through the MCP tools or in Projector.";
     }
 
     /// <summary>Null when the legacy method may be sent; else why not.</summary>
@@ -123,7 +151,10 @@ public sealed class PwsCliRunner
             && method.Trim().Length > p.Length
             && char.IsUpper(method.Trim()[p.Length]));
 
-    public async Task<int> RunAsync(string method, string bodyFile, CancellationToken cancellationToken)
+    public async Task<int> RunAsync(string method, string bodyFile, CancellationToken cancellationToken) =>
+        await RunAsync(method, bodyFile, allowWrite: false, cancellationToken);
+
+    public async Task<int> RunAsync(string method, string bodyFile, bool allowWrite, CancellationToken cancellationToken)
     {
         if (!_environment.IsDevelopment())
         {
@@ -132,11 +163,9 @@ public sealed class PwsCliRunner
             return 2;
         }
 
-        if (!IsReadMethod(method))
+        if (PwsRefusal(method, allowWrite) is { } refusal)
         {
-            Console.Error.WriteLine(
-                $"pws sends read methods only (PwsGet..., PwsSearch...); '{method}' was refused and nothing was sent. " +
-                "Change Projector data through the MCP tools or in Projector.");
+            Console.Error.WriteLine(refusal);
             return 2;
         }
 
@@ -165,11 +194,80 @@ public sealed class PwsCliRunner
         }
 
         body = XElement.Parse(body.ToString().Replace("{{ticket}}", connection.SessionTicket, StringComparison.Ordinal));
+        // A write is sent once, never retried.
+        var transport = IsReadMethod(method) ? _soap : _submit.Soap;
         try
         {
-            var response = await _soap.PostWcfAsync(connection, method.Trim(), body, cancellationToken);
+            var response = await transport.PostWcfAsync(connection, method.Trim(), body, cancellationToken);
             Console.WriteLine(response.ToString());
             return 0;
+        }
+        catch (ProjectorApiException ex)
+        {
+            Console.WriteLine($"ProjectorApiException code={ex.ErrorCode}: {ex.Message}");
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// Dev only: uploads one file into a document folder (e.g. the user's receipt pool) and prints Projector's JSON
+    /// answer. Files are not SOAP: they are posted to {DocumentServerUrl}/AjxAddDocument with the session ticket and
+    /// the folder UID ("How to Upload Files" in the Projector API docs). Sent once, never retried.
+    /// </summary>
+    public async Task<int> RunUploadAsync(string file, string folderUid, CancellationToken cancellationToken)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            Console.Error.WriteLine(
+                $"upload-receipt is a development tool and runs only with ASPNETCORE_ENVIRONMENT=Development (now: {_environment.EnvironmentName}).");
+            return 2;
+        }
+
+        if (_httpFactory is null || !File.Exists(file) || !long.TryParse(folderUid, out _))
+        {
+            Console.Error.WriteLine("Usage: upload-receipt <file> <folder-uid> (the file must exist; the folder UID is a number). Nothing was sent.");
+            return 2;
+        }
+
+        ProjectorConnection connection;
+        try
+        {
+            connection = await _login.LoginAsync(forceLogin: false, openBrowser: false, cancellationToken);
+        }
+        catch (ProjectorAuthorizationException)
+        {
+            Console.Error.WriteLine("No usable OAuth cache. Run: auth login");
+            return 2;
+        }
+
+        try
+        {
+            var parameters = await _soap.PostWcfAsync(
+                connection,
+                "PwsGetDocumentManagementParameters",
+                new XElement(SoapNamespaces.Pws + "PwsGetDocumentManagementParameters",
+                    new XElement(SoapNamespaces.Pws + "serviceRequest",
+                        new XElement(SoapNamespaces.Req + "SessionTicket", connection.SessionTicket))),
+                cancellationToken);
+            var server = parameters.Descendants().FirstOrDefault(e => e.Name.LocalName == "DocumentServerUrl")?.Value;
+            if (string.IsNullOrWhiteSpace(server))
+            {
+                Console.Error.WriteLine("Projector returned no DocumentServerUrl. Nothing was sent.");
+                return 1;
+            }
+
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(connection.SessionTicket), "sessionTicket");
+            form.Add(new StringContent(folderUid), "folderUid");
+            var bytes = await File.ReadAllBytesAsync(file, cancellationToken);
+            form.Add(new ByteArrayContent(bytes), "file", Path.GetFileName(file));
+
+            var http = _httpFactory.CreateClient("ProjectorDocumentUpload");
+            using var response = await http.PostAsync(server.TrimEnd('/') + "/AjxAddDocument", form, cancellationToken);
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            Console.Error.WriteLine($"POST {server.TrimEnd('/')}/AjxAddDocument {(int)response.StatusCode}, {bytes.Length} bytes sent");
+            Console.WriteLine(text);
+            return response.IsSuccessStatusCode ? 0 : 1;
         }
         catch (ProjectorApiException ex)
         {

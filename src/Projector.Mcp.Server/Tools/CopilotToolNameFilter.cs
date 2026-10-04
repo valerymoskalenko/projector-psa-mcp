@@ -20,7 +20,7 @@ internal static class CopilotToolNameFilter
             if (context.Params is { } request
                 && tools is not null
                 && !tools.TryGetPrimitive(request.Name, out _)
-                && Resolve(request.Name, tools.Select(t => t.ProtocolTool.Name)) is { } resolved
+                && Resolve(request.Name, tools.Select(t => t.ProtocolTool.Name), request.Arguments?.Keys) is { } resolved
                 && tools.TryGetPrimitive(resolved, out var tool))
             {
                 request.Name = resolved;
@@ -30,8 +30,11 @@ internal static class CopilotToolNameFilter
             return next(context, cancellationToken);
         };
 
-    /// <summary>Returns the registered tool name for <paramref name="requested"/>, or null if none or ambiguous.</summary>
-    internal static string? Resolve(string requested, IEnumerable<string> registered)
+    /// <summary>
+    /// Returns the registered tool name for <paramref name="requested"/>, or null if none or ambiguous. "expenses"
+    /// fits list_expenses and save_expenses: a call that sends <c>cards</c> is the save, any other the list.
+    /// </summary>
+    internal static string? Resolve(string requested, IEnumerable<string> registered, IEnumerable<string>? argumentNames = null)
     {
         var names = registered.ToList();
         if (string.IsNullOrWhiteSpace(requested)
@@ -49,6 +52,13 @@ internal static class CopilotToolNameFilter
         var matches = names
             .Where(n => n.EndsWith("_" + requested, StringComparison.OrdinalIgnoreCase))
             .ToList();
+        if (matches.Count == 2
+            && matches.SingleOrDefault(n => n.StartsWith("list_", StringComparison.OrdinalIgnoreCase)) is { } list
+            && matches.SingleOrDefault(n => n.StartsWith("save_", StringComparison.OrdinalIgnoreCase)) is { } save)
+        {
+            return argumentNames?.Contains("cards", StringComparer.Ordinal) == true ? save : list;
+        }
+
         return matches.Count == 1 ? matches[0] : null;
     }
 }

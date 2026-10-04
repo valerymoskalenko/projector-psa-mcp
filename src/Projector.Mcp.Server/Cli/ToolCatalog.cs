@@ -50,7 +50,9 @@ public static class ToolCatalog
         "list_time_projects",
         "get_timecard_options",
         "save_timecard",
-        "get_report"
+        "get_report",
+        "list_expenses",
+        "save_expenses"
     ];
 
     public static string Canonicalize(string name)
@@ -98,6 +100,8 @@ public static class ToolCatalog
             "get_timecard_options" => await GetTimecardOptionsAsync(services, connectionId, args, cancellationToken),
             "save_timecard" => await SaveTimecardAsync(services, connectionId, args, cancellationToken),
             "get_report" => await GetReportAsync(services, connectionId, args, cancellationToken),
+            "list_expenses" => await ListExpensesAsync(services, connectionId, args, cancellationToken),
+            "save_expenses" => await SaveExpensesAsync(services, connectionId, args, cancellationToken),
             _ => throw new ArgumentException(
                 $"Unknown tool '{canonical}'. Known: {string.Join(", ", CanonicalAgentTools)}")
         };
@@ -316,6 +320,60 @@ public static class ToolCatalog
                     udf2)
             ],
             dryRun,
+            ct);
+    }
+
+    private static Task<object> ListExpensesAsync(
+        IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
+    {
+        string? Text(string key) => args.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+
+        return services.GetRequiredService<ExpenseToolService>().ListExpensesAsync(
+            connectionId,
+            Text("resource_id"),
+            Text("report"),
+            GetInt(args, "months", ExpenseToolService.DefaultMonths),
+            GetBool(args, "unreceived_only"),
+            Text("query"),
+            GetBool(args, "include_options"),
+            Text("options_date"),
+            Text("project_code"),
+            GetInt(args, "max_rows", ExpenseToolService.DefaultMaxProjects),
+            GetInt(args, "offset", 0),
+            ct);
+    }
+
+    /// <summary>
+    /// --cards-json &lt;file&gt;: the cards array the MCP tool takes. For local tests a receipt may give
+    /// <c>file_path</c> instead of <c>content_base64</c>: the CLI reads the file and sends it as base64.
+    /// </summary>
+    private static Task<object> SaveExpensesAsync(
+        IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
+    {
+        var file = Require(args, "cards_json");
+        var cards = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file)) as System.Text.Json.Nodes.JsonArray
+            ?? throw new ArgumentException("--cards-json must contain a JSON array of cards.");
+        foreach (var receipt in cards.Select(c => c?["receipt"]).OfType<System.Text.Json.Nodes.JsonObject>())
+        {
+            if (receipt["file_path"]?.GetValue<string>() is { Length: > 0 } path)
+            {
+                var full = Path.GetFullPath(path, Path.GetDirectoryName(Path.GetFullPath(file))!);
+                receipt["content_base64"] = Convert.ToBase64String(File.ReadAllBytes(full));
+                receipt["file_name"] ??= Path.GetFileName(full);
+                receipt.Remove("file_path");
+            }
+        }
+
+        var parsed = System.Text.Json.JsonSerializer.Deserialize<Tools.SaveExpenseCard[]>(cards)
+            ?? throw new ArgumentException("--cards-json must contain a JSON array of cards.");
+        args.TryGetValue("report", out var report);
+        args.TryGetValue("report_name", out var reportName);
+        return services.GetRequiredService<ExpenseToolService>().SaveExpensesAsync(
+            connectionId,
+            string.IsNullOrWhiteSpace(report) ? null : report,
+            string.IsNullOrWhiteSpace(reportName) ? null : reportName,
+            parsed.Select(c => c.ToInput()).ToList(),
+            GetBool(args, "dry_run"),
             ct);
     }
 

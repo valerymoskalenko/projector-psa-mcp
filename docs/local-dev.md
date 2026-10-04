@@ -87,9 +87,23 @@ dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- pws PwsGetT
 ```
 
 - `{{ticket}}` is replaced by your session ticket. Prefixes `pws:`, `req:`, `com:`, `tim:` and `sch:` are declared for you.
-- Read-only: only `PwsGet…` and `PwsSearch…` methods are sent, and the body element must match the method. Saves, deletes, submits and approvals are refused before any call.
+- Read-only by default: only `PwsGet…` and `PwsSearch…` methods are sent, and the body element must match the method. Saves, deletes, submits and approvals are refused before any call.
+- `--write` also allows `PwsSaveExpenseDocument`, `PwsDeleteExpenseDocument` and `PwsDeleteDocument`, sent once and never retried, for checking expense request shapes on a test draft report. Nothing else that changes data is ever sent. Delete the test report afterwards: `PwsDeleteExpenseDocument` returns its receipts to the pool, `PwsDeleteDocument` (`DeletePermanentlyFlag`) removes them.
 - Runs only with `ASPNETCORE_ENVIRONMENT=Development`.
 - It runs as you, with your Projector permissions. Don't commit captured responses: turn them into fixtures with invented names and ids.
+
+Receipt files are not SOAP. `upload-receipt` posts one file into a document folder (for receipts: the folder UID of `PwsGetFolder` with `UserReceiptPoolFolder` and your `UserIdentity`) and prints Projector's JSON answer with the `DocumentRefUid`:
+
+```powershell
+dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- upload-receipt receipt.pdf <folder-uid>
+```
+
+`save_expenses` from the command line takes the cards as a file. For local tests a receipt may name a `file_path` (relative to the JSON file) instead of `content_base64`:
+
+```powershell
+# cards.json: [{"date":"2026-10-02","project_code":"C000001-003","expense_type":"Office Fee","description":"Test","amount":1,"receipt":{"file_path":"receipt.png"}}]
+dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- tool save_expenses --cards-json cards.json --report-name "Test - delete me" --dry-run true
+```
 
 The legacy (ASMX) report and export methods behind `get_report` have their own command. The file holds the parameter elements and may be empty:
 

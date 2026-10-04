@@ -36,6 +36,11 @@ public static class ProjectorCallStats
         ["PwsGetResourcePto"] = ["PwsHolidayPto"],
         ["PwsSearchProjects"] = ["PwsProjectDescriptor"],
         ["PwsGetTimeEntryProjectRole"] = ["PwsProjectTask"],
+        ["PwsGetExpenseReports"] = ["PwsExpenseDocument"],
+        ["PwsGetExpenseDocument"] = ["PwsCostCardElement"],
+        ["PwsSaveExpenseDocument"] = ["PwsCostCardElement"],
+        ["PwsGetResourceExpenseEntryInfo"] = ["PwsProjectInfoForResourceExpenseEntry"],
+        ["PwsGetFolderContents"] = ["PwsDocument"],
         ["ExportResources"] = ["Resource"],
         ["ExportScheduledTimeoff"] = ["ScheduledTimeoff"],
         ["ExportProjectList"] = ["Project"],
@@ -143,9 +148,10 @@ public sealed class ProjectorCallStatsHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // A call without a SOAP action (the receipt upload) is named by the last segment of its URL.
         var action = request.Headers.TryGetValues("SOAPAction", out var values) && values.FirstOrDefault() is { Length: > 0 } header
             ? ProjectorSoapHttp.SoapActionName(header)
-            : "unknown";
+            : request.RequestUri?.Segments.LastOrDefault()?.Trim('/') is { Length: > 0 } segment ? segment : "unknown";
         var started = Stopwatch.GetTimestamp();
         HttpResponseMessage response;
         string body;
