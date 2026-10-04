@@ -173,5 +173,6 @@ public static class ProjectorExpenseEnvelopes
 
     private static string Bool(bool value) => value ? "true" : "false";
 
-    private static string Number(double value) => value.ToString("0.############", CultureInfo.InvariantCulture);
+    /// <summary>Full precision ("R"): the converted amount must not be rounded here, or it overrides Projector's rate.</summary>
+    private static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 }

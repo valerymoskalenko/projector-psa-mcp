@@ -307,7 +307,9 @@ public class ExpenseTests
         request.ReportUid.Should().BeNull();
         request.ResourceId.Should().Be("10001");
         request.Cards[1].Location.Should().Be("CA - Canada");
-        request.Cards[1].DisbursedAmount.Should().Be(7.06, "10 CAD × 0.70632793, rounded to cents");
+        request.Cards[1].DisbursedAmount.Should().Be(10 * 0.70632792500499175,
+            "the unrounded amount keeps Projector's own rate; Projector rounds the total itself");
+        result.GetProperty("results")[1].GetProperty("card").GetProperty("amount_report_currency").GetDouble().Should().Be(7.06);
         request.Receipts.Should().ContainSingle(r => r.CardReferenceId == "card0" && r.ReferenceId == "receipt0" && r.DocumentUid == "upload0");
     }
 
@@ -457,6 +459,30 @@ public class ExpenseTests
         options.GetProperty("receipt_pool")[0].GetProperty("receipt_uid").GetString().Should().Be("pool1");
     }
 
+    [Fact]
+    public async Task ReadBack_RateDifferentFromProjectorsSystemRate_IsWarned()
+    {
+        var (svc, fake) = CreateService();
+        fake.StoredFxRate = (1.4235, 1.4157729924);
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(amount: 12, currency: "CAD", type: "Travel - Internal")], dryRun: false, CancellationToken.None));
+
+        result.GetProperty("results")[0].GetProperty("warnings").EnumerateArray().Select(w => w.GetString())
+            .Should().Contain(w => w!.StartsWith("Projector stored rate"));
+    }
+
+    [Fact]
+    public void SaveEnvelope_SendsTheConvertedAmountUnrounded()
+    {
+        var body = ProjectorExpenseEnvelopes.SaveExpenseDocument("ticket", new ExpenseSaveRequest
+        {
+            ReportName = "Trip", ResourceId = "10001", Cards = [Card("card0") with { DisbursedAmount = 12 * 0.7026233528078851 }]
+        });
+
+        Single(body, "TotalAmountDisbursedCurrency")!.Value.Should().Be((12 * 0.7026233528078851).ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     [Theory]
     [InlineData(38.04, 0.70632792500499175, 26.87)]
     [InlineData(10, 0.70262335, 7.03)]
@@ -561,6 +587,8 @@ public class ExpenseTests
         public IReadOnlyList<ExpenseDay> Schedule { get; set; } = [];
         public ExpenseIdentity? Self { get; set; } = new("10001", "2000000000000000001", "Jane Doe", "3000000000000000001");
         public bool DropCards { get; set; }
+        /// <summary>(stored, system) FxRate on every saved card; null = none.</summary>
+        public (double Stored, double System)? StoredFxRate { get; set; }
         public ProjectorApiException? UploadError { get; set; }
         public Func<ExpenseSaveRequest, ExpenseSaveResult>? SaveResult { get; set; }
         public List<ExpenseSaveRequest> Saves { get; } = [];
@@ -638,7 +666,9 @@ public class ExpenseTests
                     Currency = w.Currency,
                     DisbursedAmount = w.DisbursedAmount,
                     ProjectCode = w.ProjectCode,
-                    ApprovalStatus = "D"
+                    ApprovalStatus = "D",
+                    FxRate = StoredFxRate?.Stored,
+                    SystemFxRate = StoredFxRate?.System
                 }).ToList();
             var receipts = request.Receipts.Select(r => new ExpenseReceipt
             {

@@ -59,7 +59,10 @@ public sealed record ExpenseCard
     public string? Description { get; init; }
     public double? Amount { get; init; }
     public string? Currency { get; init; }
+    /// <summary>Incurred units per report-currency unit, as stored on the card.</summary>
     public double? FxRate { get; init; }
+    /// <summary>Projector's own rate for the card's date, in the same form as <see cref="FxRate"/>.</summary>
+    public double? SystemFxRate { get; init; }
     public double? DisbursedAmount { get; init; }
     public double? Units { get; init; }
     public string? Location { get; init; }

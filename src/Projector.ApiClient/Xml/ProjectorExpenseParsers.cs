@@ -88,6 +88,7 @@ public static class ProjectorExpenseParsers
             Amount = Number(d, "IncurredAmount"),
             Currency = Text(Child(d, "IncurredOpsCurrencyIdentity"), "OpsCurrencyCode"),
             FxRate = Number(e, "FxRate"),
+            SystemFxRate = Number(e, "SystemFxRate"),
             DisbursedAmount = Number(e, "DisbursedAmountDisbursedCurrency") ?? Number(d, "TotalAmountDisbursedCurrency"),
             Units = Number(d, "Units"),
             Location = Text(Child(d, "LocationIdentity"), "LocationName"),

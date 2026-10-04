@@ -289,7 +289,14 @@ public sealed class ExpenseToolService
         public string? Description { get; set; }
         public string? Currency { get; set; }
         public double? Rate { get; set; }
+        /// <summary>The converted amount as shown (rounded to the report currency's digits).</summary>
         public double? Disbursed { get; set; }
+        /// <summary>
+        /// What is sent to Projector: the amount times Projector's own rate, not rounded. Projector stores the card's
+        /// rate as amount / this value and rounds the total itself, so its embedded rate is kept (a rounded value
+        /// would override it: 12 CAD / 8.43 = 0.7025 instead of 0.70262335, seen 2026-10-04).
+        /// </summary>
+        public double? DisbursedExact { get; set; }
         public string? Location { get; set; }
         public ExpenseCard? Existing { get; set; }
         public byte[]? ReceiptBytes { get; set; }
@@ -431,7 +438,7 @@ public sealed class ExpenseToolService
                 Description = p.Description,
                 Amount = p.Input.Amount,
                 Currency = p.Currency!,
-                DisbursedAmount = p.Disbursed!.Value,
+                DisbursedAmount = p.DisbursedExact!.Value,
                 ProjectCode = p.ProjectCode!,
                 Location = p.Location
             }).ToList(),
@@ -670,6 +677,7 @@ public sealed class ExpenseToolService
                 {
                     plan.Rate = 1;
                     plan.Disbursed = Math.Round(input.Amount, digits, MidpointRounding.AwayFromZero);
+                    plan.DisbursedExact = input.Amount;
                 }
                 else
                 {
@@ -687,6 +695,7 @@ public sealed class ExpenseToolService
                     {
                         plan.Rate = rate.Rate;
                         plan.Disbursed = ConvertAmount(input.Amount, rate.Rate.Value, digits);
+                        plan.DisbursedExact = input.Amount * rate.Rate.Value;
                     }
                 }
             }
@@ -838,6 +847,10 @@ public sealed class ExpenseToolService
             plan.ReceiptLinked = plan.ReceiptDocumentUid is not null && found?.Uid is not null
                 && (after?.Receipts.Any(r => r.DocumentUid == plan.ReceiptDocumentUid && r.CardUids.Contains(found.Uid)) ?? false);
             plan.Status = found is null || (plan.ReceiptDocumentUid is not null && !plan.ReceiptLinked) ? "not_applied" : "saved";
+            if (found is { FxRate: > 0, SystemFxRate: > 0 } && Math.Abs(found.FxRate.Value / found.SystemFxRate.Value - 1) > 1e-6)
+            {
+                plan.Warnings.Add($"Projector stored rate {Math.Round(1 / found.FxRate.Value, 8)} instead of its system rate {Math.Round(1 / found.SystemFxRate.Value, 8)}; check the card in Projector");
+            }
         }
     }
 
