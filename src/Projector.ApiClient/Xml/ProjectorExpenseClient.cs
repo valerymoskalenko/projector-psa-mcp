@@ -103,6 +103,14 @@ public sealed class ProjectorExpenseClient : IProjectorExpenseClient
         return ProjectorExpenseParsers.ParseCurrencies(doc);
     }
 
+    public async Task<IReadOnlyList<ExpenseReceiptRule>> GetReceiptRulesAsync(
+        ProjectorConnection connection, string resourceId, string disbursedCurrency, string date, CancellationToken cancellationToken = default)
+    {
+        var doc = await ReadAsync(connection, ProjectorExpenseEnvelopes.GetExpenseTypes(
+            connection.SessionTicket, resourceId, disbursedCurrency, date), cancellationToken);
+        return ProjectorExpenseParsers.ParseReceiptRules(doc);
+    }
+
     public async Task<ExpenseIdentity?> FindSelfAsync(ProjectorConnection connection, CancellationToken cancellationToken = default)
     {
         var reports = await ListReportsAsync(connection, null, SelfSearchMonths, unreceivedOnly: false, cancellationToken);

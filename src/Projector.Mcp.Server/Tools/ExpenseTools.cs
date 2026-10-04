@@ -40,7 +40,7 @@ public sealed class ExpenseTools
         "number, name, status (Draft, Submitted, Approved, Approved to Pay, Paid, partial states), dates, card count, " +
         "total, currency, projects. With report (an ER number) it returns that report's cost cards instead: date, " +
         "expense type, description, amount and currency, rate, amount in the report currency, location, project, " +
-        "status, editable, receipt names. include_options = true adds everything save_expenses needs: projects open " +
+        "status, editable, receipt names, missing_receipt (Projector won't submit the card). include_options = true adds everything save_expenses needs: projects open " +
         "for expenses with their allowed expense types, expense types, locations, currencies, rules (receipt size), " +
         "closed days and receipts waiting in the user's pool. Call it with include_options before save_expenses. " +
         ToolOutputSchemas.ExpensesSchemaHint + " " +
@@ -74,7 +74,8 @@ public sealed class ExpenseTools
         "Every card is checked first; if one is invalid, nothing is saved. Call with dry_run = true, show the user every " +
         "card (date, project, type, description, amount, converted amount, receipt) and the total, and save only after " +
         "the user's explicit confirmation. After a save the report is read back: a card with status not_applied was " +
-        "not saved as sent. Relay warnings (no receipt, likely duplicate). " +
+        "not saved as sent. Most expense types need a receipt before the report can be submitted: a card without one " +
+        "gets the warning \"receipt required\", so ask the user for the receipt before saving. Relay every warning. " +
         ToolOutputSchemas.SaveExpensesSchemaHint + " " +
         "WhenNotToUse: Do not use to read reports; use list_expenses. Do not use for time; use save_timecard.")]
     public Task<CallToolResult> SaveExpenses(

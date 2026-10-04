@@ -129,6 +129,16 @@ public sealed record ExpenseEntryRules
 public sealed record ExpenseDay(string Date, bool CanEnter, bool PeriodClosed);
 
 /// <summary>A currency and, when asked for a date and a disbursed currency, Projector's rate into it.</summary>
+/// <summary>
+/// Whether Projector needs a receipt before a card of this type can be submitted (PwsGetExpenseTypes); from
+/// <see cref="Threshold"/> (in the disbursed currency) upward when it is above 0.
+/// </summary>
+public sealed record ExpenseReceiptRule(string Name, bool Required, double? Threshold)
+{
+    public bool AppliesTo(double? disbursedAmount) =>
+        Required && (Threshold is not > 0 || (disbursedAmount ?? 0) >= Threshold);
+}
+
 public sealed record CurrencyRate(string Code, string? Name, int Digits, double? Rate);
 
 /// <summary>A receipt in the user's receipt pool, not linked to a report yet.</summary>

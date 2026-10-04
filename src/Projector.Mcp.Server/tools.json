@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.9.0"
+    "version": "0.9.1"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -890,7 +890,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts. The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving.",
+      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts. Expense types with ReceiptRequiredFlag (PwsGetExpenseTypes, with its threshold) can't be submitted without a receipt: such a card saved without one gets the warning \"receipt required\". The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving.",
       "whenNotToUse": "Do not use to read reports; use list_expenses. Do not use for time; use save_timecard.",
       "inputSchema": {
         "type": "object",

@@ -232,7 +232,7 @@ public class ExpenseTests
         var card = result.GetProperty("results")[0];
         card.GetProperty("status").GetString().Should().Be("valid");
         card.GetProperty("card").GetProperty("amount_report_currency").GetDouble().Should().Be(26.87);
-        card.GetProperty("warnings")[0].GetString().Should().Be("no receipt");
+        card.GetProperty("warnings")[0].GetString().Should().Be(ExpenseToolService.ReceiptRequiredWarning);
         fake.Saves.Should().BeEmpty();
         fake.Uploads.Should().BeEmpty();
     }
@@ -412,6 +412,25 @@ public class ExpenseTests
         taxi.GetProperty("rate").GetDouble().Should().BeApproximately(0.70632793, 1e-8);
         taxi.GetProperty("receipts")[0].GetString().Should().Be("taxi.pdf");
         taxi.GetProperty("editable").GetBoolean().Should().BeTrue();
+        taxi.TryGetProperty("missing_receipt", out var none).Should().BeTrue();
+        none.ValueKind.Should().Be(JsonValueKind.Null, "the taxi has its receipt");
+        var dinner = cards.EnumerateArray().Single(c => c.GetProperty("card_uid").GetString() == "4000000000000000002");
+        dinner.GetProperty("missing_receipt").GetBoolean().Should().BeTrue("35.39 is above the type's 25 threshold and has no receipt");
+    }
+
+    [Fact]
+    public async Task ReceiptRule_ThresholdDecidesTheWarning()
+    {
+        var (svc, _) = CreateService();
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+        [
+            Input(type: "Sales - Meals/Entertainment", amount: 10),
+            Input(type: "Sales - Meals/Entertainment", amount: 30)
+        ], dryRun: true, CancellationToken.None));
+
+        result.GetProperty("results")[0].GetProperty("warnings")[0].GetString().Should().Be("no receipt (not required for this type)");
+        result.GetProperty("results")[1].GetProperty("warnings")[0].GetString().Should().Be(ExpenseToolService.ReceiptRequiredWarning);
     }
 
     [Fact]
@@ -431,6 +450,10 @@ public class ExpenseTests
             .Single(t => t.GetProperty("name").GetString() == "Mileage - Internal")
             .GetProperty("supported").GetBoolean().Should().BeFalse();
         options.GetProperty("rules").GetProperty("receipt_max_kb").GetDouble().Should().Be(2048);
+        var types = options.GetProperty("expense_types").EnumerateArray().ToDictionary(t => t.GetProperty("name").GetString()!);
+        types["Office Fee"].GetProperty("receipt_required").GetBoolean().Should().BeTrue();
+        types["Sales - Meals/Entertainment"].GetProperty("receipt_required").GetString().Should().Be("from 25 USD");
+        types["Conference"].GetProperty("receipt_required").GetBoolean().Should().BeFalse();
         options.GetProperty("receipt_pool")[0].GetProperty("receipt_uid").GetString().Should().Be("pool1");
     }
 
@@ -564,6 +587,16 @@ public class ExpenseTests
         public Task<IReadOnlyList<CurrencyRate>> GetCurrenciesAsync(ProjectorConnection c, string r, string d, string date, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<CurrencyRate>>(
                 [new CurrencyRate("CAD", "Canadian Dollars", 2, 0.70632792500499175), new CurrencyRate("USD", "US Dollars", 2, 1)]);
+
+        public Task<IReadOnlyList<ExpenseReceiptRule>> GetReceiptRulesAsync(
+            ProjectorConnection c, string r, string d, string date, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ExpenseReceiptRule>>(
+            [
+                new ExpenseReceiptRule("Office Fee", true, 0),
+                new ExpenseReceiptRule("Travel - Internal", true, 0),
+                new ExpenseReceiptRule("Sales - Meals/Entertainment", true, 25),
+                new ExpenseReceiptRule("Conference", false, null)
+            ]);
 
         public Task<ExpenseIdentity?> FindSelfAsync(ProjectorConnection c, CancellationToken ct = default) => Task.FromResult(Self);
 

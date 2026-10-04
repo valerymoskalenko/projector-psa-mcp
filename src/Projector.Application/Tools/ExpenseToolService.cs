@@ -51,6 +51,11 @@ public sealed class ExpenseToolService
     private const string CurrencyKind = "expense_currency";
     private const string RatesKind = "expense_rates";
     private const string PoolKind = "expense_pool";
+    private const string ReceiptRulesKind = "expense_receipt_rules";
+
+    /// <summary>Warning on a card whose expense type needs a receipt before the report can be submitted.</summary>
+    public const string ReceiptRequiredWarning =
+        "receipt required: Projector won't submit this card without a receipt; ask the user for it (or add it in Projector later)";
     private const string WriteOutcomeUnknown = "write_outcome_unknown";
 
     private static readonly IReadOnlyDictionary<string, string> ReportStatusNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -129,7 +134,10 @@ public sealed class ExpenseToolService
                 ?? throw new ProjectorApiException(
                     $"Expense report '{number}' was not found, or you may not see it. list_expenses without report lists the reports.",
                     "ExpenseDocumentNotFound");
-            reportView = DescribeReport(detail, text);
+            var rules = detail.ResourceId is null || detail.Currency is null
+                ? null
+                : await TryGetReceiptRulesAsync(connection, detail.ResourceId, detail.Currency, ct);
+            reportView = DescribeReport(detail, text, rules);
         }
         else
         {
@@ -190,6 +198,7 @@ public sealed class ExpenseToolService
         var rules = await GetRulesAsync(connection, ct);
         var currency = await GetReportCurrencyAsync(connection, resource, ct);
         var rates = currency is null ? [] : await GetRatesAsync(connection, resource, currency, date, ct);
+        var receiptRules = currency is null ? null : await TryGetReceiptRulesAsync(connection, resource, currency, ct);
         var days = await WithRefreshAsync(connection,
             c => _expenses.GetScheduleAsync(c, isSelf ? null : resource, AddDays(date, -30), AddDays(date, 7), ct), ct);
 
@@ -240,6 +249,7 @@ public sealed class ExpenseToolService
                 group = t.Group,
                 description_required = t.DescriptionRequired,
                 instructions = t.Instructions,
+                receipt_required = ReceiptRequirement(receiptRules, t.Name, currency),
                 supported = !(t.Mileage || t.UnitDriven),
                 note = t.Mileage ? "mileage: enter in Projector" : t.UnitDriven ? "per unit: enter in Projector" : null
             }).ToList(),
@@ -543,6 +553,7 @@ public sealed class ExpenseToolService
         var days = (await WithRefreshAsync(connection, c => _expenses.GetScheduleAsync(c, null, dates[0], dates[^1], ct), ct))
             .ToDictionary(d => d.Date, StringComparer.Ordinal);
         var maxBytes = ReceiptMaxBytes(rules);
+        var receiptRules = await TryGetReceiptRulesAsync(connection, self.ResourceId, currency, ct);
         IReadOnlyList<PoolReceipt>? pool = null;
         long totalBytes = 0;
 
@@ -742,7 +753,8 @@ public sealed class ExpenseToolService
             }
             else
             {
-                plan.Warnings.Add("no receipt");
+                var rule = receiptRules?.FirstOrDefault(r => string.Equals(r.Name, plan.ExpenseType, StringComparison.OrdinalIgnoreCase));
+                plan.Warnings.Add(rule is null ? "no receipt" : rule.AppliesTo(plan.Disbursed) ? ReceiptRequiredWarning : "no receipt (not required for this type)");
             }
         }
 
@@ -950,7 +962,7 @@ public sealed class ExpenseToolService
         editable = !r.Locked
     };
 
-    private static object DescribeReport(ExpenseReportDetail d, string? query)
+    private static object DescribeReport(ExpenseReportDetail d, string? query, IReadOnlyList<ExpenseReceiptRule>? rules)
     {
         var receiptsByCard = d.Receipts
             .SelectMany(r => r.CardUids.Select(uid => (uid, r)))
@@ -978,7 +990,13 @@ public sealed class ExpenseToolService
                 rejected_reason = c.RejectedReason,
                 receipts = c.Uid is not null && receiptsByCard.TryGetValue(c.Uid, out var list)
                     ? list.Select(r => r.Name).ToList()
-                    : null
+                    : null,
+                // Projector refuses to submit it until a receipt is added.
+                missing_receipt = c.DocumentCount == 0 && (c.Uid is null || !receiptsByCard.ContainsKey(c.Uid))
+                    && rules?.FirstOrDefault(r => string.Equals(r.Name, c.ExpenseType, StringComparison.OrdinalIgnoreCase))
+                        ?.AppliesTo(c.DisbursedAmount) == true
+                    ? true
+                    : (bool?)null
             })
             .ToList();
         return new
@@ -1051,6 +1069,36 @@ public sealed class ExpenseToolService
         ProjectorConnection connection, string resourceId, string currency, string date, CancellationToken ct) =>
         _cache.GetOrLoadAsync(connection, RatesKind, $"{currency}|{date}", TimeEntryCache.RulesTtl, () =>
             WithRefreshAsync(connection, c => _expenses.GetCurrenciesAsync(c, resourceId, currency, date, ct), ct));
+
+    /// <summary>The receipt rules per expense type; null when Projector does not return them (the check is then skipped).</summary>
+    private async Task<IReadOnlyList<ExpenseReceiptRule>?> TryGetReceiptRulesAsync(
+        ProjectorConnection connection, string resourceId, string currency, CancellationToken ct)
+    {
+        try
+        {
+            return await _cache.GetOrLoadAsync(connection, ReceiptRulesKind, $"{resourceId}|{currency}", TimeEntryCache.RulesTtl, () =>
+                WithRefreshAsync(connection, c => _expenses.GetReceiptRulesAsync(c, resourceId, currency, Today(), ct), ct));
+        }
+        catch (ProjectorApiException ex)
+        {
+            _logger.LogWarning(ex, "Expense receipt rules could not be read ({ErrorCode})", ex.ErrorCode);
+            return null;
+        }
+    }
+
+    /// <summary>true, "from N CUR" (a threshold), false, or null when unknown.</summary>
+    private static object? ReceiptRequirement(IReadOnlyList<ExpenseReceiptRule>? rules, string? type, string? currency)
+    {
+        var rule = rules?.FirstOrDefault(r => string.Equals(r.Name, type, StringComparison.OrdinalIgnoreCase));
+        if (rule is null)
+        {
+            return null;
+        }
+
+        return !rule.Required ? false
+            : rule.Threshold is > 0 ? string.Create(CultureInfo.InvariantCulture, $"from {rule.Threshold} {currency}")
+            : true;
+    }
 
     private Task<ReceiptPool> GetPoolAsync(ProjectorConnection connection, string userUid, CancellationToken ct) =>
         _cache.GetOrLoadAsync(connection, PoolKind + "_folder", userUid, TimeEntryCache.RulesTtl, () =>

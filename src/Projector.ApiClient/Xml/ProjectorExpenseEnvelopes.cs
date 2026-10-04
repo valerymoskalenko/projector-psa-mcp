@@ -60,6 +60,18 @@ public static class ProjectorExpenseEnvelopes
             new XElement(Tim + "EffectiveDate", ProjectorDateHelpers.ToSoapDate(date)),
             Resource(Tim + "ResourceIdentity", resourceId));
 
+    /// <summary>Active expense report types (hard costs, mileage) with their receipt rules.</summary>
+    public static XElement GetExpenseTypes(string ticket, string resourceId, string disbursedCurrency, string date) =>
+        Body("PwsGetExpenseTypes", ticket,
+            new XElement(Tim + "IncludeHardCostsFlag", "true"),
+            new XElement(Tim + "IncludeInactiveFlag", "false"),
+            new XElement(Tim + "IncludeMileageCostsFlag", "true"),
+            new XElement(Tim + "IncludeSoftCostsFlag", "false"),
+            new XElement(Tim + "IncludeVendorInvoiceCostsFlag", "false"),
+            Resource(Tim + "ResourceIdentity", resourceId),
+            new XElement(Tim + "DisbursedCurrencyIdentity", new XElement(Com + "CurrencyCode", disbursedCurrency)),
+            new XElement(Tim + "IncurredDate", ProjectorDateHelpers.ToSoapDate(date)));
+
     public static XElement GetDocumentManagementParameters(string ticket) =>
         Body("PwsGetDocumentManagementParameters", ticket);
 

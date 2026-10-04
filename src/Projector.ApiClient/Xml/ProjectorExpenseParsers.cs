@@ -204,6 +204,16 @@ public static class ProjectorExpenseParsers
                 x.Rate))
             .ToList();
 
+    public static IReadOnlyList<ExpenseReceiptRule> ParseReceiptRules(XDocument doc) =>
+        XmlNodeHelpers.LocalNodes(doc, "PwsExpenseType")
+            .Select(t => (Name: Text(t, "ExpenseTypeName"), Type: t))
+            .Where(x => x.Name is not null)
+            .Select(x => new ExpenseReceiptRule(
+                x.Name!,
+                Bool(Child(x.Type, "ReceiptRequiredFlag")),
+                Number(x.Type, "ReceiptRequiredThresholdAmountDisbursedCurrency") ?? Number(x.Type, "ReceiptRequiredThresholdAmount")))
+            .ToList();
+
     public static string? ParseDocumentServerUrl(XDocument doc) =>
         XmlNodeHelpers.Value(XmlNodeHelpers.LocalNode(doc, "Parameters"), "DocumentServerUrl");
 

@@ -32,6 +32,10 @@ public interface IProjectorExpenseClient
     Task<IReadOnlyList<CurrencyRate>> GetCurrenciesAsync(
         ProjectorConnection connection, string resourceId, string disbursedCurrency, string date, CancellationToken cancellationToken = default);
 
+    /// <summary>Per expense type: is a receipt needed to submit (thresholds in <paramref name="disbursedCurrency"/>).</summary>
+    Task<IReadOnlyList<ExpenseReceiptRule>> GetReceiptRulesAsync(
+        ProjectorConnection connection, string resourceId, string disbursedCurrency, string date, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// The caller's resource and user, from their own expense reports and resource record (no API returns the
     /// caller directly). Null when the caller has no expense report yet.
