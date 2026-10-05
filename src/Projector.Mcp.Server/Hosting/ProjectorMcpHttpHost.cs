@@ -92,6 +92,7 @@ public static class ProjectorMcpHttpHost
         builder.Services.AddSingleton<McpJwtIssuer>();
         builder.Services.AddSingleton<ReceiptUploadTickets>();
         builder.Services.AddSingleton<Projector.Application.Tools.IReceiptUploadTickets>(sp => sp.GetRequiredService<ReceiptUploadTickets>());
+        builder.Services.AddComponentHealth();
 
         builder.Services.AddAuthentication(options =>
             {
@@ -204,7 +205,9 @@ public static class ProjectorMcpHttpHost
         }));
 
         // The version is public (the repository and its releases are), so one call without a token shows what runs.
-        app.MapGet("/health", () => Results.Ok(new { status = "ok", version = ServerVersion.Current }));
+        // Liveness only (App Service health check path): it links to the component checks but never runs them.
+        app.MapGet("/health", () => Results.Ok(new { status = "ok", version = ServerVersion.Current, components = ComponentHealth.Path }));
+        app.MapComponentHealth();
 
         app.MapOAuthBroker();
         app.MapReceiptUpload();

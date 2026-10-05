@@ -185,6 +185,59 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Health_LinksToComponents_WithoutRunningThem()
+    {
+        using var factory = WithProjectorProbe(HttpStatusCode.OK);
+        var client = factory.CreateClient();
+        var body = JsonDocument.Parse(await client.GetStringAsync("/health")).RootElement;
+        body.GetProperty("components").GetString().Should().Be("/health/components");
+        factory.Services.GetRequiredService<Projector.Mcp.Server.Hosting.ComponentHealthRunner>().Runs.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task HealthComponents_ReportsEveryComponent_AndSharesOneRun()
+    {
+        using var factory = WithProjectorProbe(HttpStatusCode.OK);
+        var client = factory.CreateClient();
+        var response = await client.GetAsync("/health/components");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("status").GetString().Should().Be("Healthy");
+        body.GetProperty("cached").GetBoolean().Should().BeFalse();
+        var components = body.GetProperty("components");
+        components.EnumerateObject().Select(p => p.Name).Should()
+            .BeEquivalentTo("service", "configuration", "sql", "keyVault", "projector", "appInsights");
+        components.GetProperty("projector").GetProperty("description").GetString().Should().Contain("HTTP 200");
+
+        var again = JsonDocument.Parse(await client.GetStringAsync("/health/components")).RootElement;
+        again.GetProperty("cached").GetBoolean().Should().BeTrue();
+        factory.Services.GetRequiredService<Projector.Mcp.Server.Hosting.ComponentHealthRunner>().Runs.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HealthComponents_ProjectorDown_Returns503()
+    {
+        using var factory = WithProjectorProbe(HttpStatusCode.BadGateway);
+        var response = await factory.CreateClient().GetAsync("/health/components");
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("status").GetString().Should().Be("Unhealthy");
+        body.GetProperty("components").GetProperty("projector").GetProperty("status").GetString().Should().Be("Unhealthy");
+    }
+
+    /// <summary>The Projector probe answers with <paramref name="status"/> instead of going to the internet.</summary>
+    private WebApplicationFactory<Program> WithProjectorProbe(HttpStatusCode status) =>
+        _factory.WithWebHostBuilder(b => b.ConfigureServices(s =>
+            s.AddHttpClient(Projector.Mcp.Server.Hosting.ComponentHealth.ProbeClient)
+                .ConfigurePrimaryHttpMessageHandler(() => new FixedStatusHandler(status))));
+
+    private sealed class FixedStatusHandler(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status));
+    }
+
+    [Fact]
     public async Task Root_And_Initialize_ReportTheSameVersion()
     {
         var client = _factory.CreateClient();

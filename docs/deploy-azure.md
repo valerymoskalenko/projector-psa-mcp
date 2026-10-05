@@ -88,6 +88,7 @@ Re-run only this script for new versions of the server.
 ```powershell
 $base = 'https://contoso-projector-mcp.azurewebsites.net'
 Invoke-RestMethod "$base/health"      # status = ok, version = the server version that is running
+Invoke-RestMethod "$base/health/components"   # one line per component; status Healthy
 Invoke-RestMethod "$base/.well-known/oauth-authorization-server"
 Invoke-RestMethod "$base/.well-known/oauth-protected-resource"
 # Expect 401 with a WWW-Authenticate header:
@@ -120,6 +121,17 @@ Add others (for example a Copilot Studio connector callback) with `AllowedMcpRed
 The server publishes static reference catalogs (cost centers, locations, departments/titles, custom fields) as MCP resources from `src/Projector.Mcp.Server/resources/catalogs/*.json`. The repository ships **sample** values. To publish your own, put files with the same names in a folder and set `CatalogsPath` in the settings file. `Publish-App.ps1` copies them over the samples in the build output.
 
 ## Operations notes
+
+### Health endpoints
+
+| Endpoint | Checks | Answer |
+| --- | --- | --- |
+| `GET /health` | Nothing: the process answers. This is the App Service health check path | `200 {status: ok, version, components: "/health/components"}`. The link is informational: calling `/health` never runs the component checks |
+| `GET /health/components` | `service` (version, uptime), `configuration` (required settings present), `sql` (the token database answers), `keyVault` (the server's identity can read the JWT signing key's metadata, never a secret value), `projector` (the Projector sign-in host answers; API calls need a user and aren't tried), `appInsights` (connection string set; delivery isn't tested) | `200` when every component is `Healthy` or `Degraded`, `503` when one is `Unhealthy` |
+
+Why two endpoints: App Service takes an instance out of rotation, and after an hour replaces it, when its health check path fails. A Projector or SQL outage would fail every instance at once, and a new instance can't fix it. So the App Service probe stays on `/health`, and the dependency checks run on `/health/components`, which you call yourself or point an availability test at.
+
+`/health/components` needs no sign-in. It runs at most once every 30 seconds (later calls get the last answer, `cached: true`). Each check has a 5-second limit. The answer has fixed texts only: exception details go to the logs (`Component {name} is {status}` warnings).
 
 ### App settings get wiped
 

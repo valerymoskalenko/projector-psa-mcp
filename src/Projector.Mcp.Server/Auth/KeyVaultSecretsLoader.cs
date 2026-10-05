@@ -16,6 +16,29 @@ namespace Projector.Mcp.Server.Auth;
 /// </summary>
 public static class KeyVaultSecretsLoader
 {
+    internal static bool OnAppService =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"))
+        || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_INSTANCE_ID"));
+
+    /// <summary>The vault client the server uses at startup; the component health check reuses it.</summary>
+    internal static SecretClient CreateClient(string vaultUri)
+    {
+        // Prefer system-assigned Managed Identity on App Service (Key Vault + SQL use the same MI).
+        // Locally: never probe IMDS — unreachable 169.254.169.254 can throw AuthenticationFailedException
+        // and abort DefaultAzureCredential before Azure CLI / VS credentials run.
+        TokenCredential credential = OnAppService
+            ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
+            : new DefaultAzureCredential(new DefaultAzureCredentialOptions
+            {
+                ExcludeInteractiveBrowserCredential = true,
+                ExcludeManagedIdentityCredential = true,
+                ExcludeWorkloadIdentityCredential = true,
+                ExcludeAzureDeveloperCliCredential = true
+            });
+
+        return new SecretClient(new Uri(vaultUri), credential);
+    }
+
     public static async Task ApplyAsync(
         ConfigurationManager configuration,
         ILogger logger,
@@ -36,23 +59,8 @@ public static class KeyVaultSecretsLoader
         var encSecretName = section["TokenEncryptionKeySecretName"] ?? "ProjectorTokenEncryptionKey";
         var entraSecretName = section["EntraClientSecretSecretName"] ?? "ProjectorMcpEntraClientSecret";
 
-        var onAppService = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"))
-            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_INSTANCE_ID"));
-
-        // Prefer system-assigned Managed Identity on App Service (Key Vault + SQL use the same MI).
-        // Locally: never probe IMDS — unreachable 169.254.169.254 can throw AuthenticationFailedException
-        // and abort DefaultAzureCredential before Azure CLI / VS credentials run.
-        TokenCredential credential = onAppService
-            ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
-            : new DefaultAzureCredential(new DefaultAzureCredentialOptions
-            {
-                ExcludeInteractiveBrowserCredential = true,
-                ExcludeManagedIdentityCredential = true,
-                ExcludeWorkloadIdentityCredential = true,
-                ExcludeAzureDeveloperCliCredential = true
-            });
-
-        var client = new SecretClient(new Uri(vaultUri), credential);
+        var onAppService = OnAppService;
+        var client = CreateClient(vaultUri);
 
         logger.LogInformation(
             "Loading secrets from Key Vault {VaultUri} via {Credential}.",
