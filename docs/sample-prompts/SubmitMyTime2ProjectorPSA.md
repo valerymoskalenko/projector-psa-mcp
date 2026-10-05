@@ -1,0 +1,68 @@
+Make my Projector PSA time cards for one working day complete and correct, so that I only approve them here and submit them in Projector. You collect the evidence, compare it with what I posted and propose the missing cards; I approve; you save them as Drafts. Read-only until I approve entries in step 6; never submit, approve or delete anything.
+A wrong card costs me more than a question: when the evidence doesn't decide something, ask me instead of choosing.
+
+"Me" is the signed-in user: use my own e-mail address, full name and accounts wherever a tool needs them. Take my full e-mail address from my Microsoft 365 profile (for example get_me), never a user name or part of it: a search by a partial name can return nothing without an error.
+The day: today unless I name a date. If it is before 06:00, use the previous working day. Say which date you used.
+Time cards are a date and hours. Each activity counts on the date it happened in my own working day; if a tool shows times in UTC, use my local date, not the UTC date.
+
+0. **My rules**: if I keep a time-rules file (for example MyTimeRules.md: my own mappings, exclusions and evidence sources; it stays private), read it first. Its mappings and exclusions win over history and over your own judgement.
+
+1. **Projector** (Projector PSA tools; they default to me, so no resource_id is needed):
+   - list_timecards for the day: every card I already posted (any status, Rejected included) with hours, project, task path, description and editable (false = only I can fix it, in Projector).
+   - History and missing days, in one call: list_timecards with group_by=task from 4 weeks before the day through the day. tasks has one row per project and task (card count, hours, first and last date, last description): use them as style examples and project tasks for the current day's entries. by_date has my expected hours per day and short_by on working days below expected (days without cards included): that is the day's expected hours and the missing-days list (don't add cards up yourself). If a topic from step 2 is not in this window, look back up to 4 more weeks for that topic only, filtered with project_code once the project is known (one call per project).
+   - get_schedule only when the day's expected hours are 0 or lower than usual, to name the holiday or PTO.
+   - list_time_projects for the day: the projects and roles I can charge, most recently used first, each with my recent tasks (task path, WBS, hours in the last 30 days). Its query also matches recent task names and card descriptions, so a topic word (for example a customer or opportunity name) finds the project and task I used for it.
+
+2. **Evidence** of the day's work, from every source available to you, including command-line tools you can run (for example gh or az):
+   - Microsoft 365: calendar events (time, organizer, attendees), Teams meetings and calls, e-mails I sent or replied to, Teams chats and channel messages I wrote, SharePoint/OneDrive files I created or edited.
+   - GitHub, Azure DevOps or other work systems: my pushes, commits, PRs, reviews, work items and issues that day.
+   - Local git repositories, if you can access my machine: every repository under the folders my rules file lists (search recursively; folder names contain spaces, so never split paths on spaces). Commits I authored that day, and `git reflog` (branch checkouts and commits) to see when I started and stopped working on a branch.
+   - Sent mail: read my Sent Items for the whole window and page until every message is read; skip system notifications sent in my name (for example "You have been added to a team"), which can fill whole pages.
+   Not evidence: received-only mail, forwards without my own comment (for example "FYI"), automated notifications and alerts, my own messages of only a few words, my own focus or availability blocks, and earlier AI-generated time reports or summaries (use only the original messages, meetings and commits).
+   My own calendar block named after a specific task (for example "Quarterly license review") is planned work: put it under "Questions for me" with the block length as an option, and count it only if I say it happened. Don't leave it out silently. If my e-mails, chats or commits show the work itself, propose the card from that evidence (its own timestamps, not the block length) instead of asking about the block.
+   Read each meeting's chat: a message like "can't join, let's reschedule" means the meeting didn't happen; leave it out and say why under E.
+   Search a window that covers my whole working day plus one hour on each side: a search by date alone may cover a different 24 hours and split my evening.
+   Teams meetings: read the calendar event; when it has a transcript (meetingTranscriptUrl), read it. I attended if I speak in it; its start and end times are the real meeting length ("exact, from transcript"). Use transcripts only for meetings I was invited to, only for attendance and length, and never quote them in card descriptions.
+   If there is no transcript, use the calendar time and label it "scheduled, attendance not verified".
+   No tool can read the length of a Teams call: for a call without a calendar entry, ask me for its length (a screenshot of my Teams Calls history is fastest) instead of guessing.
+   Evidence that belongs to another day goes under "Could not confirm" with its date.
+
+3. **Compare**:
+   - Mark each activity as covered by an existing card (even if worded differently) or missing.
+   - Flag cards that look duplicated or charged to the wrong project, and every Rejected card (with Projector's reason if given).
+   - For each topic of the day, also look at the previous and next working day: evidence there with no card for the topic → list it in B as "possibly missing on <date>, about N h" and offer to run this prompt for that date (don't propose cards for other dates here); the same work carded on two days → flag it as an overlap.
+   - Do not merge meetings or calls with different people. Merge prep, meeting and follow-up for the same topic only if the evidence does not show them as separate work.
+
+4. **Map** each missing activity to a real project and task:
+   - Order: my rules (step 0), then history, then the topic. When a rule clearly fits, propose the card; don't turn it into a question. From history, use the task of the most recent card for the same topic, customer, person or meeting series. If history shows different tasks for the same topic, show them with their dates under "Questions for me" instead of picking one.
+   - Call get_timecard_options for the project (with query = words from the topic, a ticket or user story number, or a WBS code on big projects). Pick a listed task and one of my roles. Before using a general task (for example Team Meetings or Other), look in the list for a task named after the activity (for example All-Hands Meetings for an all-employee call, or a reporting task named after the report) and prefer it. Summary tasks are never listed (Projector rejects time on them). Where tasks show assigned, pick one with assigned = true; if the right task has assigned = false, put it under "Questions for me" (the project manager has to assign me first). The rate type is not a choice: the server always uses the task's default rate type, so never ask me about it.
+   - Task names: everywhere (proposals, options, questions, reports) show the full task path and WBS code, for example "User Story 101: Invoice export > Analysis & Design (WBS 3.1)". Never shorten a task name.
+   - If no project fits, or you would have to guess the project, put the activity under "Questions for me". Never invent a project, task, code or duration.
+   - A customer with no chargeable project (list_time_projects finds nothing): look it up with list_engagements and name the likely open project, its best tasks (full path and WBS) and its project manager, so I can ask the PM for a role. get_timecard_options with roles = [] means I can't post there yet; say so.
+   - Durations:
+     - Meetings: the transcript's start and end when there is one, otherwise the calendar time. Calls with a start and end time: exact.
+     - A run of my own messages, e-mails or commits on one topic: "suggested", from the first to the last timestamp, rounded to the nearest rules.time_increment_minutes, at least one increment. When it overlaps a meeting or call, trim it at that activity's boundary; never start it before its own first evidence.
+     - Two meetings that overlap: count the overlap once, for the one with evidence I attended (chat, transcript), and say so in B.
+     - A single message, or a call with no measurable length: "Questions for me", not an estimate.
+     - Never pad the day to reach my expected hours.
+   - Descriptions on billable projects are in customer terms: no internal names, internal chat details or internal ticket links.
+
+**Output** (in the chat):
+A. Summary: the date, expected hours, already posted, proposed, gap or surplus. If posted + proposed is more than expected, say so and list which proposed entries are estimates. Then the missing-days list from step 1 (only days below expected), with an offer to run this prompt for them.
+B. Covered activities, possible duplicates or misclassified cards, Rejected cards, and overlaps with the previous or next day. Cards to fix: if editable is true, propose the fix (it is saved in step 6 like any entry); if editable is false, list it under "Fix in Projector" with the target task path and WBS.
+C. Proposed entries, numbered: Hours | Project (code - name) | Task path (WBS) | Role | Description (50-200 characters, Projector-ready) | Evidence | Confidence (High/Medium/Low) | Exact or suggested. No rate type column. End with a total line: posted + proposed vs expected hours, then the short totals line, from each task's default rate type: "Totals: 10.25 h; internal - 2.75 h; with utilization - 7.5 h". With utilization = Billable, Billable Zero Rate and Non-Chargeable; internal = Internal and Internal - No Utilization (not utilized). If a card has another rate type, name it in the line instead of guessing.
+D. Questions for me, numbered, one item per possible time card (never group several cards or messages into one question): activities with an unclear project, conflicting history or no measurable length, each with the evidence and your options (full task path and WBS for each option).
+E. Could not confirm or left out, numbered (E1, E2, ...), one short line each with the time, what it is and why: sources you could not access, evidence that belongs to another day, cancelled meetings, and anything uncertain. Items my rules say to leave out silently are not listed.
+
+5. **Stop** and ask which numbered entries to save, with any changes.
+
+6. **Save**:
+   - Never save before I explicitly say to save (for example "save", "save all except 8"). My answers to the questions are not approval: apply them, then show the final list (#, hours, project, task path and WBS, role, description; no rate type column), the day total and the short totals line (internal, with utilization), and ask once "Save these N cards?". The same applies to updates of saved cards.
+   - In that same message, ask about anything still open (you would have to choose a task, a duration, or an entry I only named), with the full task path and WBS for every option.
+   - Cards I ask to remove or delete: save_timecard can't delete (and hours can't be 0), so list them under "Delete in Projector" with hours, project, task path and description.
+   - Save all approved entries in one save_timecard call: cards = every approved card, each with the WBS code as task (exact; task paths from history can start below the top level). It creates Drafts and never submits. Use dry_run = true first only if I ask to check before saving.
+   - Each card in the result has a status. saved: done. invalid (e.g. summary_task, not_assigned_to_task): not sent; pick the sub-task the message names only if it clearly fits, otherwise ask me once with the options, then send the fixed cards in one more call. no_default_rate_type: list the card under "enter in Projector". failed: Projector refused it; tell me why. not_attempted: an earlier card's outcome was unknown; check list_timecards for the day before sending it again. projector_busy on the whole call: retry once.
+   - When my answer merges an item into another card, show that card with its new hours and description before saving.
+   - Report from the save_timecard result, not from your proposal, as a table: # | Status | Hours | Project | Task (WBS) | Description, with errors and warnings (for example a possible duplicate, a weekend, holiday or PTO date, a day above its expected hours, a date near or after the project end) per card, then the day totals from days compared with their expected_hours and the short totals line (internal, with utilization; from the saved cards' rate_type). I submit in Projector myself.
+
+7. **Check**: don't trust the save result alone. Read the day back with list_timecards and confirm that every card I approved is there once, with its hours, task and description, and that the day total matches. Report any difference, and tell me to submit in Projector.

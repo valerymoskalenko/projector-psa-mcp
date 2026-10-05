@@ -32,7 +32,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Pr
 
 `get_report` reads four datasets in the user's own session; a result comes in parts through a cursor. Starting a saved report or an export changes no business data, so the tool is read-only. On a hosted server it is shown only to the users listed in the setting `Projector:GetReportUsers` (Entra object ids separated by commas, or `*` for everyone; empty = nobody). The exports need the user's Projector permission *Export Data*.
 
-The server also publishes MCP **prompts** (recipes such as `projector_availability`, `projector_project_bookings`) and **resources** (`projector://resources/{id}`, reference catalogs).
+The server also publishes MCP **prompts** (recipes such as `projector_availability`, `projector_review_my_day`, `projector_expense_report`; pages in [src/Projector.Mcp.Server/prompts](src/Projector.Mcp.Server/prompts)) and **resources** (`projector://resources/{id}`, reference catalogs). Longer prompts to paste into any chat, for a day of time cards and a trip expense report: [docs/sample-prompts](docs/sample-prompts/README.md).
 
 ## How it works
 
