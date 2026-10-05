@@ -313,8 +313,11 @@ public class ResourceArgumentTests
     {
         var rule = Projector.Mcp.Server.Prompts.ProjectorPrompts.SaveConfirmationRule;
         rule.Should().Contain("not approval").And.Contain("Save these N cards?");
-        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDaySteps.Should().Contain(rule)
-            .And.Contain("never submit").And.Contain("read the day back with list_timecards");
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDay("2026-10-02", rules_file: @"C:\Time\MyTimeRules.md").Text
+            .Should().Contain("- Day: 2026-10-02").And.Contain(@"- Rules file: C:\Time\MyTimeRules.md")
+            .And.Contain("- Code folders: (not given)").And.NotContain("<!--")
+            .And.Contain("are not approval").And.Contain("Save these N cards?")
+            .And.Contain("never submit").And.Contain("Read the day back with list_timecards");
         Projector.Mcp.Server.Prompts.ProjectorPrompts.LogTime("2026-09-24", 1, "P005678-001", "Work").Text
             .Should().Contain(rule);
         Projector.Mcp.Server.Prompts.ProjectorPrompts.MyTimecards("2026-09-01", "2026-09-30").Text
@@ -325,11 +328,18 @@ public class ResourceArgumentTests
     public void ExpenseReportPrompt_DryRunsFirstAndNeverSubmits()
     {
         var text = Projector.Mcp.Server.Prompts.ProjectorPrompts.ExpenseReport(
-            "Toronto, 2026-07-04 to 2026-07-11", "C:\\Receipts\\Toronto", project_code: " P001234-001 ").Text;
-        text.Should().Contain("Toronto, 2026-07-04 to 2026-07-11").And.Contain("Project: P001234-001.")
-            .And.NotContain("Report name").And.NotContain("Statement to check")
+            "Trip to Toronto, Contoso ERP rollout", "Toronto", "2026-07-04", "2026-07-11", @"C:\Receipts\Toronto",
+            project_code: " P001234-001 ").Text;
+        text.Should().Contain("- Trip name: Trip to Toronto, Contoso ERP rollout").And.Contain("- City: Toronto")
+            .And.Contain("- First day: 2026-07-04").And.Contain("- Last day: 2026-07-11")
+            .And.Contain("- Project: P001234-001").And.Contain("- Country: (not given)")
+            .And.Contain("The report name is the trip name")
             .And.Contain("dry_run = true").And.Contain("not approval").And.Contain("Never submit")
-            .And.Contain("receipt_upload").And.Contain("missing_receipt");
+            .And.Contain("receipt_upload").And.Contain("missing_receipt").And.Contain("brief = true");
+
+        var badDates = () => Projector.Mcp.Server.Prompts.ProjectorPrompts.ExpenseReport(
+            "Trip", "Toronto", "2026-07-11", "2026-07-04", "C:\\Receipts");
+        badDates.Should().Throw<ModelContextProtocol.McpException>().WithMessage("*before trip_first_day*");
     }
 
     [Fact]

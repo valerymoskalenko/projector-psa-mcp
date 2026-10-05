@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Projector.Application.Tools;
 
@@ -52,16 +53,21 @@ public sealed class ProjectorPrompts
             "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and send the full card in save_timecard cards.");
 
     [McpServerPrompt(Name = "projector_review_my_day"), Description(
-        "Reviews the signed-in user's working day: collects evidence of the work (meetings, mail, chats, files, work " +
-        "items) from the sources the client can access, compares it with the cards already posted, proposes the missing " +
-        "Draft time cards with project, task and hours, and saves the approved ones in one call. Never submits.")]
+        "Completes the signed-in user's time cards for one working day: collects evidence of the work (meetings, mail, " +
+        "chats, files, commits) from the sources the client can access, compares it with the cards already posted, proposes " +
+        "the missing Draft cards with project, task path and hours, saves only what the user approves and reads the day " +
+        "back. Never submits.")]
     public static ChatMessage ReviewMyDay(
-        [Description("Work date yyyy-MM-dd; omit for today (before 06:00: the previous working day)")] string? work_date = null)
-        => new(ChatRole.User,
-            (string.IsNullOrWhiteSpace(work_date)
-                ? "Review my Projector PSA time for today (before 06:00 use the previous working day; say which date you used). "
-                : $"Review my Projector PSA time for {work_date.Trim()}. ") +
-            ReviewMyDaySteps);
+        [Description("Work date yyyy-MM-dd; omit for today (before 06:00: the previous working day)")] string? work_date = null,
+        [Description("Path or link to the user's own time-rules file (mappings, exclusions); read first")] string? rules_file = null,
+        [Description("Folders with the user's local git repositories, scanned recursively for the day's commits")] string? code_folders = null)
+    {
+        var text = PromptFiles.Fill(PromptFiles.ReviewMyDay,
+            ("Day", OptionalDate(work_date, nameof(work_date))),
+            ("Rules file", rules_file),
+            ("Code folders", code_folders));
+        return new(ChatRole.User, text + "\n\n" + TimeEntryToolService.NoSaveToolHint);
+    }
 
     /// <summary>
     /// An agent saved 13 cards after the user had only answered its questions (2026-09-30): answers are not approval.
@@ -70,94 +76,61 @@ public sealed class ProjectorPrompts
         "My answers to your questions are not approval to save: apply them, show me the final numbered list of cards and " +
         "ask once \"Save these N cards?\"; call save_timecard only after I say yes. The same goes for changes to existing cards.";
 
-    /// <summary>The daily review, generic for any MCP client (evidence from whatever sources it can reach).</summary>
-    internal const string ReviewMyDaySteps =
-        "The goal is a complete, correct day that I only approve here and submit in Projector: you find the evidence and " +
-        "propose, I approve, you save Drafts. Read-only until I approve entries; never submit, approve or delete. A wrong card " +
-        "costs me more than a question: when the evidence doesn't decide, ask. " +
-        "Time cards are a date and hours: count each activity on my local working day. " +
-        "1) Projector (tools default to me): list_timecards for the day (every status; editable = false means only I can fix it " +
-        "in Projector); one list_timecards call with group_by = task from two weeks before the day through the day, as history " +
-        "(one row per task with the last description) and for the day's expected hours (by_date: expected_hours, and short_by " +
-        "on working days below expected, days without cards included: flag them; get_schedule only to name a holiday or PTO); " +
-        "list_time_projects for " +
-        "the day (chargeable projects, most recently used first, with my recent tasks; its query also matches recent task names " +
-        "and descriptions). " +
-        "2) Evidence of the day's work from every source you can access: my calendar and Teams meetings (a meeting transcript, " +
-        "when there is one, shows whether I attended and how long it really ran; never quote it), e-mails and chat messages I " +
-        "wrote, files I edited, work items, commits and pull requests. Not evidence: received-only mail, notifications, my own " +
-        "placeholder blocks, messages of only a few words, earlier AI summaries. A meeting chat saying it was cancelled means it " +
-        "didn't happen. Without a transcript, use the calendar time and say \"attendance not verified\". " +
-        "3) Compare: mark each activity covered by an existing card or missing; flag duplicates, wrong projects and Rejected cards. " +
-        "4) Map each missing activity: history first (the task of my most recent card for the same topic, customer or meeting " +
-        "series; conflicting history becomes a question), then get_timecard_options for the project (query = topic words, a " +
-        "ticket number or a WBS code). Summary tasks are never listed; where tasks show assigned, pick assigned = true. The rate " +
-        "type is always the task's default: never ask about it. Show the full task path and WBS code everywhere. Durations: " +
-        "meetings from the transcript or calendar; a run of my own messages or commits on one topic is a \"suggested\" block from " +
-        "first to last evidence, rounded to the nearest time increment and trimmed at meetings; a single message or an unmeasured " +
-        "call is a question, not an estimate. Never invent a project, task or duration, and never pad the day. Descriptions on " +
-        "billable projects use customer terms. " +
-        "Output: A) summary (expected, posted, proposed, gap); B) covered activities, duplicates, Rejected cards and cards to " +
-        "fix; C) numbered proposals: hours | project | task path (WBS) | role | description | evidence | confidence; D) numbered " +
-        "questions, one per possible card, with options; E) what could not be confirmed and why. Then stop and ask which entries " +
-        "to save. " +
-        SaveConfirmationRule + " " +
-        "5) Save all approved cards in one save_timecard call (cards = [...], WBS code as task). Report each card's status " +
-        "(saved, invalid, failed, not_attempted) with its reason, and the day totals against my expected hours. Fix invalid cards " +
-        "with me and send them in one more call. Cards are Drafts; I submit in Projector. " +
-        "6) Check, don't trust the save result alone: read the day back with list_timecards and confirm every approved card " +
-        "is there once with its hours, task and description and the day total matches; report any difference. " +
-        TimeEntryToolService.NoSaveToolHint;
-
     [McpServerPrompt(Name = "projector_expense_report"), Description(
-        "Builds a Draft expense report for one trip from the user's receipts (files, mail, cloud folders): one card per " +
-        "expense with its receipt attached, shown as a dry run first and saved only after the user says \"save\", then " +
-        "read back and checked. Never submits.")]
+        "Builds a Draft expense report for one trip from the user's receipts (files, mail, cloud folders): finds the " +
+        "project from the trip name, makes one card per expense with its receipt attached, shows a dry run first, saves only " +
+        "after the user writes \"save\", then reads the report back. The trip name is the report name. Never submits.")]
     public static ChatMessage ExpenseReport(
-        [Description("The trip: purpose, city and country, first and last day")] string trip,
-        [Description("Where the receipts are: a folder, a cloud link, a mailbox or mail folder")] string receipts,
-        [Description("Name of the new report; omit for \"Trip to <city> <dates>\"")] string? report_name = null,
-        [Description("Project code; omit to find it from the projects open for expenses")] string? project_code = null,
-        [Description("Optional bank or card statement to check that no trip charge is missing")] string? statement = null)
-        => new(ChatRole.User,
-            $"Create a draft Projector PSA expense report for my trip: {trip.Trim()}. Receipts: {receipts.Trim()}. " +
-            (string.IsNullOrWhiteSpace(report_name) ? "" : $"Report name: \"{report_name.Trim()}\". ") +
-            (string.IsNullOrWhiteSpace(project_code) ? "" : $"Project: {project_code.Trim()}. ") +
-            (string.IsNullOrWhiteSpace(statement) ? "" : $"Statement to check: {statement.Trim()}. ") +
-            ExpenseReportSteps);
+        [Description("Customer or purpose of the trip, e.g. \"Trip to Toronto, Contoso ERP rollout\": the report name, and what identifies the project")] string trip_name,
+        [Description("City of the trip")] string trip_city,
+        [Description("First day of the trip, yyyy-MM-dd")] string trip_first_day,
+        [Description("Last day of the trip, yyyy-MM-dd")] string trip_last_day,
+        [Description("Where the receipt files are: a folder path or a OneDrive/SharePoint link")] string receipts,
+        [Description("Country of the trip")] string? trip_country = null,
+        [Description("Mailbox or mail folder with receipt e-mails (airline, hotel, taxi, restaurants)")] string? receipt_mail = null,
+        [Description("Project code; omit to find it from the trip name among the projects open for expenses")] string? project_code = null,
+        [Description("For each shared meal, the items that are the user's")] string? shared_meals = null,
+        [Description("Bank or card statement to check that no trip charge is missing")] string? statement = null)
+    {
+        var first = RequiredDate(trip_first_day, nameof(trip_first_day));
+        var last = RequiredDate(trip_last_day, nameof(trip_last_day));
+        if (string.CompareOrdinal(last, first) < 0)
+        {
+            throw new McpException($"trip_last_day {last} is before trip_first_day {first}.");
+        }
 
-    /// <summary>The trip expense report, generic for any MCP client (it picks its own way to attach receipts).</summary>
-    internal const string ExpenseReportSteps =
-        "The goal is a report I only review and submit in Projector: you prepare and save, I submit. Never submit, approve " +
-        "or delete anything. " +
-        "1) Receipts: read every receipt file and receipt e-mail from two days before the trip through two days after. Per " +
-        "receipt note date, merchant, amount, currency, what it is and the file or e-mail it comes from. An invoice and its " +
-        "payment slip are one expense. Projector takes PDF, PNG, JPEG or GIF up to 2 MB; a receipt that is only an e-mail " +
-        "body or another format becomes a question (\"save it as PDF\"), not a card. " +
-        "2) Statement, if given: match each trip charge to a receipt (foreign currency at about the card's rate) and list " +
-        "charges without a receipt; ask about the ones you can't place instead of guessing. " +
-        "3) list_expenses with include_options = true and options_date = the trip's first day: projects open for expenses " +
-        "with their expense types, locations, currencies, report currency, rules, closed days, my receipt pool and " +
-        "receipt_upload. Without a project code, pick one open on the trip dates that matches the trip; if several or none " +
-        "fit, ask me. Copy the card split, expense types and description style of my most recent trip report (list_expenses, " +
-        "then list_expenses with report = its ER number). If a Draft report for this trip exists, add to it (report = ER number). " +
-        "4) save_expenses with dry_run = true and every card (at most 20 per call): date and amount as on the receipt, in the " +
-        "receipt's currency (Projector converts with its own rate; don't convert yourself), description \"<What> - <amount> " +
-        "<CUR> (<amount_report_currency> <report currency>)\" with the converted amount from the dry run. Show: A) a numbered " +
-        "table (date, expense type, description, amount and currency, amount in report currency, location, receipt source); " +
-        "B) the total and card count; C) the dry run's warnings word for word; D) numbered open questions. Then stop. My " +
-        "answers to D are not approval: apply them, show the final table and save only after I write \"save\". " +
-        "5) Save: attach each receipt the way your client supports and say which: upload from disk with " +
-        "options.receipt_upload (one file per request, keep the path quoted) and use the receipt_uid; or a public https " +
-        "source_url; or a receipt_uid already in my pool; or content_base64 for a file under about 10 KB. If none works for " +
-        "a file, ask me to upload it to my receipt pool in Projector. Then save_expenses with the approved cards and brief = " +
-        "true; more than 20 cards go into the same report (report = the ER number). After write_outcome_unknown or a failure, " +
-        "read the report before trying again. " +
-        "6) Check, don't trust the save result alone: list_expenses with report = the ER number; confirm every approved card " +
-        "is there once, none has missing_receipt = true and the total matches. Report the ER number, total, card count, every " +
-        "warning and pool receipts not linked to a card, and tell me to submit the report in Projector. " +
-        "Never invent a receipt, amount, date, merchant or project; ask me instead. Keep my wording in descriptions. An " +
-        "expense without a receipt gets no card until I decide.";
+        var text = PromptFiles.Fill(PromptFiles.ExpenseReport,
+            ("Trip name", Required(trip_name, nameof(trip_name))),
+            ("City", Required(trip_city, nameof(trip_city))),
+            ("Country", trip_country),
+            ("First day", first),
+            ("Last day", last),
+            ("Project", project_code),
+            ("Receipt files", Required(receipts, nameof(receipts))),
+            ("Receipt mail", receipt_mail),
+            ("Shared meals", shared_meals),
+            ("Bank or card statement", statement));
+        return new(ChatRole.User, text);
+    }
+
+    private static string Required(string? value, string name) =>
+        string.IsNullOrWhiteSpace(value) ? throw new McpException($"{name} is required.") : value.Trim();
+
+    private static string RequiredDate(string? value, string name) =>
+        OptionalDate(Required(value, name), name)!;
+
+    private static string? OptionalDate(string? value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return DateOnly.TryParseExact(value.Trim(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out _)
+            ? value.Trim()
+            : throw new McpException($"{name} must be a date yyyy-MM-dd, got '{value.Trim()}'.");
+    }
 
     [McpServerPrompt(Name = "projector_timecards_for_project"), Description(
         "Returns a person's timecards for a named project/engagement in a week or month.")]

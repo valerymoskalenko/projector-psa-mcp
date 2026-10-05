@@ -1751,7 +1751,7 @@ public class TimeEntryTests
     [Fact]
     public void NoSaveToolHint_IsInTheTimeEntryPrompts()
     {
-        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDaySteps.Should().EndWith(TimeEntryToolService.NoSaveToolHint);
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDay().Text.Should().EndWith(TimeEntryToolService.NoSaveToolHint);
         Projector.Mcp.Server.Prompts.ProjectorPrompts.LogTime("2026-09-24", 1, "P005678-001", "Work").Text
             .Should().Contain(TimeEntryToolService.NoSaveToolHint);
     }
