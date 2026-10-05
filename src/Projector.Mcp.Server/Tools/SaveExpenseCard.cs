@@ -4,14 +4,21 @@ using Projector.Application.Tools;
 
 namespace Projector.Mcp.Server.Tools;
 
-/// <summary>A receipt for one card: a file sent as base64, or a receipt already in the user's receipt pool.</summary>
+/// <summary>
+/// A receipt for one card, one of: a receipt already in the user's pool (e.g. uploaded with options.receipt_upload),
+/// a public https link the server downloads, or a small file sent as base64.
+/// </summary>
 public sealed record SaveExpenseReceipt(
-    [property: JsonPropertyName("file_name"), Description("File name with extension: .pdf, .png, .jpg, .jpeg or .gif")]
-    string? FileName = null,
-    [property: JsonPropertyName("content_base64"), Description("The file content, base64 encoded; at most 2 MB before encoding (Projector's limit)")]
+    [property: JsonPropertyName("receipt_uid"), Description("A receipt in the user's pool: from the receipt upload (list_expenses options.receipt_upload, for files from disk) or options.receipt_pool")]
+    string? ReceiptUid = null,
+    [property: JsonPropertyName("source_url"), Description("A public https link that downloads the file (e.g. a share link set to download); the server fetches it")]
+    string? SourceUrl = null,
+    [property: JsonPropertyName("content_base64"), Description("The file content, base64 encoded; only for files under about 10 KB (a large file can't be written out in one call): use the receipt upload or source_url instead")]
     string? ContentBase64 = null,
-    [property: JsonPropertyName("receipt_uid"), Description("Instead of a file: a receipt already in the pool (list_expenses options.receipt_pool)")]
-    string? ReceiptUid = null);
+    [property: JsonPropertyName("file_name"), Description("File name with extension .pdf, .png, .jpg, .jpeg or .gif; with content_base64, or to rename a source_url file")]
+    string? FileName = null,
+    [property: JsonPropertyName("sha256"), Description("Optional SHA-256 (hex) of the file, for content_base64 or source_url: a different file is refused before anything is uploaded")]
+    string? Sha256 = null);
 
 /// <summary>One cost card in a save_expenses call, as the agent sends it.</summary>
 public sealed record SaveExpenseCard(
@@ -36,5 +43,5 @@ public sealed record SaveExpenseCard(
 {
     public SaveExpenseInput ToInput() =>
         new(Date, ProjectCode, ExpenseType, Description, Amount, Currency, Location, CardUid,
-            Receipt?.FileName, Receipt?.ContentBase64, Receipt?.ReceiptUid);
+            Receipt?.FileName, Receipt?.ContentBase64, Receipt?.ReceiptUid, Receipt?.SourceUrl, Receipt?.Sha256);
 }

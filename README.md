@@ -28,7 +28,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Pr
 | `save_timecard` | **Write.** Create a Draft time card, or update my Draft/Rejected card. Never submits |
 | `get_report` | Large, cross-person results as rows: hours and revenue by person, project and period (Ginsu export), all projects with managers, approved time cards of many people, or a report I saved in Projector |
 | `list_expenses` | My (or a permitted person's) expense reports, one report's cost cards and receipts, and with `include_options` everything a save needs: projects and allowed expense types, locations, currencies, closed days, receipts in my pool |
-| `save_expenses` | **Write.** Add or change draft cost cards with receipts (files as base64) on my own expense report; foreign amounts converted with Projector's rate. Never submits |
+| `save_expenses` | **Write.** Add or change draft cost cards with receipts on my own expense report; foreign amounts converted with Projector's rate. Never submits. Receipts: a file uploaded first to `POST /receipts/upload` (ticket from `list_expenses`, binary, like Projector's own upload), a public `https` link the server downloads, or small files as base64 |
 
 `get_report` reads four datasets in the user's own session; a result comes in parts through a cursor. Starting a saved report or an export changes no business data, so the tool is read-only. On a hosted server it is shown only to the users listed in the setting `Projector:GetReportUsers` (Entra object ids separated by commas, or `*` for everyone; empty = nobody). The exports need the user's Projector permission *Export Data*.
 

@@ -19,7 +19,9 @@ public sealed record SaveExpenseInput(
     string? CardUid = null,
     string? ReceiptFileName = null,
     string? ReceiptContentBase64 = null,
-    string? ReceiptUid = null);
+    string? ReceiptUid = null,
+    string? ReceiptSourceUrl = null,
+    string? ReceiptSha256 = null);
 
 /// <summary>
 /// Expense reports: list_expenses reads reports, one report's cards and everything needed to save (for any person
@@ -36,6 +38,8 @@ public sealed class ExpenseToolService
     /// <summary>Used when Projector reports no receipt quota.</summary>
     public const long DefaultReceiptMaxBytes = 2 * 1024 * 1024;
     public const long MaxReceiptBytesPerCall = 8 * 1024 * 1024;
+    /// <summary>Receipt links downloaded at the same time in one save_expenses call.</summary>
+    private const int ParallelDownloads = 4;
     public const int DefaultMonths = 12;
     public const int DefaultMaxProjects = 50;
     public const int MaxProjectsLimit = 200;
@@ -84,19 +88,25 @@ public sealed class ExpenseToolService
     private readonly TimeEntryCache _cache;
     private readonly ProjectorToolService _tools;
     private readonly ILogger<ExpenseToolService> _logger;
+    private readonly IReceiptDownloader? _downloader;
+    private readonly IReceiptUploadTickets? _uploadTickets;
 
     public ExpenseToolService(
         ProjectorConnectionService connections,
         IProjectorExpenseClient expenses,
         TimeEntryCache cache,
         ProjectorToolService tools,
-        ILogger<ExpenseToolService> logger)
+        ILogger<ExpenseToolService> logger,
+        IReceiptDownloader? downloader = null,
+        IReceiptUploadTickets? uploadTickets = null)
     {
         _connections = connections;
         _expenses = expenses;
         _cache = cache;
         _tools = tools;
         _logger = logger;
+        _downloader = downloader;
+        _uploadTickets = uploadTickets;
     }
 
     // ---------------------------------------------------------------- list_expenses
@@ -269,7 +279,25 @@ public sealed class ExpenseToolService
             },
             closed_days = days.Where(d => !d.CanEnter || d.PeriodClosed).Select(d => d.Date).ToList(),
             days_checked = days.Count == 0 ? null : $"{days.First().Date}..{days.Last().Date}",
-            receipt_pool = pool
+            receipt_pool = pool,
+            receipt_upload = isSelf && _uploadTickets is not null ? DescribeUpload(connection.ConnectionId, rules) : null
+        };
+    }
+
+    /// <summary>The upload ticket and how to use it: Projector's own two steps (upload to the pool, then link).</summary>
+    private object DescribeUpload(string connectionId, ExpenseEntryRules rules)
+    {
+        var offer = _uploadTickets!.Issue(connectionId);
+        return new
+        {
+            url = offer.Url,
+            ticket = offer.Ticket,
+            expires_at = offer.ExpiresAt.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            max_kb = Kb(ReceiptMaxBytes(rules)),
+            types = ReceiptExtensions.Order(StringComparer.Ordinal).ToList(),
+            how = "Upload a receipt file from a shell; the bytes never pass through the chat: curl -sS -F ticket=<ticket> " +
+                "-F file=@<path> [-F sha256=<hex>] <url>. The answer's receipt_uid goes into save_expenses " +
+                "receipt.receipt_uid. Use it for any file over about 10 KB instead of content_base64."
         };
     }
 
@@ -402,6 +430,11 @@ public sealed class ExpenseToolService
                 try
                 {
                     plan.Uploaded = await _expenses.UploadReceiptAsync(connection, pool, plan.ReceiptName!, plan.ReceiptBytes!, ct);
+                    if (SizeMismatch(plan.ReceiptBytes!.Length, plan.Uploaded) is { } mismatch)
+                    {
+                        plan.Warnings.Add(mismatch);
+                    }
+
                     leftInPool.Add(new { receipt_uid = plan.Uploaded.DocumentUid, name = plan.Uploaded.Name, card = plan.Index });
                 }
                 catch (ProjectorApiException ex)
@@ -563,6 +596,7 @@ public sealed class ExpenseToolService
         var receiptRules = await TryGetReceiptRulesAsync(connection, self.ResourceId, currency, ct);
         IReadOnlyList<PoolReceipt>? pool = null;
         long totalBytes = 0;
+        var downloads = rules.ReceiptsOnCards ? await DownloadReceiptsAsync(plans, maxBytes, ct) : [];
 
         foreach (var plan in plans)
         {
@@ -700,45 +734,57 @@ public sealed class ExpenseToolService
                 }
             }
 
-            // Receipt: a file (base64) or a receipt already in the pool.
+            // Receipt: a file (base64, or a link the server downloads) or a receipt already in the pool.
             var hasFile = !string.IsNullOrWhiteSpace(input.ReceiptContentBase64);
+            var hasUrl = !string.IsNullOrWhiteSpace(input.ReceiptSourceUrl);
             var hasPool = !string.IsNullOrWhiteSpace(input.ReceiptUid);
-            if (hasFile && hasPool)
+            if ((hasFile ? 1 : 0) + (hasUrl ? 1 : 0) + (hasPool ? 1 : 0) > 1)
             {
-                errors.Add("Give either receipt.content_base64 or receipt.receipt_uid, not both.");
+                errors.Add("Give one of receipt.content_base64, receipt.source_url or receipt.receipt_uid, not several.");
             }
-            else if (hasFile || hasPool)
+            else if (hasFile || hasUrl || hasPool)
             {
                 if (!rules.ReceiptsOnCards)
                 {
                     errors.Add("Projector does not allow receipts on cost cards in this account.");
                 }
-                else if (hasFile)
+                else if (hasFile || hasUrl)
                 {
-                    var fileName = Path.GetFileName(input.ReceiptFileName?.Trim() ?? string.Empty);
-                    if (string.IsNullOrEmpty(fileName) || !ReceiptExtensions.Contains(Path.GetExtension(fileName)))
+                    byte[]? content = null;
+                    var fileName = input.ReceiptFileName;
+                    if (hasFile)
                     {
-                        errors.Add($"receipt.file_name must end in {string.Join(", ", ReceiptExtensions.Order(StringComparer.Ordinal))}.");
-                    }
-                    else
-                    {
-                        plan.ReceiptName = Truncate(fileName, MaxReceiptNameLength);
-                        plan.ReceiptBytes = TryDecode(input.ReceiptContentBase64!);
-                        if (plan.ReceiptBytes is null)
+                        content = TryDecode(input.ReceiptContentBase64!);
+                        if (content is null)
                         {
                             errors.Add("receipt.content_base64 is not valid base64.");
                         }
-                        else if (plan.ReceiptBytes.Length == 0)
+                    }
+                    else if (downloads.TryGetValue(plan.Index, out var download))
+                    {
+                        if (download.Error is not null)
                         {
-                            errors.Add("The receipt file is empty.");
-                        }
-                        else if (plan.ReceiptBytes.Length > maxBytes)
-                        {
-                            errors.Add($"The receipt is {Mb(plan.ReceiptBytes.Length)} MB; Projector accepts up to {Mb(maxBytes)} MB. Compress or scale it down.");
+                            errors.Add(download.Error);
                         }
                         else
                         {
-                            totalBytes += plan.ReceiptBytes.Length;
+                            content = download.File!.Content;
+                            fileName = string.IsNullOrWhiteSpace(fileName) ? download.File.FileName : fileName;
+                        }
+                    }
+
+                    if (content is not null)
+                    {
+                        var (name, error) = ReceiptFiles.Check(fileName, content, maxBytes, input.ReceiptSha256);
+                        if (error is not null)
+                        {
+                            errors.Add(error);
+                        }
+                        else
+                        {
+                            plan.ReceiptName = Truncate(name!, MaxReceiptNameLength);
+                            plan.ReceiptBytes = content;
+                            totalBytes += content.Length;
                         }
                     }
                 }
@@ -799,6 +845,119 @@ public sealed class ExpenseToolService
                 plan.Warnings.Add($"same date, type and amount as card {earlier.Index} in this call");
             }
         }
+    }
+
+    /// <summary>Downloads every receipt.source_url of the call, a few at a time; the file or the error per card index.</summary>
+    private async Task<Dictionary<int, (DownloadedReceipt? File, string? Error)>> DownloadReceiptsAsync(
+        List<CardPlan> plans, long maxBytes, CancellationToken ct)
+    {
+        var wanted = plans
+            .Where(p => !string.IsNullOrWhiteSpace(p.Input.ReceiptSourceUrl)
+                && string.IsNullOrWhiteSpace(p.Input.ReceiptContentBase64)
+                && string.IsNullOrWhiteSpace(p.Input.ReceiptUid))
+            .ToList();
+        if (wanted.Count == 0)
+        {
+            return [];
+        }
+
+        using var gate = new SemaphoreSlim(ParallelDownloads);
+        async Task<(int Index, DownloadedReceipt? File, string? Error)> DownloadAsync(CardPlan plan)
+        {
+            if (_downloader is null)
+            {
+                return (plan.Index, null, "receipt.source_url is not available on this server; use content_base64 or receipt_uid.");
+            }
+
+            await gate.WaitAsync(ct);
+            try
+            {
+                return (plan.Index, await _downloader.DownloadAsync(plan.Input.ReceiptSourceUrl!.Trim(), maxBytes, ct), null);
+            }
+            catch (ReceiptDownloadException ex)
+            {
+                return (plan.Index, null, ex.Message);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        var results = await Task.WhenAll(wanted.Select(DownloadAsync));
+        return results.ToDictionary(r => r.Index, r => (r.File, r.Error));
+    }
+
+    /// <summary>
+    /// A warning when Projector stored a different number of bytes than were sent. Projector keeps the bytes as sent,
+    /// even when it relabels a PNG as .jpeg / image/jpeg (live test 2026-10-05: PNG 122,609, JPEG 241,590 and PDF
+    /// 468,206 bytes all stored at the same size), so any difference means the file changed.
+    /// </summary>
+    internal static string? SizeMismatch(long sentBytes, UploadedReceipt uploaded)
+    {
+        if (uploaded.Size is not { } stored || stored == sentBytes)
+        {
+            return null;
+        }
+
+        return string.Create(CultureInfo.InvariantCulture,
+            $"receipt size differs: sent {sentBytes} bytes, Projector stored {stored}; open the receipt in Projector to check it");
+    }
+
+    // ---------------------------------------------------------------- receipt upload (HTTP endpoint)
+
+    /// <summary>
+    /// Uploads one receipt file to the caller's receipt pool, as Projector's AjxAddDocument does, and returns its
+    /// receipt_uid for save_expenses. Called by the upload endpoint with the connection from the upload ticket.
+    /// </summary>
+    public async Task<object> UploadReceiptToPoolAsync(
+        string connectionId, string? fileName, byte[] content, string? sha256, CancellationToken ct)
+    {
+        var connection = await RequireAsync(connectionId, ct);
+        var self = await RequireSelfAsync(connection, ct);
+        if (self.UserUid is null)
+        {
+            throw new ProjectorApiException("Projector did not return your user, so receipts can't be uploaded.", "NoReceiptFolder");
+        }
+
+        var rules = await GetRulesAsync(connection, ct);
+        if (!rules.ReceiptsOnCards)
+        {
+            throw new ProjectorApiException("Projector does not allow receipts on cost cards in this account.", "ReceiptsNotAllowed");
+        }
+
+        var (name, error) = ReceiptFiles.Check(fileName, content, ReceiptMaxBytes(rules), sha256);
+        if (error is not null)
+        {
+            throw new ArgumentException(error);
+        }
+
+        var pool = await GetPoolAsync(connection, self.UserUid, ct);
+        UploadedReceipt uploaded;
+        try
+        {
+            uploaded = await _expenses.UploadReceiptAsync(connection, pool, Truncate(name!, MaxReceiptNameLength), content, ct);
+        }
+        finally
+        {
+            _cache.Remove(connection, PoolKind, self.UserUid);
+        }
+
+        var mismatch = SizeMismatch(content.Length, uploaded);
+        _logger.LogInformation(
+            "receipt upload: {ReceiptKb} KB {Extension} stored in the pool as {StoredKb} KB {StoredType}",
+            Kb(content.Length), Path.GetExtension(name), Kb(uploaded.Size), uploaded.MimeType);
+        return new
+        {
+            receipt_uid = uploaded.DocumentUid,
+            name = uploaded.Name ?? name,
+            size_bytes = uploaded.Size ?? content.Length,
+            size_kb = Kb(uploaded.Size ?? content.Length),
+            mime_type = uploaded.MimeType,
+            sha256 = ReceiptFiles.Sha256(content),
+            warnings = mismatch is null ? null : new[] { mismatch },
+            next = "save_expenses with receipt.receipt_uid = this receipt_uid links it to a card"
+        };
     }
 
     internal static bool IsOwnReport(ExpenseReportDetail report, ExpenseIdentity self) =>

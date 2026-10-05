@@ -19,7 +19,9 @@ public class ExpenseTests
 {
     private const string ConnectionId = "test";
     private static readonly string FixturesDir = ResolveDir("tests", "Projector.UnitTests", "fixtures");
-    private static readonly string PngBase64 = Convert.ToBase64String([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]);
+    private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
+    private static readonly byte[] Pdf = "%PDF-1.7\n1 0 obj\n"u8.ToArray();
+    private static readonly string PngBase64 = Convert.ToBase64String(Png);
 
     // ---------------------------------------------------------------- parsers
 
@@ -269,7 +271,7 @@ public class ExpenseTests
             Input(location: "Mars"),
             Input(receiptName: "r.exe", receiptBase64: PngBase64),
             Input(receiptName: "r.png", receiptBase64: "not base64!"),
-            Input(receiptName: "r.png", receiptBase64: Convert.ToBase64String(new byte[ExpenseToolService.DefaultReceiptMaxBytes + 1])),
+            Input(receiptName: "r.png", receiptBase64: Convert.ToBase64String([.. Png, .. new byte[ExpenseToolService.DefaultReceiptMaxBytes]])),
             Input(amount: 0),
             Input(currency: "ZZZ")
         ], dryRun: false, CancellationToken.None));
@@ -281,7 +283,7 @@ public class ExpenseTests
         Error(3).Should().Contain("Unknown location 'Mars'");
         Error(4).Should().Contain("file_name must end in");
         Error(5).Should().Contain("not valid base64");
-        Error(6).Should().Contain("Compress or scale it down");
+        Error(6).Should().Contain("Projector accepts up to 2.00 MB");
         Error(7).Should().Contain("amount must be more than 0");
         Error(8).Should().Contain("Unknown currency 'ZZZ'");
         fake.Saves.Should().BeEmpty();
@@ -490,7 +492,172 @@ public class ExpenseTests
     public void ConvertAmount_RoundsToTheCurrencyDigits(double amount, double rate, double expected) =>
         ExpenseToolService.ConvertAmount(amount, rate, 2).Should().Be(expected);
 
+    // ---------------------------------------------------------------- receipt sources (v0.10.0)
+
+    [Fact]
+    public async Task SourceUrl_IsDownloadedChecked_AndUploadedUnderItsName()
+    {
+        var downloader = new FakeDownloader { File = new DownloadedReceipt(Pdf, "invoice.pdf") };
+        var (svc, fake) = CreateService(downloader);
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(sourceUrl: "https://files.example.com/s/abc?download=1", sha256: ReceiptFiles.Sha256(Pdf))],
+            dryRun: false, CancellationToken.None));
+
+        result.GetProperty("action").GetString().Should().Be("saved");
+        downloader.Urls.Should().Equal("https://files.example.com/s/abc?download=1");
+        fake.Uploads.Should().Equal("invoice.pdf");
+        fake.UploadedBytes.Single().Should().Equal(Pdf);
+        result.GetProperty("results")[0].GetProperty("receipt").GetProperty("linked").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SourceUrl_DryRunDownloadsButUploadsNothing_AndNamesAFileWithoutExtension()
+    {
+        var downloader = new FakeDownloader { File = new DownloadedReceipt(Png, null) };
+        var (svc, fake) = CreateService(downloader);
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(sourceUrl: "https://files.example.com/download")], dryRun: true, CancellationToken.None));
+
+        result.GetProperty("results")[0].GetProperty("status").GetString().Should().Be("valid");
+        result.GetProperty("results")[0].GetProperty("receipt").GetProperty("name").GetString().Should().Be("receipt.png");
+        downloader.Urls.Should().ContainSingle();
+        fake.Uploads.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SourceUrl_DownloadError_RefusesTheCall()
+    {
+        var downloader = new FakeDownloader { Error = "The receipt link answered 404 Not Found; it must be a public link that downloads the file." };
+        var (svc, fake) = CreateService(downloader);
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(sourceUrl: "https://files.example.com/x.pdf"), Input()], dryRun: false, CancellationToken.None));
+
+        result.GetProperty("action").GetString().Should().Be("refused");
+        result.GetProperty("results")[0].GetProperty("errors")[0].GetString().Should().Contain("404");
+        fake.Uploads.Should().BeEmpty();
+        fake.Saves.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SourceUrl_WebPageInsteadOfAFile_IsRefused()
+    {
+        var downloader = new FakeDownloader { File = new DownloadedReceipt("<!DOCTYPE html><html>"u8.ToArray(), "x.pdf") };
+        var (svc, fake) = CreateService(downloader);
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(sourceUrl: "https://files.example.com/x.pdf")], dryRun: false, CancellationToken.None));
+
+        result.GetProperty("results")[0].GetProperty("errors")[0].GetString().Should().Contain("not a PDF, PNG, JPEG or GIF");
+        fake.Uploads.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Receipt_TwoSourcesOrAWrongSha256_AreRefusedBeforeAnyUpload()
+    {
+        var (svc, fake) = CreateService(new FakeDownloader { File = new DownloadedReceipt(Pdf, "a.pdf") });
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+        [
+            Input(receiptName: "r.png", receiptBase64: PngBase64, sourceUrl: "https://files.example.com/a.pdf"),
+            Input(receiptName: "r.png", receiptBase64: PngBase64, sha256: new string('0', 64)),
+            Input(receiptName: "r.png", receiptBase64: PngBase64, sha256: ReceiptFiles.Sha256(Png).ToUpperInvariant())
+        ], dryRun: false, CancellationToken.None));
+
+        string? Error(int i) => result.GetProperty("results")[i].GetProperty("errors") is { ValueKind: JsonValueKind.Array } e ? e[0].GetString() : null;
+        Error(0).Should().Contain("Give one of");
+        Error(1).Should().Contain("SHA-256").And.Contain("changed on the way");
+        Error(2).Should().BeNull("the right hash in upper case is fine");
+        fake.Uploads.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Upload_SizeStoredDiffers_Warns()
+    {
+        var (svc, fake) = CreateService();
+        fake.StoredSizeDelta = -100;
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(receiptName: "taxi.png", receiptBase64: PngBase64)], dryRun: false, CancellationToken.None));
+
+        result.GetProperty("results")[0].GetProperty("warnings").EnumerateArray()
+            .Should().Contain(w => w.GetString()!.StartsWith("receipt size differs"));
+    }
+
+    [Theory]
+    [InlineData("a.jpeg", 100L, 100L, false)]
+    [InlineData("a.jpeg", 100L, 90L, true)]
+    [InlineData("a.pdf", 100L, null, false)]
+    public void SizeMismatch_WarnsOnAnyDifference(string stored, long sentBytes, long? storedBytes, bool warns) =>
+        (ExpenseToolService.SizeMismatch(sentBytes, new UploadedReceipt("1", stored, storedBytes, null)) is not null)
+            .Should().Be(warns);
+
+    [Fact]
+    public async Task UploadToPool_StoresTheFile_AndAnswersItsReceiptUid()
+    {
+        var (svc, fake) = CreateService();
+
+        var result = Json(await svc.UploadReceiptToPoolAsync(ConnectionId, "Sep12 Uber.pdf", Pdf, ReceiptFiles.Sha256(Pdf), CancellationToken.None));
+
+        result.GetProperty("receipt_uid").GetString().Should().Be("upload0");
+        result.GetProperty("size_bytes").GetInt64().Should().Be(Pdf.Length);
+        result.GetProperty("sha256").GetString().Should().Be(ReceiptFiles.Sha256(Pdf));
+        fake.Uploads.Should().Equal("Sep12 Uber.pdf");
+    }
+
+    [Theory]
+    [InlineData("r.exe", "must end in")]
+    [InlineData("r.png", "is a PDF")]
+    public async Task UploadToPool_RefusesABadFile_WithoutUploading(string name, string message)
+    {
+        var (svc, fake) = CreateService();
+
+        var act = () => svc.UploadReceiptToPoolAsync(ConnectionId, name, Pdf, null, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain(message);
+        fake.Uploads.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Options_OfferTheReceiptUpload_OnlyForTheSignedInUser()
+    {
+        var (svc, _) = CreateService(tickets: new FakeTickets());
+
+        var mine = Json(await svc.ListExpensesAsync(ConnectionId, null, null, 12, false, null, true, "2026-07-12", null, 50, 0, CancellationToken.None));
+
+        var upload = mine.GetProperty("options").GetProperty("receipt_upload");
+        upload.GetProperty("url").GetString().Should().Be("https://mcp.example/receipts/upload");
+        upload.GetProperty("ticket").GetString().Should().Be("ticket-for-test");
+        upload.GetProperty("max_kb").GetDouble().Should().Be(2048);
+        upload.GetProperty("how").GetString().Should().Contain("curl");
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    private sealed class FakeDownloader : IReceiptDownloader
+    {
+        public DownloadedReceipt? File { get; set; }
+        public string? Error { get; set; }
+        public List<string> Urls { get; } = [];
+
+        public Task<DownloadedReceipt> DownloadAsync(string url, long maxBytes, CancellationToken cancellationToken)
+        {
+            lock (Urls)
+            {
+                Urls.Add(url);
+            }
+
+            return Error is not null ? throw new ReceiptDownloadException(Error) : Task.FromResult(File!);
+        }
+    }
+
+    private sealed class FakeTickets : IReceiptUploadTickets
+    {
+        public ReceiptUploadOffer Issue(string connectionId) =>
+            new("https://mcp.example/receipts/upload", "ticket-for-" + connectionId, DateTimeOffset.UtcNow.AddMinutes(30));
+    }
 
     private static SaveExpenseInput Input(
         string date = "2026-07-12",
@@ -502,8 +669,11 @@ public class ExpenseTests
         string? location = null,
         string? cardUid = null,
         string? receiptName = null,
-        string? receiptBase64 = null) =>
-        new(date, project, type, description, amount, currency, location, cardUid, receiptName, receiptBase64);
+        string? receiptBase64 = null,
+        string? receiptUid = null,
+        string? sourceUrl = null,
+        string? sha256 = null) =>
+        new(date, project, type, description, amount, currency, location, cardUid, receiptName, receiptBase64, receiptUid, sourceUrl, sha256);
 
     private static ExpenseCardWrite Card(string referenceId) => new()
     {
@@ -531,7 +701,9 @@ public class ExpenseTests
 
     private static JsonElement Json(object value) => JsonSerializer.SerializeToElement(value);
 
-    private static (ExpenseToolService Service, FakeExpenseClient Fake) CreateService()
+    private static (ExpenseToolService Service, FakeExpenseClient Fake) CreateService(
+        IReceiptDownloader? downloader = null,
+        IReceiptUploadTickets? tickets = null)
     {
         var store = new InMemoryProjectorConnectionStore();
         store.Save(new ProjectorConnection
@@ -552,7 +724,8 @@ public class ExpenseTests
             EntryInfo = ProjectorExpenseParsers.ParseEntryInfo(Fixture("expense_entry_info.xml"))
         };
         var tools = new ProjectorToolService(connections, null!);
-        return (new ExpenseToolService(connections, fake, new TimeEntryCache(), tools, NullLogger<ExpenseToolService>.Instance), fake);
+        return (new ExpenseToolService(connections, fake, new TimeEntryCache(), tools, NullLogger<ExpenseToolService>.Instance,
+            downloader, tickets), fake);
     }
 
     private static XDocument Fixture(string name) => XDocument.Load(Path.Combine(FixturesDir, name));
@@ -593,6 +766,9 @@ public class ExpenseTests
         public Func<ExpenseSaveRequest, ExpenseSaveResult>? SaveResult { get; set; }
         public List<ExpenseSaveRequest> Saves { get; } = [];
         public List<string> Uploads { get; } = [];
+        public List<byte[]> UploadedBytes { get; } = [];
+        /// <summary>Bytes Projector reports beyond what was sent.</summary>
+        public long StoredSizeDelta { get; set; }
 
         public Task<ExpenseReportList> ListReportsAsync(ProjectorConnection c, string? r, int m, bool u, CancellationToken ct = default) =>
             Task.FromResult(Reports);
@@ -642,7 +818,9 @@ public class ExpenseTests
             }
 
             Uploads.Add(fileName);
-            return Task.FromResult(new UploadedReceipt("upload" + (Uploads.Count - 1), Path.ChangeExtension(fileName, ".jpeg"), content.Length, "image/jpeg"));
+            UploadedBytes.Add(content);
+            var name = Path.ChangeExtension(fileName, ".jpeg");
+            return Task.FromResult(new UploadedReceipt("upload" + (Uploads.Count - 1), name, content.Length + StoredSizeDelta, "image/jpeg"));
         }
 
         public Task<ExpenseSaveResult> SaveAsync(ProjectorConnection c, ExpenseSaveRequest request, CancellationToken ct = default)

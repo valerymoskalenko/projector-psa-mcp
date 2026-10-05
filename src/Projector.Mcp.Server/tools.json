@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.9.2"
+    "version": "0.10.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -823,7 +823,7 @@
       "requiredScopes": [
         "enterExpenses"
       ],
-      "description": "Lists expense reports for one person (PwsGetExpenseReports; default the signed-in user, others as Projector permits) or, with report, one report's cost cards and receipts (PwsGetExpenseDocument). include_options adds what save_expenses needs: projects open for expenses with allowed expense types and expense types (PwsGetResourceExpenseEntryInfo), rules (PwsGetExpenseEntryParameters), report currency and currencies (PwsGetCurrencies), closed days (PwsGetResourceExpenseSchedule) and the user's receipt pool (PwsGetFolderContents). The caller's identity comes from their own expense reports (no API returns it), so a user without any report gets NoExpenseIdentity.",
+      "description": "Lists expense reports for one person (PwsGetExpenseReports; default the signed-in user, others as Projector permits) or, with report, one report's cost cards and receipts (PwsGetExpenseDocument). include_options adds what save_expenses needs: projects open for expenses with allowed expense types and expense types (PwsGetResourceExpenseEntryInfo), rules (PwsGetExpenseEntryParameters), report currency and currencies (PwsGetCurrencies), closed days (PwsGetResourceExpenseSchedule) and the user's receipt pool (PwsGetFolderContents), and receipt_upload: the URL and a 30-minute ticket for POST /receipts/upload, the server's counterpart of Projector's AjxAddDocument (multipart ticket + file + optional sha256, binary; answers receipt_uid). The caller's identity comes from their own expense reports (no API returns it), so a user without any report gets NoExpenseIdentity.",
       "whenNotToUse": "Do not use for time cards; use list_timecards.",
       "inputSchema": {
         "type": "object",
@@ -890,7 +890,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts. Expense types with ReceiptRequiredFlag (PwsGetExpenseTypes, with its threshold) can't be submitted without a receipt: such a card saved without one gets the warning \"receipt required\". The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving.",
+      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). A receipt is a pool receipt_uid, a source_url the server downloads (https, public addresses only, checked on every connection and redirect), or content_base64 for small files; its type is checked from the file's bytes and an optional sha256 must match. Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts; Projector's DocumentSize must equal the bytes sent (warning otherwise). Expense types with ReceiptRequiredFlag (PwsGetExpenseTypes, with its threshold) can't be submitted without a receipt: such a card saved without one gets the warning \"receipt required\". The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving.",
       "whenNotToUse": "Do not use to read reports; use list_expenses. Do not use for time; use save_timecard.",
       "inputSchema": {
         "type": "object",
@@ -943,20 +943,28 @@
                 },
                 "receipt": {
                   "type": "object",
-                  "description": "Optional receipt: a file (file_name + content_base64) or receipt_uid from the pool",
+                  "description": "Optional receipt, one of: receipt_uid (a file in the pool, e.g. uploaded with options.receipt_upload), source_url (a public https link the server downloads) or content_base64 + file_name (files under about 10 KB)",
                   "properties": {
-                    "file_name": {
+                    "receipt_uid": {
                       "type": "string",
-                      "description": "File name with extension: .pdf, .png, .jpg, .jpeg or .gif"
+                      "description": "A receipt in the pool: from POST /receipts/upload (list_expenses options.receipt_upload) or options.receipt_pool"
+                    },
+                    "source_url": {
+                      "type": "string",
+                      "description": "Public https link that downloads the file; the server fetches it (port 443, public addresses only, at most 3 redirects, 15 s, the receipt quota)"
                     },
                     "content_base64": {
                       "type": "string",
                       "contentEncoding": "base64",
-                      "description": "The file content, base64 encoded; at most 2 MB before encoding"
+                      "description": "The file content, base64 encoded; only practical under about 10 KB"
                     },
-                    "receipt_uid": {
+                    "file_name": {
                       "type": "string",
-                      "description": "A receipt already in the pool (list_expenses options.receipt_pool)"
+                      "description": "File name with extension .pdf, .png, .jpg, .jpeg or .gif; with content_base64, or to rename a source_url file"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "description": "Optional SHA-256 (hex) of the file for content_base64 or source_url; a mismatch refuses the card before any upload"
                     }
                   }
                 }

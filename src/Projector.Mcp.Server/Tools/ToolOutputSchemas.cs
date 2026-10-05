@@ -130,7 +130,10 @@ public static class ToolOutputSchemas
         + "description_required, instructions, receipt_required (true, \"from N USD\" or false), supported), locations, report_currency, currencies, rules "
         + "(receipts_on_cards, receipt_max_kb, receipt_types, non_billable_allowed, outside_project_dates_allowed, "
         + "location_required, entry_for_others_allowed), closed_days, receipt_pool[] (receipt_uid, name, size_kb, "
-        + "uploaded)), note. Expense types with supported = false (mileage, per unit) must be entered in Projector. "
+        + "uploaded), receipt_upload (url, ticket, expires_at, max_kb, types, how: POST a multipart form with ticket, "
+        + "file and optional sha256 to url, e.g. curl -sS -F ticket=<ticket> -F file=@<path> <url>; the JSON answer has "
+        + "receipt_uid, name, size_bytes, sha256, warnings; the ticket lasts 30 minutes and 50 uploads)), note. "
+        + "Expense types with supported = false (mileage, per unit) must be entered in Projector. "
         + "On error NoExpenseIdentity: the user has no expense report yet; they create the first one in Projector.";
 
     public const string SaveExpensesSchemaHint =
@@ -142,7 +145,8 @@ public static class ToolOutputSchemas
         + "receipts_in_pool[] (uploaded receipts not linked to a card; attach them later by receipt_uid), submitted "
         + "(always false), note. refused = one or more cards invalid, nothing saved or uploaded: fix them and send all "
         + "cards again. Warning \"receipt required\": the card is saved but Projector won't submit the report until it has a "
-        + "receipt; ask the user for it. not_applied = Projector answered but the card or its receipt is not on the report as sent: tell "
+        + "receipt; ask the user for it. Warning \"receipt size differs\": Projector stored a different number of bytes than were sent; "
+        + "ask the user to open the receipt in Projector. not_applied = Projector answered but the card or its receipt is not on the report as sent: tell "
         + "the user to check the report in Projector. "
         + "Error write_outcome_unknown: the save or upload may or may not have happened; check list_expenses with the "
         + "report before sending again. On error web_services_access_view_only nothing was saved: tell the user their "

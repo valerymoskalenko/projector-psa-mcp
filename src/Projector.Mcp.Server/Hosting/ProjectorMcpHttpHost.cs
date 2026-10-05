@@ -90,6 +90,8 @@ public static class ProjectorMcpHttpHost
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddHttpClient("EntraToken");
         builder.Services.AddSingleton<McpJwtIssuer>();
+        builder.Services.AddSingleton<ReceiptUploadTickets>();
+        builder.Services.AddSingleton<Projector.Application.Tools.IReceiptUploadTickets>(sp => sp.GetRequiredService<ReceiptUploadTickets>());
 
         builder.Services.AddAuthentication(options =>
             {
@@ -205,6 +207,7 @@ public static class ProjectorMcpHttpHost
         app.MapGet("/health", () => Results.Ok(new { status = "ok", version = ServerVersion.Current }));
 
         app.MapOAuthBroker();
+        app.MapReceiptUpload();
         app.MapMcp("/mcp").RequireAuthorization().RequireCors("McpCors");
 
         return app;

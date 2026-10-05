@@ -25,6 +25,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<ProjectorToolService>();
         services.AddSingleton<TimeEntryCache>();
         services.AddSingleton<TimeEntryToolService>();
+        services.AddSingleton<IReceiptDownloader, ReceiptDownloader>();
         services.AddSingleton<ExpenseToolService>();
         services.AddSingleton<ReportCache>();
         services.AddSingleton<ReportToolService>();

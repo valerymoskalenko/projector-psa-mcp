@@ -105,6 +105,14 @@ dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- upload-rece
 dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- tool save_expenses --cards-json cards.json --report-name "Test - delete me" --dry-run true
 ```
 
+On the HTTP server, a receipt file can also be uploaded the way an AI client does it: `list_expenses` with `include_options` returns `options.receipt_upload` (URL and a 30-minute ticket), then
+
+```powershell
+curl.exe -sS -F ticket=<ticket> -F file=@receipt.pdf http://localhost:5180/receipts/upload
+```
+
+answers with the `receipt_uid` that `save_expenses` takes in `receipt.receipt_uid`. The stdio server and the `tool` command have no upload endpoint and return no `receipt_upload`.
+
 The legacy (ASMX) report and export methods behind `get_report` have their own command. The file holds the parameter elements and may be empty:
 
 ```powershell
