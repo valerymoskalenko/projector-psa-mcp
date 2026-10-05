@@ -104,6 +104,56 @@ public sealed class ProjectorPrompts
         "with me and send them in one more call. Cards are Drafts; I submit in Projector. " +
         TimeEntryToolService.NoSaveToolHint;
 
+    [McpServerPrompt(Name = "projector_expense_report"), Description(
+        "Builds a Draft expense report for one trip from the user's receipts (files, mail, cloud folders): one card per " +
+        "expense with its receipt attached, shown as a dry run first and saved only after the user says \"save\", then " +
+        "read back and checked. Never submits.")]
+    public static ChatMessage ExpenseReport(
+        [Description("The trip: purpose, city and country, first and last day")] string trip,
+        [Description("Where the receipts are: a folder, a cloud link, a mailbox or mail folder")] string receipts,
+        [Description("Name of the new report; omit for \"Trip to <city> <dates>\"")] string? report_name = null,
+        [Description("Project code; omit to find it from the projects open for expenses")] string? project_code = null,
+        [Description("Optional bank or card statement to check that no trip charge is missing")] string? statement = null)
+        => new(ChatRole.User,
+            $"Create a draft Projector PSA expense report for my trip: {trip.Trim()}. Receipts: {receipts.Trim()}. " +
+            (string.IsNullOrWhiteSpace(report_name) ? "" : $"Report name: \"{report_name.Trim()}\". ") +
+            (string.IsNullOrWhiteSpace(project_code) ? "" : $"Project: {project_code.Trim()}. ") +
+            (string.IsNullOrWhiteSpace(statement) ? "" : $"Statement to check: {statement.Trim()}. ") +
+            ExpenseReportSteps);
+
+    /// <summary>The trip expense report, generic for any MCP client (it picks its own way to attach receipts).</summary>
+    internal const string ExpenseReportSteps =
+        "The goal is a report I only review and submit in Projector: you prepare and save, I submit. Never submit, approve " +
+        "or delete anything. " +
+        "1) Receipts: read every receipt file and receipt e-mail from two days before the trip through two days after. Per " +
+        "receipt note date, merchant, amount, currency, what it is and the file or e-mail it comes from. An invoice and its " +
+        "payment slip are one expense. Projector takes PDF, PNG, JPEG or GIF up to 2 MB; a receipt that is only an e-mail " +
+        "body or another format becomes a question (\"save it as PDF\"), not a card. " +
+        "2) Statement, if given: match each trip charge to a receipt (foreign currency at about the card's rate) and list " +
+        "charges without a receipt; ask about the ones you can't place instead of guessing. " +
+        "3) list_expenses with include_options = true and options_date = the trip's first day: projects open for expenses " +
+        "with their expense types, locations, currencies, report currency, rules, closed days, my receipt pool and " +
+        "receipt_upload. Without a project code, pick one open on the trip dates that matches the trip; if several or none " +
+        "fit, ask me. Copy the card split, expense types and description style of my most recent trip report (list_expenses, " +
+        "then list_expenses with report = its ER number). If a Draft report for this trip exists, add to it (report = ER number). " +
+        "4) save_expenses with dry_run = true and every card (at most 20 per call): date and amount as on the receipt, in the " +
+        "receipt's currency (Projector converts with its own rate; don't convert yourself), description \"<What> - <amount> " +
+        "<CUR> (<amount_report_currency> <report currency>)\" with the converted amount from the dry run. Show: A) a numbered " +
+        "table (date, expense type, description, amount and currency, amount in report currency, location, receipt source); " +
+        "B) the total and card count; C) the dry run's warnings word for word; D) numbered open questions. Then stop. My " +
+        "answers to D are not approval: apply them, show the final table and save only after I write \"save\". " +
+        "5) Save: attach each receipt the way your client supports and say which: upload from disk with " +
+        "options.receipt_upload (one file per request, keep the path quoted) and use the receipt_uid; or a public https " +
+        "source_url; or a receipt_uid already in my pool; or content_base64 for a file under about 10 KB. If none works for " +
+        "a file, ask me to upload it to my receipt pool in Projector. Then save_expenses with the approved cards and brief = " +
+        "true; more than 20 cards go into the same report (report = the ER number). After write_outcome_unknown or a failure, " +
+        "read the report before trying again. " +
+        "6) Check, don't trust the save result alone: list_expenses with report = the ER number; confirm every approved card " +
+        "is there once, none has missing_receipt = true and the total matches. Report the ER number, total, card count, every " +
+        "warning and pool receipts not linked to a card, and tell me to submit the report in Projector. " +
+        "Never invent a receipt, amount, date, merchant or project; ask me instead. Keep my wording in descriptions. An " +
+        "expense without a receipt gets no card until I decide.";
+
     [McpServerPrompt(Name = "projector_timecards_for_project"), Description(
         "Returns a person's timecards for a named project/engagement in a week or month.")]
     public static ChatMessage TimecardsForProject(

@@ -321,6 +321,17 @@ public class ResourceArgumentTests
     }
 
     [Fact]
+    public void ExpenseReportPrompt_DryRunsFirstAndNeverSubmits()
+    {
+        var text = Projector.Mcp.Server.Prompts.ProjectorPrompts.ExpenseReport(
+            "Toronto, 2026-07-04 to 2026-07-11", "C:\\Receipts\\Toronto", project_code: " P001234-001 ").Text;
+        text.Should().Contain("Toronto, 2026-07-04 to 2026-07-11").And.Contain("Project: P001234-001.")
+            .And.NotContain("Report name").And.NotContain("Statement to check")
+            .And.Contain("dry_run = true").And.Contain("not approval").And.Contain("Never submit")
+            .And.Contain("receipt_upload").And.Contain("missing_receipt");
+    }
+
+    [Fact]
     public async Task ListTimecards_Query_FiltersOnWholeWords()
     {
         var (service, soap) = Create();
