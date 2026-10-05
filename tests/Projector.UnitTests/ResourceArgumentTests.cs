@@ -313,7 +313,8 @@ public class ResourceArgumentTests
     {
         var rule = Projector.Mcp.Server.Prompts.ProjectorPrompts.SaveConfirmationRule;
         rule.Should().Contain("not approval").And.Contain("Save these N cards?");
-        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDaySteps.Should().Contain(rule);
+        Projector.Mcp.Server.Prompts.ProjectorPrompts.ReviewMyDaySteps.Should().Contain(rule)
+            .And.Contain("never submit").And.Contain("read the day back with list_timecards");
         Projector.Mcp.Server.Prompts.ProjectorPrompts.LogTime("2026-09-24", 1, "P005678-001", "Work").Text
             .Should().Contain(rule);
         Projector.Mcp.Server.Prompts.ProjectorPrompts.MyTimecards("2026-09-01", "2026-09-30").Text

@@ -35,6 +35,7 @@
 
    Then wait for approval. Answers to the questions are not approval: apply them, show the final numbered list and ask once "Save these N cards?"; save only after a yes (also for changes to existing cards).
 6. **Save** all approved cards in one `save_timecard` call (`cards`, WBS code as `task`). Report each card's status and the day totals.
+7. **Check**: read the day back with `list_timecards`; every approved card is there once with its hours, task and description, and the day total matches.
 
 ## Notes
 

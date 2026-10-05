@@ -72,7 +72,10 @@ public sealed class ProjectorPrompts
 
     /// <summary>The daily review, generic for any MCP client (evidence from whatever sources it can reach).</summary>
     internal const string ReviewMyDaySteps =
-        "Read-only until I approve entries. Time cards are a date and hours: count each activity on my local working day. " +
+        "The goal is a complete, correct day that I only approve here and submit in Projector: you find the evidence and " +
+        "propose, I approve, you save Drafts. Read-only until I approve entries; never submit, approve or delete. A wrong card " +
+        "costs me more than a question: when the evidence doesn't decide, ask. " +
+        "Time cards are a date and hours: count each activity on my local working day. " +
         "1) Projector (tools default to me): list_timecards for the day (every status; editable = false means only I can fix it " +
         "in Projector); one list_timecards call with group_by = task from two weeks before the day through the day, as history " +
         "(one row per task with the last description) and for the day's expected hours (by_date: expected_hours, and short_by " +
@@ -102,6 +105,8 @@ public sealed class ProjectorPrompts
         "5) Save all approved cards in one save_timecard call (cards = [...], WBS code as task). Report each card's status " +
         "(saved, invalid, failed, not_attempted) with its reason, and the day totals against my expected hours. Fix invalid cards " +
         "with me and send them in one more call. Cards are Drafts; I submit in Projector. " +
+        "6) Check, don't trust the save result alone: read the day back with list_timecards and confirm every approved card " +
+        "is there once with its hours, task and description and the day total matches; report any difference. " +
         TimeEntryToolService.NoSaveToolHint;
 
     [McpServerPrompt(Name = "projector_expense_report"), Description(
