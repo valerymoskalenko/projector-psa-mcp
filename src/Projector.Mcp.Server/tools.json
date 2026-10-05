@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.10.0"
+    "version": "0.11.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -823,7 +823,7 @@
       "requiredScopes": [
         "enterExpenses"
       ],
-      "description": "Lists expense reports for one person (PwsGetExpenseReports; default the signed-in user, others as Projector permits) or, with report, one report's cost cards and receipts (PwsGetExpenseDocument). include_options adds what save_expenses needs: projects open for expenses with allowed expense types and expense types (PwsGetResourceExpenseEntryInfo), rules (PwsGetExpenseEntryParameters), report currency and currencies (PwsGetCurrencies), closed days (PwsGetResourceExpenseSchedule) and the user's receipt pool (PwsGetFolderContents), and receipt_upload: the URL and a 30-minute ticket for POST /receipts/upload, the server's counterpart of Projector's AjxAddDocument (multipart ticket + file + optional sha256, binary; answers receipt_uid). The caller's identity comes from their own expense reports (no API returns it), so a user without any report gets NoExpenseIdentity.",
+      "description": "Lists expense reports for one person (PwsGetExpenseReports; default the signed-in user, others as Projector permits) or, with report, one report's cost cards and receipts (PwsGetExpenseDocument). include_options adds what save_expenses needs: projects open for expenses with allowed expense types and expense types (PwsGetResourceExpenseEntryInfo), rules (PwsGetExpenseEntryParameters), report currency and currencies (PwsGetCurrencies), closed days (PwsGetResourceExpenseSchedule) and the user's receipt pool (PwsGetFolderContents), and receipt_upload: the URL and a 30-minute ticket for POST /receipts/upload, the server's counterpart of Projector's AjxAddDocument (multipart ticket + file + optional sha256, binary; answers receipt_uid). When a project_code or query matches no project, project_hint names the projects of the caller's own time cards in the 30 days before options_date (PwsGetTimecards), each marked open or not open for expenses. The caller's identity comes from their own expense reports (no API returns it), so a user without any report gets NoExpenseIdentity.",
       "whenNotToUse": "Do not use for time cards; use list_timecards.",
       "inputSchema": {
         "type": "object",
@@ -890,7 +890,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). A receipt is a pool receipt_uid, a source_url the server downloads (https, public addresses only, checked on every connection and redirect), or content_base64 for small files; its type is checked from the file's bytes and an optional sha256 must match. Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts; Projector's DocumentSize must equal the bytes sent (warning otherwise). Expense types with ReceiptRequiredFlag (PwsGetExpenseTypes, with its threshold) can't be submitted without a receipt: such a card saved without one gets the warning \"receipt required\". The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving.",
+      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). A receipt is a pool receipt_uid, a source_url the server downloads (https, public addresses only, checked on every connection and redirect), or content_base64 for small files; its type is checked from the file's bytes and an optional sha256 must match. Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts; Projector's DocumentSize must equal the bytes sent (warning otherwise), except an image stored smaller: Projector re-encodes large photos, so that gets a receipt note instead (PDFs are stored byte for byte). A receipt is added to the card; existing receipts stay (the tool never removes or replaces receipts). With card_uid, fields left out keep the card's values, so a change sends only card_uid and the changed fields; the card's receipts stay, and an existing card that has a receipt gets no \"receipt required\" warning. A refused project (not open for expenses) adds the projects of the caller's own time cards on those dates ±7 days (PwsGetTimecards; one read, only on that error). Expense types with ReceiptRequiredFlag (PwsGetExpenseTypes, with its threshold) can't be submitted without a receipt: such a card saved without one gets the warning \"receipt required\". The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving. brief = true (real saves only) lists only the cards with errors, warnings or a status other than saved, plus results_omitted.",
       "whenNotToUse": "Do not use to read reports; use list_expenses. Do not use for time; use save_timecard.",
       "inputSchema": {
         "type": "object",
@@ -905,12 +905,7 @@
             "description": "The cost cards to save, in the order the user approved them",
             "items": {
               "type": "object",
-              "required": [
-                "date",
-                "project_code",
-                "expense_type",
-                "amount"
-              ],
+              "description": "A new card needs date, project_code, expense_type and amount; with card_uid, fields left out keep the card's values",
               "properties": {
                 "date": {
                   "type": "string",
@@ -939,7 +934,7 @@
                 },
                 "card_uid": {
                   "type": "string",
-                  "description": "Only to change a draft or rejected card"
+                  "description": "Only to change a draft or rejected card; send only the fields to change"
                 },
                 "receipt": {
                   "type": "object",
@@ -947,7 +942,7 @@
                   "properties": {
                     "receipt_uid": {
                       "type": "string",
-                      "description": "A receipt in the pool: from POST /receipts/upload (list_expenses options.receipt_upload) or options.receipt_pool"
+                      "description": "A receipt in the pool: from POST /receipts/upload (list_expenses options.receipt_upload) or options.receipt_pool; added to the card, existing receipts stay"
                     },
                     "source_url": {
                       "type": "string",
@@ -982,6 +977,11 @@
           "dry_run": {
             "type": "boolean",
             "default": false
+          },
+          "brief": {
+            "type": "boolean",
+            "default": false,
+            "description": "After a real save, list only the cards with errors, warnings or a status other than saved; ignored with dry_run"
           }
         }
       }

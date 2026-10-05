@@ -42,8 +42,9 @@ public sealed class ExpenseTools
         "expense type, description, amount and currency, rate, amount in the report currency, location, project, " +
         "status, editable, receipt names, missing_receipt (Projector won't submit the card). include_options = true adds everything save_expenses needs: projects open " +
         "for expenses with their allowed expense types, expense types, locations, currencies, rules (receipt size), " +
-        "closed days, receipts waiting in the user's pool, and receipt_upload: a URL and ticket to upload receipt files " +
-        "from disk with curl (binary, as Projector itself does). Call it with include_options before save_expenses. " +
+        "closed days, receipts waiting in the user's pool, and receipt_upload: a URL and a ticket (valid 30 minutes) to " +
+        "upload receipt files from disk with curl (binary, as Projector itself does); each upload answers a receipt_uid " +
+        "for save_expenses receipt.receipt_uid. Call it with include_options before save_expenses. " +
         ToolOutputSchemas.ExpensesSchemaHint + " " +
         "WhenNotToUse: Do not use for time cards; use list_timecards.")]
     public Task<CallToolResult> ListExpenses(
@@ -68,16 +69,21 @@ public sealed class ExpenseTools
     [Description(
         "Saves 1-20 cost cards with their receipts on one of the signed-in user's own expense reports: a new draft " +
         "report (report_name) or an existing editable one (report = ER number). New cards are drafts; card_uid changes " +
-        "one of the user's draft or rejected cards. Never submits, approves or deletes; the user submits the report in " +
+        "one of the user's draft or rejected cards: send card_uid and only the fields to change (other fields and the " +
+        "card's receipts stay; cards not in the call are not touched). Never submits, approves or deletes; the user " +
+        "submits the report in " +
         "Projector. Get the values from list_expenses with include_options first. An amount in another currency is " +
         "converted with Projector's own rate for the card's date (shown as rate and amount_report_currency). A receipt " +
         "(PDF, PNG, JPEG or GIF, at most 2 MB) is one of: receipt_uid of a file in the user's pool (upload files from " +
-        "disk first with list_expenses options.receipt_upload: curl, one file per request); source_url, a public https " +
-        "link the server downloads; or content_base64 + file_name, only for files under about 10 KB, because a larger " +
-        "file can't be written out in one call. " +
+        "disk first with list_expenses options.receipt_upload: curl, one file per request, ticket valid 30 minutes); " +
+        "source_url, a public https link the server downloads; or content_base64 + file_name, only for files under " +
+        "about 10 KB, because a larger file can't be written out in one call. A receipt is added to the card; receipts " +
+        "already on it stay (remove a receipt in Projector). Projector re-encodes large photos (receipt note); PDFs are " +
+        "stored unchanged. " +
         "Every card is checked first; if one is invalid, nothing is saved. Call with dry_run = true, show the user every " +
         "card (date, project, type, description, amount, converted amount, receipt) and the total, and save only after " +
-        "the user's explicit confirmation. After a save the report is read back: a card with status not_applied was " +
+        "the user's explicit confirmation; for the save itself brief = true keeps the answer short. After a save the " +
+        "report is read back: a card with status not_applied was " +
         "not saved as sent. Most expense types need a receipt before the report can be submitted: a card without one " +
         "gets the warning \"receipt required\", so ask the user for the receipt before saving. Relay every warning. " +
         ToolOutputSchemas.SaveExpensesSchemaHint + " " +
@@ -87,6 +93,7 @@ public sealed class ExpenseTools
         [Description("ER number of an existing editable report of yours to add to or change. Omit to create a new report")] string? report = null,
         [Description("Name of a new report, e.g. Trip to Toronto 4-11 Jul 2026 (required without report; with report it renames it)")] string? report_name = null,
         [Description("true: check every card and show the converted amounts, but save and upload nothing")] bool dry_run = false,
+        [Description("true: after a real save, list only the cards with errors, warnings or a status other than saved (the counts cover every card). Ignored with dry_run")] bool brief = false,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _expenses.SaveExpensesAsync(
                 ct.ConnectionId,
@@ -94,7 +101,8 @@ public sealed class ExpenseTools
                 report_name,
                 (cards ?? []).Select(c => c.ToInput()).ToList(),
                 dry_run,
-                ct.Token),
+                ct.Token,
+                brief),
             cancellationToken);
 
     private async Task<CallToolResult> InvokeAsync(

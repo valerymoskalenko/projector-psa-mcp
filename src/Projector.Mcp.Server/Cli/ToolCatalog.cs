@@ -374,7 +374,8 @@ public static class ToolCatalog
             string.IsNullOrWhiteSpace(reportName) ? null : reportName,
             parsed.Select(c => c.ToInput()).ToList(),
             GetBool(args, "dry_run"),
-            ct);
+            ct,
+            GetBool(args, "brief"));
     }
 
     private static Task<object> GetReportAsync(

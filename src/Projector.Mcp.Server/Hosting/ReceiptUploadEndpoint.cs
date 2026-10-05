@@ -33,7 +33,7 @@ public static class ReceiptUploadEndpoint
             if (!http.Request.HasFormContentType)
             {
                 return Refuse(logger, StatusCodes.Status400BadRequest, "invalid_request",
-                    "Send a multipart form: ticket, file and optionally sha256 (curl -F ticket=... -F file=@receipt.pdf <url>).");
+                    "Send a multipart form: ticket, file and optionally sha256 (curl -F ticket=... -F \"file=@\\\"receipt.pdf\\\"\" <url>; keep the quotes around the path).");
             }
 
             IFormCollection form;

@@ -7,13 +7,16 @@ using Projector.Domain.Expenses;
 
 namespace Projector.Application.Tools;
 
-/// <summary>One cost card in a save_expenses call, as the MCP tool receives it.</summary>
+/// <summary>
+/// One cost card in a save_expenses call, as the MCP tool receives it. With CardUid, a field left null keeps the
+/// card's current value; a new card needs Date, ProjectCode, ExpenseType and Amount.
+/// </summary>
 public sealed record SaveExpenseInput(
-    string Date,
-    string ProjectCode,
-    string ExpenseType,
+    string? Date,
+    string? ProjectCode,
+    string? ExpenseType,
     string? Description,
-    double Amount,
+    double? Amount,
     string? Currency = null,
     string? Location = null,
     string? CardUid = null,
@@ -221,6 +224,10 @@ public sealed class ExpenseToolService
             .ThenBy(p => p.Code, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var page = projects.Skip(offset).Take(maxRows).ToList();
+        // Nothing matched the project filter: say where the user's own time went in the last 30 days.
+        var projectHint = isSelf && projects.Count == 0 && (code is not null || query is not null)
+            ? await TryProjectHintAsync(connection, AddDays(date, -30), date, info.Projects, ct)
+            : null;
 
         object? pool = null;
         if (self?.UserUid is not null)
@@ -251,6 +258,7 @@ public sealed class ExpenseToolService
                 expense_types = p.AnyExpenseType ? (object)"any" : p.ExpenseTypes
             }).ToList(),
             projects_total = projects.Count,
+            project_hint = projectHint,
             projects_has_more = offset + page.Count < projects.Count,
             projects_next_offset = offset + page.Count < projects.Count ? offset + page.Count : (int?)null,
             expense_types = info.ExpenseTypes.Select(t => new
@@ -296,8 +304,10 @@ public sealed class ExpenseToolService
             max_kb = Kb(ReceiptMaxBytes(rules)),
             types = ReceiptExtensions.Order(StringComparer.Ordinal).ToList(),
             how = "Upload a receipt file from a shell; the bytes never pass through the chat: curl -sS -F ticket=<ticket> " +
-                "-F file=@<path> [-F sha256=<hex>] <url>. The answer's receipt_uid goes into save_expenses " +
-                "receipt.receipt_uid. Use it for any file over about 10 KB instead of content_base64."
+                "-F \"file=@\\\"<path>\\\"\" [-F sha256=<hex>] <url>. Keep the inner quotes around the path: without them a " +
+                "file name with a comma or semicolon fails (curl error 26). The answer's receipt_uid goes into save_expenses " +
+                "receipt.receipt_uid. Use it for any file over about 10 KB instead of content_base64. The ticket is valid " +
+                "30 minutes (expires_at); call list_expenses with include_options again for a new one."
         };
     }
 
@@ -336,6 +346,9 @@ public sealed class ExpenseToolService
         public string Status { get; set; } = "valid";
         public bool HasReceipt => ReceiptBytes is not null || PoolReceipt is not null;
         public string? ReceiptDocumentUid => Uploaded?.DocumentUid ?? PoolReceipt?.DocumentUid;
+        public double Amount => Input.Amount ?? 0;
+        public string? ReceiptNote { get; set; }
+        public bool ProjectNotOpen { get; set; }
     }
 
     public async Task<object> SaveExpensesAsync(
@@ -344,7 +357,8 @@ public sealed class ExpenseToolService
         string? reportName,
         IReadOnlyList<SaveExpenseInput>? cards,
         bool dryRun,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool brief = false)
     {
         if (cards is null || cards.Count == 0)
         {
@@ -394,7 +408,7 @@ public sealed class ExpenseToolService
             ?? throw new ProjectorApiException("Projector did not say which currency your expense reports are paid in.", "NoReportCurrency");
         var digits = existing?.CurrencyDigits ?? 2;
 
-        var plans = cards.Select((c, i) => new CardPlan(i, c, [], [])).ToList();
+        var plans = cards.Select((c, i) => new CardPlan(i, WithCardValues(c, existing), [], [])).ToList();
         await ValidateAsync(connection, self, existing, currency, digits, plans, ct);
 
         var invalid = plans.Count(p => p.Errors.Count > 0);
@@ -409,7 +423,7 @@ public sealed class ExpenseToolService
             return Result(
                 dryRun ? "dry_run" : "refused", existing?.Number, name, currency, plans, existing,
                 invalid > 0
-                    ? $"Nothing was saved: {invalid} card(s) are invalid. Fix them and send all cards again (Projector saves a report as a whole)."
+                    ? $"Nothing was saved: {invalid} card(s) are invalid. Fix them and send the call again; only the cards in the call are changed, other cards on the report stay as they are."
                     : "Dry run: nothing was saved or uploaded. Show the user the cards and amounts, then call again without dry_run after an explicit \"save\".",
                 []);
         }
@@ -430,10 +444,13 @@ public sealed class ExpenseToolService
                 try
                 {
                     plan.Uploaded = await _expenses.UploadReceiptAsync(connection, pool, plan.ReceiptName!, plan.ReceiptBytes!, ct);
-                    if (SizeMismatch(plan.ReceiptBytes!.Length, plan.Uploaded) is { } mismatch)
+                    var (sizeWarning, sizeNote) = SizeCheck(plan.ReceiptBytes!.Length, plan.Uploaded, plan.ReceiptName);
+                    if (sizeWarning is not null)
                     {
-                        plan.Warnings.Add(mismatch);
+                        plan.Warnings.Add(sizeWarning);
                     }
+
+                    plan.ReceiptNote = sizeNote;
 
                     leftInPool.Add(new { receipt_uid = plan.Uploaded.DocumentUid, name = plan.Uploaded.Name, card = plan.Index });
                 }
@@ -469,7 +486,7 @@ public sealed class ExpenseToolService
                 Date = p.Date!,
                 ExpenseType = p.ExpenseType!,
                 Description = p.Description,
-                Amount = p.Input.Amount,
+                Amount = p.Amount,
                 Currency = p.Currency!,
                 DisbursedAmount = p.DisbursedExact!.Value,
                 ProjectCode = p.ProjectCode!,
@@ -561,7 +578,7 @@ public sealed class ExpenseToolService
             notApplied == 0 && stillInPool.Count == 0
                 ? "Saved as draft cards, not submitted. The user submits the report in Projector when it is complete."
                 : "Saved, but Projector did not apply everything: see the cards with status not_applied and the receipts left in the pool. Check the report in Projector.",
-            stillInPool);
+            stillInPool, brief: brief);
     }
 
     private async Task ValidateAsync(
@@ -577,9 +594,29 @@ public sealed class ExpenseToolService
         foreach (var plan in plans)
         {
             plan.Date = TryParseDate(plan.Input.Date);
-            if (plan.Date is null)
+            if (string.IsNullOrWhiteSpace(plan.Input.Date))
+            {
+                plan.Errors.Add("date is required for a new card.");
+            }
+            else if (plan.Date is null)
             {
                 plan.Errors.Add("date must be yyyy-MM-dd.");
+            }
+
+            // The other fields a new card needs (with card_uid they were filled from the card).
+            if (string.IsNullOrWhiteSpace(plan.Input.ProjectCode))
+            {
+                plan.Errors.Add("project_code is required for a new card.");
+            }
+
+            if (string.IsNullOrWhiteSpace(plan.Input.ExpenseType))
+            {
+                plan.Errors.Add("expense_type is required for a new card.");
+            }
+
+            if (plan.Input.Amount is null)
+            {
+                plan.Errors.Add("amount is required for a new card (the amount on the receipt, in its currency).");
             }
         }
 
@@ -627,15 +664,12 @@ public sealed class ExpenseToolService
             // Project and expense type.
             plan.ProjectCode = input.ProjectCode?.Trim();
             var project = info.Projects.FirstOrDefault(p => string.Equals(p.Code, plan.ProjectCode, StringComparison.OrdinalIgnoreCase));
-            if (string.IsNullOrEmpty(plan.ProjectCode))
-            {
-                errors.Add("project_code is required.");
-            }
-            else if (project is null)
+            if (project is null && !string.IsNullOrEmpty(plan.ProjectCode))
             {
                 errors.Add($"Project {plan.ProjectCode} is not open for your expenses on these dates (see list_expenses include_options).");
+                plan.ProjectNotOpen = true;
             }
-            else
+            else if (project is not null)
             {
                 plan.ProjectCode = project.Code;
                 if (plan.Date is not null && !rules.OutsideProjectDatesAllowed
@@ -647,11 +681,11 @@ public sealed class ExpenseToolService
             }
 
             var type = info.ExpenseTypes.FirstOrDefault(t => string.Equals(t.Name, input.ExpenseType?.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (type?.Name is null)
+            if (type?.Name is null && !string.IsNullOrWhiteSpace(input.ExpenseType))
             {
                 errors.Add($"Unknown expense type '{input.ExpenseType}'. Use a name from list_expenses options.expense_types.");
             }
-            else
+            else if (type?.Name is not null)
             {
                 plan.ExpenseType = type.Name;
                 if (type.Mileage || type.UnitDriven)
@@ -678,7 +712,7 @@ public sealed class ExpenseToolService
             }
 
             // Amount and day.
-            if (!(input.Amount > 0) || input.Amount > 1_000_000 || double.IsNaN(input.Amount))
+            if (input.Amount is { } amount && (!(amount > 0) || amount > 1_000_000 || double.IsNaN(amount)))
             {
                 errors.Add("amount must be more than 0 (the amount on the receipt, in its currency).");
             }
@@ -705,13 +739,13 @@ public sealed class ExpenseToolService
 
             // Currency and Projector's rate on the card's date.
             plan.Currency = string.IsNullOrWhiteSpace(input.Currency) ? currency : input.Currency.Trim().ToUpperInvariant();
-            if (plan.Date is not null && input.Amount > 0)
+            if (plan.Date is not null && input.Amount is > 0 and <= 1_000_000)
             {
                 if (string.Equals(plan.Currency, currency, StringComparison.OrdinalIgnoreCase))
                 {
                     plan.Rate = 1;
-                    plan.Disbursed = Math.Round(input.Amount, digits, MidpointRounding.AwayFromZero);
-                    plan.DisbursedExact = input.Amount;
+                    plan.Disbursed = Math.Round(plan.Amount, digits, MidpointRounding.AwayFromZero);
+                    plan.DisbursedExact = plan.Amount;
                 }
                 else
                 {
@@ -728,8 +762,8 @@ public sealed class ExpenseToolService
                     else
                     {
                         plan.Rate = rate.Rate;
-                        plan.Disbursed = ConvertAmount(input.Amount, rate.Rate.Value, digits);
-                        plan.DisbursedExact = input.Amount * rate.Rate.Value;
+                        plan.Disbursed = ConvertAmount(plan.Amount, rate.Rate.Value, digits);
+                        plan.DisbursedExact = plan.Amount * rate.Rate.Value;
                     }
                 }
             }
@@ -806,6 +840,10 @@ public sealed class ExpenseToolService
                     }
                 }
             }
+            else if (plan.Existing is not null && HasReceipt(plan.Existing, existing!))
+            {
+                // A card being changed keeps its receipts; no warning (before v0.11.0 a description change flagged every card).
+            }
             else
             {
                 var rule = receiptRules?.FirstOrDefault(r => string.Equals(r.Name, plan.ExpenseType, StringComparison.OrdinalIgnoreCase));
@@ -828,6 +866,23 @@ public sealed class ExpenseToolService
             }
         }
 
+        // A refused project: say which projects the user's time on these dates is on (one read, only on this error).
+        var notOpen = plans.Where(p => p.ProjectNotOpen).ToList();
+        if (notOpen.Count > 0)
+        {
+            var refusedDates = notOpen.Select(p => p.Date).OfType<string>().Order(StringComparer.Ordinal).ToList();
+            var hint = refusedDates.Count == 0
+                ? null
+                : await TryProjectHintAsync(connection, AddDays(refusedDates[0], -7), AddDays(refusedDates[^1], 7), info.Projects, ct);
+            if (hint is not null)
+            {
+                foreach (var plan in notOpen)
+                {
+                    plan.Errors[plan.Errors.FindIndex(e => e.StartsWith("Project ", StringComparison.Ordinal))] += " " + hint;
+                }
+            }
+        }
+
         // Likely duplicates: same date, type and amount on the report or earlier in this call.
         foreach (var plan in plans.Where(p => p.Existing is null && p.Errors.Count == 0))
         {
@@ -838,7 +893,7 @@ public sealed class ExpenseToolService
             }
 
             var earlier = plans.FirstOrDefault(p => p.Index < plan.Index && p.Errors.Count == 0
-                && p.Date == plan.Date && p.ExpenseType == plan.ExpenseType && Math.Abs(p.Input.Amount - plan.Input.Amount) < 0.005
+                && p.Date == plan.Date && p.ExpenseType == plan.ExpenseType && Math.Abs(p.Amount - plan.Amount) < 0.005
                 && string.Equals(p.Currency, plan.Currency, StringComparison.OrdinalIgnoreCase));
             if (earlier is not null)
             {
@@ -888,20 +943,32 @@ public sealed class ExpenseToolService
         return results.ToDictionary(r => r.Index, r => (r.File, r.Error));
     }
 
+    /// <summary>Note on a photo that Projector stored smaller than it was sent.</summary>
+    public const string ReencodedNote = "Projector re-encoded the photo (normal for large images; PDFs are stored unchanged)";
+
     /// <summary>
-    /// A warning when Projector stored a different number of bytes than were sent. Projector keeps the bytes as sent,
-    /// even when it relabels a PNG as .jpeg / image/jpeg (live test 2026-10-05: PNG 122,609, JPEG 241,590 and PDF
-    /// 468,206 bytes all stored at the same size), so any difference means the file changed.
+    /// Compares Projector's stored size with the bytes sent. PDFs are stored byte for byte, so any difference is a
+    /// warning. Projector re-encodes larger photos: on 2026-10-05 seven JPEGs of 349-420 KB came back as 134-184 KB,
+    /// while a 221 KB JPEG, a 241 KB JPEG and every PDF kept their size. So a smaller image gets a note, not a warning.
     /// </summary>
-    internal static string? SizeMismatch(long sentBytes, UploadedReceipt uploaded)
+    internal static (string? Warning, string? Note) SizeCheck(long sentBytes, UploadedReceipt uploaded, string? sentName)
     {
         if (uploaded.Size is not { } stored || stored == sentBytes)
         {
-            return null;
+            return (null, null);
         }
 
-        return string.Create(CultureInfo.InvariantCulture,
-            $"receipt size differs: sent {sentBytes} bytes, Projector stored {stored}; open the receipt in Projector to check it");
+        // The sent file decides: Projector relabels a PNG as image/jpeg, but a PDF stays a PDF.
+        var image = string.IsNullOrEmpty(sentName)
+            ? uploaded.MimeType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ?? false
+            : Path.GetExtension(sentName).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif";
+        if (image && stored < sentBytes)
+        {
+            return (null, ReencodedNote);
+        }
+
+        return (string.Create(CultureInfo.InvariantCulture,
+            $"receipt size differs: sent {sentBytes} bytes, Projector stored {stored}; open the receipt in Projector to check it"), null);
     }
 
     // ---------------------------------------------------------------- receipt upload (HTTP endpoint)
@@ -943,7 +1010,7 @@ public sealed class ExpenseToolService
             _cache.Remove(connection, PoolKind, self.UserUid);
         }
 
-        var mismatch = SizeMismatch(content.Length, uploaded);
+        var (mismatch, sizeNote) = SizeCheck(content.Length, uploaded, name);
         _logger.LogInformation(
             "receipt upload: {ReceiptKb} KB {Extension} stored in the pool as {StoredKb} KB {StoredType}",
             Kb(content.Length), Path.GetExtension(name), Kb(uploaded.Size), uploaded.MimeType);
@@ -956,9 +1023,77 @@ public sealed class ExpenseToolService
             mime_type = uploaded.MimeType,
             sha256 = ReceiptFiles.Sha256(content),
             warnings = mismatch is null ? null : new[] { mismatch },
+            note = sizeNote,
             next = "save_expenses with receipt.receipt_uid = this receipt_uid links it to a card"
         };
     }
+
+    /// <summary>
+    /// "Your time cards from … to … are on …": the projects of the caller's time cards, each marked open or not open
+    /// for expenses. Null when there are no time cards or they can't be read (the hint is optional).
+    /// </summary>
+    private async Task<string?> TryProjectHintAsync(
+        ProjectorConnection connection, string start, string end, IReadOnlyList<ExpenseEntryProject> open, CancellationToken ct)
+    {
+        try
+        {
+            var worked = await _tools.GetOwnTimecardProjectsAsync(connection, start, end, ct);
+            return ProjectHint(worked, open, start, end);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Time cards for the expense project hint could not be read");
+            return null;
+        }
+    }
+
+    internal static string? ProjectHint(
+        IReadOnlyList<(string Code, string? Name, double Hours)> worked, IReadOnlyList<ExpenseEntryProject> open, string start, string end)
+    {
+        if (worked.Count == 0)
+        {
+            return null;
+        }
+
+        var parts = worked.Take(5).Select(w =>
+        {
+            var isOpen = open.Any(p => string.Equals(p.Code, w.Code, StringComparison.OrdinalIgnoreCase));
+            var hours = w.Hours.ToString("0.##", CultureInfo.InvariantCulture);
+            return $"{w.Code}{(w.Name is null ? string.Empty : " " + w.Name)} ({hours} h, {(isOpen ? "open for expenses" : "not open for expenses")})";
+        });
+        return $"Your time cards from {start} to {end} are on: {string.Join("; ", parts)}. Ask the user which open project the expenses belong to.";
+    }
+
+    /// <summary>
+    /// A card in the call with card_uid: every field left out keeps the card's current value, so a description change
+    /// needs only card_uid and description. An unknown card_uid is returned unchanged (validation refuses it).
+    /// </summary>
+    internal static SaveExpenseInput WithCardValues(SaveExpenseInput input, ExpenseReportDetail? report)
+    {
+        var card = string.IsNullOrWhiteSpace(input.CardUid)
+            ? null
+            : report?.Cards.FirstOrDefault(c => string.Equals(c.Uid, input.CardUid.Trim(), StringComparison.Ordinal));
+        if (card is null)
+        {
+            return input;
+        }
+
+        return input with
+        {
+            Date = string.IsNullOrWhiteSpace(input.Date) ? card.Date : input.Date,
+            ProjectCode = string.IsNullOrWhiteSpace(input.ProjectCode) ? card.ProjectCode : input.ProjectCode,
+            ExpenseType = string.IsNullOrWhiteSpace(input.ExpenseType) ? card.ExpenseType : input.ExpenseType,
+            Description = input.Description ?? card.Description,
+            Amount = input.Amount ?? card.Amount,
+            Currency = string.IsNullOrWhiteSpace(input.Currency) ? card.Currency : input.Currency,
+            Location = string.IsNullOrWhiteSpace(input.Location) ? card.Location : input.Location
+        };
+    }
+
+    /// <summary>True when the card already has a receipt on the report.</summary>
+    internal static bool HasReceipt(ExpenseCard card, ExpenseReportDetail report) =>
+        card.DocumentCount > 0
+        || (card.Uid is not null && report.Receipts.Any(r => r.CardUids.Contains(card.Uid)));
 
     internal static bool IsOwnReport(ExpenseReportDetail report, ExpenseIdentity self) =>
         report.ResourceUid is not null && self.ResourceUid is not null
@@ -968,7 +1103,7 @@ public sealed class ExpenseToolService
     private static bool SameCard(ExpenseCard card, CardPlan plan) =>
         card.Date == plan.Date
         && string.Equals(card.ExpenseType, plan.ExpenseType, StringComparison.OrdinalIgnoreCase)
-        && card.Amount is { } amount && Math.Abs(amount - plan.Input.Amount) < 0.005
+        && card.Amount is { } amount && Math.Abs(amount - plan.Amount) < 0.005
         && string.Equals(card.Currency, plan.Currency, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Projector's rate converts the receipt's amount into the report currency, rounded to its digits.</summary>
@@ -1035,9 +1170,14 @@ public sealed class ExpenseToolService
         ExpenseReportDetail? report,
         string note,
         IReadOnlyList<object> receiptsInPool,
-        string? error = null)
+        string? error = null,
+        bool brief = false)
     {
         int Count(string status) => plans.Count(p => p.Status == status);
+        // brief (after a real save only): the cards that need attention; the counts still cover every card.
+        var shown = brief
+            ? plans.Where(p => p.Status != "saved" || p.Errors.Count > 0 || p.Warnings.Count > 0).ToList()
+            : plans;
         var batchTotal = plans.Where(p => p.Disbursed is not null).Sum(p => p.Disbursed!.Value);
         return new
         {
@@ -1052,7 +1192,7 @@ public sealed class ExpenseToolService
                 card_count = report?.Cards.Count,
                 status = ReportStatusName(report?.Status)
             },
-            results = plans.Select(p => new
+            results = shown.Select(p => new
             {
                 index = p.Index,
                 status = p.Status,
@@ -1075,6 +1215,8 @@ public sealed class ExpenseToolService
                     {
                         name = p.Uploaded?.Name ?? p.PoolReceipt?.Name ?? p.ReceiptName,
                         size_kb = Kb(p.ReceiptBytes?.Length ?? p.PoolReceipt?.Size),
+                        stored_kb = p.ReceiptNote is null ? null : Kb(p.Uploaded?.Size),
+                        note = p.ReceiptNote,
                         receipt_uid = p.ReceiptDocumentUid,
                         linked = action == "saved" ? p.ReceiptLinked : (bool?)null
                     }
@@ -1082,6 +1224,7 @@ public sealed class ExpenseToolService
                 errors = p.Errors.Count == 0 ? null : p.Errors,
                 warnings = p.Warnings.Count == 0 ? null : p.Warnings
             }).ToList(),
+            results_omitted = brief ? plans.Count - shown.Count : (int?)null,
             cards_total = Math.Round(batchTotal, 2),
             saved_count = Count("saved"),
             valid_count = action is "dry_run" or "refused" ? Count("valid") : (int?)null,

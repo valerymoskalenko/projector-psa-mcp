@@ -44,6 +44,7 @@ public class ReceiptUploadTests : IClassFixture<ProjectorWebApplicationFactory>
     [Theory]
     [InlineData(null, "receipt.pdf")]
     [InlineData("Sep12 Uber", "Sep12 Uber.pdf")]
+    [InlineData("Sep08 - Hotel 55,67CAD.pdf", "Sep08 - Hotel 55,67CAD.pdf")]
     [InlineData("C:\\temp\\inv.PDF", "inv.PDF")]
     public void Check_NamesTheFile(string? name, string expected) =>
         ReceiptFiles.Check(name, Pdf, 1024, null).Name.Should().Be(expected);

@@ -108,10 +108,12 @@ dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- tool save_e
 On the HTTP server, a receipt file can also be uploaded the way an AI client does it: `list_expenses` with `include_options` returns `options.receipt_upload` (URL and a 30-minute ticket), then
 
 ```powershell
-curl.exe -sS -F ticket=<ticket> -F file=@receipt.pdf http://localhost:5180/receipts/upload
+curl.exe -sS -F ticket=<ticket> -F 'file=@"Sep08 - Taxi 55,67CAD.pdf"' http://localhost:5180/receipts/upload
 ```
 
-answers with the `receipt_uid` that `save_expenses` takes in `receipt.receipt_uid`. The stdio server and the `tool` command have no upload endpoint and return no `receipt_upload`.
+answers with the `receipt_uid` that `save_expenses` takes in `receipt.receipt_uid`. Keep the double quotes around the path inside the `-F` value: curl reads a comma or semicolon after `file=@` as the start of an option, so an unquoted name like the one above fails with curl error 26.
+
+To change one field of an existing card, send `card_uid` and only that field (the other fields and the card's receipts stay), e.g. `[{"card_uid":"4000…","description":"Taxi to the hotel"}]` with `--report ER0…`. `--brief true` keeps the answer of a real save to the cards with warnings or errors. The stdio server and the `tool` command have no upload endpoint and return no `receipt_upload`.
 
 The legacy (ASMX) report and export methods behind `get_report` have their own command. The file holds the parameter elements and may be empty:
 

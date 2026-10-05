@@ -9,7 +9,7 @@ namespace Projector.Mcp.Server.Tools;
 /// a public https link the server downloads, or a small file sent as base64.
 /// </summary>
 public sealed record SaveExpenseReceipt(
-    [property: JsonPropertyName("receipt_uid"), Description("A receipt in the user's pool: from the receipt upload (list_expenses options.receipt_upload, for files from disk) or options.receipt_pool")]
+    [property: JsonPropertyName("receipt_uid"), Description("A receipt in the user's pool: from the receipt upload (list_expenses options.receipt_upload, for files from disk) or options.receipt_pool. It is added to the card; receipts already on the card stay")]
     string? ReceiptUid = null,
     [property: JsonPropertyName("source_url"), Description("A public https link that downloads the file (e.g. a share link set to download); the server fetches it")]
     string? SourceUrl = null,
@@ -20,23 +20,26 @@ public sealed record SaveExpenseReceipt(
     [property: JsonPropertyName("sha256"), Description("Optional SHA-256 (hex) of the file, for content_base64 or source_url: a different file is refused before anything is uploaded")]
     string? Sha256 = null);
 
-/// <summary>One cost card in a save_expenses call, as the agent sends it.</summary>
+/// <summary>
+/// One cost card in a save_expenses call, as the agent sends it. A new card needs date, project_code, expense_type
+/// and amount; with card_uid every field left out keeps the card's current value.
+/// </summary>
 public sealed record SaveExpenseCard(
-    [property: JsonPropertyName("date"), Description("Date of the expense (yyyy-MM-dd), as on the receipt")]
-    string Date,
-    [property: JsonPropertyName("project_code"), Description("Project code, e.g. P001234-001 (list_expenses options.projects)")]
-    string ProjectCode,
-    [property: JsonPropertyName("expense_type"), Description("Expense type name allowed on the project, e.g. Travel (options.expense_types)")]
-    string ExpenseType,
-    [property: JsonPropertyName("description"), Description("What was paid for, e.g. Uber airport to hotel; required for most types, at most 255 characters")]
+    [property: JsonPropertyName("date"), Description("Date of the expense (yyyy-MM-dd), as on the receipt. Required for a new card; with card_uid omit to keep the card's date")]
+    string? Date,
+    [property: JsonPropertyName("project_code"), Description("Project code, e.g. P001234-001 (list_expenses options.projects). Required for a new card; with card_uid omit to keep it")]
+    string? ProjectCode,
+    [property: JsonPropertyName("expense_type"), Description("Expense type name allowed on the project, e.g. Travel (options.expense_types). Required for a new card; with card_uid omit to keep it")]
+    string? ExpenseType,
+    [property: JsonPropertyName("description"), Description("What was paid for, e.g. Uber airport to hotel; required for most types, at most 255 characters. With card_uid omit to keep it")]
     string? Description,
-    [property: JsonPropertyName("amount"), Description("The amount on the receipt, in its currency, e.g. 38.04")]
-    double Amount,
+    [property: JsonPropertyName("amount"), Description("The amount on the receipt, in its currency, e.g. 38.04. Required for a new card; with card_uid omit to keep it")]
+    double? Amount,
     [property: JsonPropertyName("currency"), Description("The receipt's currency code, e.g. CAD. Omit for the report currency; another currency is converted with Projector's rate for the date")]
     string? Currency = null,
     [property: JsonPropertyName("location"), Description("Optional location name from options.locations")]
     string? Location = null,
-    [property: JsonPropertyName("card_uid"), Description("Only to change a draft or rejected card: its card_uid from list_expenses report. Omit to add a new card")]
+    [property: JsonPropertyName("card_uid"), Description("Only to change a draft or rejected card: its card_uid from list_expenses report; send only the fields to change, the others keep their values. Omit to add a new card")]
     string? CardUid = null,
     [property: JsonPropertyName("receipt"), Description("Optional receipt for this card")]
     SaveExpenseReceipt? Receipt = null)

@@ -1368,6 +1368,23 @@ public sealed class ProjectorToolService
         // Login requests allowFullPermissions; tag-based legacy cache entries still work for live tools.
         _connections.RequireConnectionAsync(connectionId, requiredScope: null, ct);
 
+    /// <summary>
+    /// The projects of the caller's own time cards in a date range, most hours first. save_expenses and list_expenses
+    /// use it only after a project was refused or not found, to say where the user's time went.
+    /// </summary>
+    internal async Task<IReadOnlyList<(string Code, string? Name, double Hours)>> GetOwnTimecardProjectsAsync(
+        ProjectorConnection connection, string startDate, string endDate, CancellationToken ct)
+    {
+        var listed = await WithRefreshAsync(connection, c =>
+            _soap.ListTimecardsAsync(c, null, startDate, endDate, null, null, ct), ct);
+        return listed.Timecards
+            .Where(t => !string.IsNullOrWhiteSpace(t.ProjectCode))
+            .GroupBy(t => t.ProjectCode!, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (g.Key, g.Select(t => t.ProjectName).FirstOrDefault(n => n is not null), Math.Round(g.Sum(t => t.WorkHours), 2)))
+            .OrderByDescending(p => p.Item3)
+            .ToList();
+    }
+
     private async Task<T> WithRefreshAsync<T>(
         ProjectorConnection connection,
         Func<ProjectorConnection, Task<T>> action,

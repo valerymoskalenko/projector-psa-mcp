@@ -8,6 +8,7 @@ using Projector.Application.Tools;
 using Projector.Domain.Auth;
 using Projector.Domain.Exceptions;
 using Projector.Domain.Expenses;
+using Projector.Domain.Timecards;
 
 namespace Projector.UnitTests;
 
@@ -574,25 +575,165 @@ public class ExpenseTests
     }
 
     [Fact]
-    public async Task Upload_SizeStoredDiffers_Warns()
+    public async Task Upload_PdfStoredWithAnotherSize_Warns()
     {
         var (svc, fake) = CreateService();
         fake.StoredSizeDelta = -100;
 
         var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
-            [Input(receiptName: "taxi.png", receiptBase64: PngBase64)], dryRun: false, CancellationToken.None));
+            [Input(receiptName: "taxi.pdf", receiptBase64: Convert.ToBase64String(Pdf))], dryRun: false, CancellationToken.None));
 
         result.GetProperty("results")[0].GetProperty("warnings").EnumerateArray()
             .Should().Contain(w => w.GetString()!.StartsWith("receipt size differs"));
     }
 
+    [Fact]
+    public async Task Upload_PhotoStoredSmaller_GetsANoteNotAWarning()
+    {
+        var (svc, fake) = CreateService();
+        fake.StoredSizeDelta = -5;
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(receiptName: "taxi.png", receiptBase64: PngBase64)], dryRun: false, CancellationToken.None));
+
+        var card = result.GetProperty("results")[0];
+        card.GetProperty("receipt").GetProperty("note").GetString().Should().Be(ExpenseToolService.ReencodedNote);
+        card.GetProperty("warnings").ValueKind.Should().Be(JsonValueKind.Null, "a re-encoded photo is not a warning");
+    }
+
     [Theory]
-    [InlineData("a.jpeg", 100L, 100L, false)]
-    [InlineData("a.jpeg", 100L, 90L, true)]
-    [InlineData("a.pdf", 100L, null, false)]
-    public void SizeMismatch_WarnsOnAnyDifference(string stored, long sentBytes, long? storedBytes, bool warns) =>
-        (ExpenseToolService.SizeMismatch(sentBytes, new UploadedReceipt("1", stored, storedBytes, null)) is not null)
-            .Should().Be(warns);
+    [InlineData("a.jpeg", 100L, 100L, false, false)]
+    [InlineData("a.jpeg", 100L, 90L, false, true)]
+    [InlineData("a.png", 100L, 90L, false, true)]
+    [InlineData("a.jpeg", 100L, 110L, true, false)]
+    [InlineData("a.pdf", 100L, 90L, true, false)]
+    [InlineData("a.pdf", 100L, null, false, false)]
+    public void SizeCheck_PhotosMayShrink_PdfsMustMatch(string name, long sentBytes, long? storedBytes, bool warns, bool notes)
+    {
+        var (warning, note) = ExpenseToolService.SizeCheck(sentBytes, new UploadedReceipt("1", name, storedBytes, null), name);
+        (warning is not null).Should().Be(warns);
+        (note is not null).Should().Be(notes);
+    }
+
+    [Fact]
+    public async Task Update_WithOnlyCardUidAndDescription_KeepsTheCardsValuesAndReceipt()
+    {
+        var (svc, fake) = CreateService();
+        var taxi = fake.Report.Cards.Single(c => c.Uid == "4000000000000000001");
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, "ER00200", null,
+            [new SaveExpenseInput(null, null, null, "Taxi to the hotel", null, CardUid: "4000000000000000001")],
+            dryRun: true, CancellationToken.None));
+        result.GetProperty("results")[0].GetProperty("warnings").ValueKind.Should().Be(JsonValueKind.Null, "the taxi already has a receipt");
+
+        await svc.SaveExpensesAsync(ConnectionId, "ER00200", null,
+            [new SaveExpenseInput(null, null, null, "Taxi to the hotel", null, CardUid: "4000000000000000001")],
+            dryRun: false, CancellationToken.None);
+
+        var request = fake.Saves.Should().ContainSingle().Subject;
+        var sent = request.Cards.Single();
+        sent.CardUid.Should().Be(taxi.Uid);
+        sent.Description.Should().Be("Taxi to the hotel");
+        sent.Date.Should().Be(taxi.Date);
+        sent.ExpenseType.Should().Be(taxi.ExpenseType);
+        sent.ProjectCode.Should().Be(taxi.ProjectCode);
+        sent.Amount.Should().Be(taxi.Amount!.Value);
+        sent.Currency.Should().Be(taxi.Currency);
+        request.Receipts.Should().BeEmpty("the card keeps its receipt; nothing is relinked");
+    }
+
+    [Fact]
+    public async Task NewCard_WithoutTheRequiredFields_IsRefused()
+    {
+        var (svc, fake) = CreateService();
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [new SaveExpenseInput(null, null, null, "Taxi", null)], dryRun: true, CancellationToken.None));
+
+        var errors = result.GetProperty("results")[0].GetProperty("errors").EnumerateArray().Select(e => e.GetString()).ToList();
+        errors.Should().Contain("date is required for a new card.");
+        errors.Should().Contain("project_code is required for a new card.");
+        errors.Should().Contain("expense_type is required for a new card.");
+        errors.Should().Contain(e => e!.StartsWith("amount is required for a new card"));
+        fake.Saves.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Brief_ListsOnlyTheCardsThatNeedAttention()
+    {
+        var (svc, _) = CreateService();
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+        [
+            Input(amount: 1, receiptName: "a.png", receiptBase64: PngBase64),
+            Input(amount: 2)
+        ], dryRun: false, CancellationToken.None, brief: true));
+
+        result.GetProperty("action").GetString().Should().Be("saved");
+        result.GetProperty("results").GetArrayLength().Should().Be(1);
+        result.GetProperty("results")[0].GetProperty("index").GetInt32().Should().Be(1);
+        result.GetProperty("results_omitted").GetInt32().Should().Be(1);
+        result.GetProperty("saved_count").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Brief_IsIgnoredOnADryRun()
+    {
+        var (svc, _) = CreateService();
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(amount: 1, receiptName: "a.png", receiptBase64: PngBase64), Input(amount: 2)],
+            dryRun: true, CancellationToken.None, brief: true));
+
+        result.GetProperty("results").GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ProjectNotOpen_NamesTheProjectsOfTheUsersTimeCards()
+    {
+        var soap = ResourceArgumentTests.RecordingSoap.Create();
+        soap.Timecards.Add(new Timecard { ProjectCode = "C000009-001", ProjectName = "Internal Time", WorkHours = 30, WorkDate = "2026-07-10" });
+        soap.Timecards.Add(new Timecard { ProjectCode = "C000001-003", ProjectName = "Client Work", WorkHours = 8, WorkDate = "2026-07-11" });
+        var (svc, _) = CreateService(soap: soap);
+
+        var result = Json(await svc.SaveExpensesAsync(ConnectionId, null, "Trip",
+            [Input(project: "C000009-001")], dryRun: true, CancellationToken.None));
+
+        var error = result.GetProperty("results")[0].GetProperty("errors")[0].GetString();
+        error.Should().StartWith("Project C000009-001 is not open for your expenses")
+            .And.Contain("Your time cards from 2026-07-05 to 2026-07-19 are on: C000009-001 Internal Time (30 h, not open for expenses); C000001-003 Client Work (8 h, open for expenses)");
+        soap.Calls.Should().Equal("ListTimecardsAsync(<none>)");
+    }
+
+    [Fact]
+    public async Task ValidCards_ReadNoTimeCards()
+    {
+        var soap = ResourceArgumentTests.RecordingSoap.Create();
+        var (svc, _) = CreateService(soap: soap);
+
+        await svc.SaveExpensesAsync(ConnectionId, null, "Trip", [Input()], dryRun: true, CancellationToken.None);
+
+        soap.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Options_ProjectFilterWithoutMatch_GivesTheTimeCardHint()
+    {
+        var soap = ResourceArgumentTests.RecordingSoap.Create();
+        soap.Timecards.Add(new Timecard { ProjectCode = "C000009-001", ProjectName = "Internal Time", WorkHours = 30, WorkDate = "2026-07-10" });
+        var (svc, _) = CreateService(soap: soap);
+
+        var found = Json(await svc.ListExpensesAsync(ConnectionId, null, null, 12, false, null, true, "2026-07-12", "C000001-003", 50, 0,
+            CancellationToken.None));
+        found.GetProperty("options").GetProperty("project_hint").ValueKind.Should().Be(JsonValueKind.Null);
+        soap.Calls.Should().BeEmpty();
+
+        var missing = Json(await svc.ListExpensesAsync(ConnectionId, null, null, 12, false, null, true, "2026-07-12", "C000009-001", 50, 0,
+            CancellationToken.None));
+        missing.GetProperty("options").GetProperty("project_hint").GetString()
+            .Should().Contain("C000009-001 Internal Time (30 h, not open for expenses)");
+        soap.Calls.Should().Equal("ListTimecardsAsync(<none>)");
+    }
 
     [Fact]
     public async Task UploadToPool_StoresTheFile_AndAnswersItsReceiptUid()
@@ -703,7 +844,8 @@ public class ExpenseTests
 
     private static (ExpenseToolService Service, FakeExpenseClient Fake) CreateService(
         IReceiptDownloader? downloader = null,
-        IReceiptUploadTickets? tickets = null)
+        IReceiptUploadTickets? tickets = null,
+        ResourceArgumentTests.RecordingSoap? soap = null)
     {
         var store = new InMemoryProjectorConnectionStore();
         store.Save(new ProjectorConnection
@@ -723,7 +865,7 @@ public class ExpenseTests
             Report = ProjectorExpenseParsers.ParseReportDetail(Fixture("expense_document.xml"))!,
             EntryInfo = ProjectorExpenseParsers.ParseEntryInfo(Fixture("expense_entry_info.xml"))
         };
-        var tools = new ProjectorToolService(connections, null!);
+        var tools = new ProjectorToolService(connections, soap is null ? null! : (IProjectorSoapClient)(object)soap);
         return (new ExpenseToolService(connections, fake, new TimeEntryCache(), tools, NullLogger<ExpenseToolService>.Instance,
             downloader, tickets), fake);
     }
