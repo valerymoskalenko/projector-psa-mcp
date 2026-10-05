@@ -28,7 +28,7 @@
 
   <ItemGroup>
     <!-- The long prompts are the MCP prompt text itself (PromptFiles). -->
-    <EmbeddedResource Include="prompts\projector_review_my_day.md;prompts\projector_expense_report.md" LogicalName="prompts.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="prompts\projector_draft_day_timecards.md;prompts\projector_draft_trip_expenses.md" LogicalName="prompts.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

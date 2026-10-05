@@ -1,4 +1,4 @@
-<!-- The MCP prompt projector_expense_report: the server sends this text, with the Trip lines filled from the prompt's arguments. To use it without the server's prompt support, fill in the Trip lines and paste it into any chat connected to the Projector PSA MCP server. -->
+<!-- The MCP prompt projector_draft_trip_expenses: the server sends this text, with the Trip lines filled from the prompt's arguments. To use it without the server's prompt support, fill in the Trip lines and paste it into any chat connected to the Projector PSA MCP server. -->
 Create a draft Projector PSA expense report for one trip, with every receipt attached, so I only have to review it and press Submit in Projector. You prepare and save; I submit. Never submit, approve or delete anything.
 
 Use the Projector PSA tools (list_expenses, save_expenses) and every source of my receipts you can reach (files, mail, OneDrive/SharePoint).

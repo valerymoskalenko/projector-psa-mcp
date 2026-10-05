@@ -9,7 +9,7 @@ namespace Projector.Mcp.Server.Prompts;
 [McpServerPromptType]
 public sealed class ProjectorPrompts
 {
-    [McpServerPrompt(Name = "projector_availability"), Description(
+    [McpServerPrompt(Name = "projector_availability", Title = "Check availability for hours per week (read-only)"), Description(
         "Answers whether one or more people are available for a requested number of hours per week. Does not answer timesheet or budget questions.")]
     public static ChatMessage Availability(
         [Description("Comma-separated emails, display names, or resource ids")] string people,
@@ -22,7 +22,7 @@ public sealed class ProjectorPrompts
             "Prefer check_availability. Capacity uses utilization-basis minutes. " +
             "Report states available/partially_available/fully_booked/overallocated/non_working — not UI colors.");
 
-    [McpServerPrompt(Name = "projector_my_timecards"), Description(
+    [McpServerPrompt(Name = "projector_my_timecards", Title = "Show my time cards for a period (read-only)"), Description(
         "Returns the signed-in user's timecards for a date window.")]
     public static ChatMessage MyTimecards(
         [Description("Start date yyyy-MM-dd")] string start_date,
@@ -33,8 +33,8 @@ public sealed class ProjectorPrompts
             "Call list_timecards without resource_id (it defaults to me; do not look me up with get_resource). " +
             "Sum workMinutes; do not invent dollar budgets.");
 
-    [McpServerPrompt(Name = "projector_log_time"), Description(
-        "Logs the signed-in user's own work time as a Draft time card (never submits). Finds project, task, role and rate type, then confirms before saving.")]
+    [McpServerPrompt(Name = "projector_log_time", Title = "Log one time card as a Draft (saves after my OK)"), Description(
+        "Writes: saves one Draft time card for the signed-in user after the user confirms it (never submits). Finds the project, task and role first.")]
     public static ChatMessage LogTime(
         [Description("Work date yyyy-MM-dd")] string work_date,
         [Description("Hours worked, e.g. 1.5")] double hours,
@@ -52,17 +52,16 @@ public sealed class ProjectorPrompts
             TimeEntryToolService.NoSaveToolHint + " " +
             "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and send the full card in save_timecard cards.");
 
-    [McpServerPrompt(Name = "projector_review_my_day"), Description(
-        "Completes the signed-in user's time cards for one working day: collects evidence of the work (meetings, mail, " +
+    [McpServerPrompt(Name = "projector_draft_day_timecards", Title = "Draft my day's time cards (saves after my OK)"), Description(
+        "Writes: saves Draft time cards for one working day, only after the user approves the final list (never submits). Collects evidence of the work (meetings, mail, " +
         "chats, files, commits) from the sources the client can access, compares it with the cards already posted, proposes " +
-        "the missing Draft cards with project, task path and hours, saves only what the user approves and reads the day " +
-        "back. Never submits.")]
-    public static ChatMessage ReviewMyDay(
+        "the missing cards with project, task path and hours, and reads the day back after the save.")]
+    public static ChatMessage DraftDayTimecards(
         [Description("Work date yyyy-MM-dd; omit for today (before 06:00: the previous working day)")] string? work_date = null,
         [Description("Path or link to the user's own time-rules file (mappings, exclusions); read first")] string? rules_file = null,
         [Description("Folders with the user's local git repositories, scanned recursively for the day's commits")] string? code_folders = null)
     {
-        var text = PromptFiles.Fill(PromptFiles.ReviewMyDay,
+        var text = PromptFiles.Fill(PromptFiles.DraftDayTimecards,
             ("Day", OptionalDate(work_date, nameof(work_date))),
             ("Rules file", rules_file),
             ("Code folders", code_folders));
@@ -76,11 +75,11 @@ public sealed class ProjectorPrompts
         "My answers to your questions are not approval to save: apply them, show me the final numbered list of cards and " +
         "ask once \"Save these N cards?\"; call save_timecard only after I say yes. The same goes for changes to existing cards.";
 
-    [McpServerPrompt(Name = "projector_expense_report"), Description(
-        "Builds a Draft expense report for one trip from the user's receipts (files, mail, cloud folders): finds the " +
-        "project from the trip name, makes one card per expense with its receipt attached, shows a dry run first, saves only " +
-        "after the user writes \"save\", then reads the report back. The trip name is the report name. Never submits.")]
-    public static ChatMessage ExpenseReport(
+    [McpServerPrompt(Name = "projector_draft_trip_expenses", Title = "Draft a trip expense report with receipts (saves after my OK)"), Description(
+        "Writes: saves a Draft expense report for one trip, with receipts, only after the user writes \"save\" (never submits). Uses the user's receipts (files, mail, cloud folders): finds the " +
+        "project from the trip name, makes one card per expense with its receipt attached, shows a dry run first and reads " +
+        "the report back after the save. The trip name is the report name.")]
+    public static ChatMessage DraftTripExpenses(
         [Description("Customer or purpose of the trip, e.g. \"Trip to Toronto, Contoso ERP rollout\": the report name, and what identifies the project")] string trip_name,
         [Description("City of the trip")] string trip_city,
         [Description("First day of the trip, yyyy-MM-dd")] string trip_first_day,
@@ -99,7 +98,7 @@ public sealed class ProjectorPrompts
             throw new McpException($"trip_last_day {last} is before trip_first_day {first}.");
         }
 
-        var text = PromptFiles.Fill(PromptFiles.ExpenseReport,
+        var text = PromptFiles.Fill(PromptFiles.DraftTripExpenses,
             ("Trip name", Required(trip_name, nameof(trip_name))),
             ("City", Required(trip_city, nameof(trip_city))),
             ("Country", trip_country),
@@ -132,7 +131,7 @@ public sealed class ProjectorPrompts
             : throw new McpException($"{name} must be a date yyyy-MM-dd, got '{value.Trim()}'.");
     }
 
-    [McpServerPrompt(Name = "projector_timecards_for_project"), Description(
+    [McpServerPrompt(Name = "projector_timecards_for_project", Title = "Show a person's time cards on a project (read-only)"), Description(
         "Returns a person's timecards for a named project/engagement in a week or month.")]
     public static ChatMessage TimecardsForProject(
         [Description("Person resource_id, full_name, or email")] string person,
@@ -144,7 +143,7 @@ public sealed class ProjectorPrompts
             "Resolve person with get_resource; resolve engagement with list_engagements / get_engagement; " +
             "then list_timecards with project_code. Do not invent contract $ amounts.");
 
-    [McpServerPrompt(Name = "projector_project_hours"), Description(
+    [McpServerPrompt(Name = "projector_project_hours", Title = "Sum the hours on a project (read-only)"), Description(
         "Sums hours on a project/engagement and reports billable/productive flags. Planned budgets from get_engagement; no dollar over-budget.")]
     public static ChatMessage ProjectHours(
         [Description("Optional person")] string? person,
@@ -158,7 +157,7 @@ public sealed class ProjectorPrompts
             "Use list_timecards for actual hours. If money fields are omitted, say financial budgets are not visible — do not say $0. " +
             "Dollar over-budget requires Projector Engagement Portfolio Excel export.");
 
-    [McpServerPrompt(Name = "projector_engagement_budget"), Description(
+    [McpServerPrompt(Name = "projector_engagement_budget", Title = "Show an engagement's planned budget (read-only)"), Description(
         "Returns planned hour and (when permitted) money budgets for one engagement. Not actuals vs budget.")]
     public static ChatMessage EngagementBudget(
         [Description("Project or engagement name or code")] string project_or_engagement)
@@ -170,7 +169,7 @@ public sealed class ProjectorPrompts
             "If money fields are omitted, say the signed-in user cannot see financial budgets — do not say the budget is $0. " +
             "These are planned budgets only, not actuals vs budget.");
 
-    [McpServerPrompt(Name = "projector_resource_bookings"), Description(
+    [McpServerPrompt(Name = "projector_resource_bookings", Title = "Show a person's bookings and projects (read-only)"), Description(
         "Answers what a person is booked on for a date window and which projects they are assigned to. Person→projects; for project→people use projector_project_roles / projector_project_bookings.")]
     public static ChatMessage ResourceBookings(
         [Description("Person full_name, resource_id, or email")] string person,
@@ -181,7 +180,7 @@ public sealed class ProjectorPrompts
             "Use get_resource then get_schedule. Answer from roles and bookings, not timecards. " +
             "For project team roster or teammate hours, use list_project_roles / list_proj_bookings instead.");
 
-    [McpServerPrompt(Name = "projector_project_roles"), Description(
+    [McpServerPrompt(Name = "projector_project_roles", Title = "Show a project's staffed roles (read-only)"), Description(
         "Lists who is staffed on a project (assignment roster). Not date-window booked hours.")]
     public static ChatMessage ProjectRoles(
         [Description("Project code e.g. P001234-001")] string project_code)
@@ -191,7 +190,7 @@ public sealed class ProjectorPrompts
             "For the task plan (tasks, planned dates, effort hours per role) add include_task_plan = true. " +
             "For booked hours in a date window use list_proj_bookings.");
 
-    [McpServerPrompt(Name = "projector_project_bookings"), Description(
+    [McpServerPrompt(Name = "projector_project_bookings", Title = "Show who is booked on a project (read-only)"), Description(
         "Lists resources with booked hours on a project in a date window. Not timecards or roster-only.")]
     public static ChatMessage ProjectBookings(
         [Description("Project code e.g. P001234-001")] string project_code,
@@ -203,7 +202,7 @@ public sealed class ProjectorPrompts
             "Quote booking notes (notes[]) with their day when a row has them. " +
             "For assignment roster without hours use list_project_roles.");
 
-    [McpServerPrompt(Name = "projector_teammates_on_persons_projects"), Description(
+    [McpServerPrompt(Name = "projector_teammates_on_persons_projects", Title = "Show the teammates on a person's projects (read-only)"), Description(
         "Lists all resources with bookings in a window on a named person's projects (e.g. Carol's October teammates).")]
     public static ChatMessage TeammatesOnPersonsProjects(
         [Description("Person full_name")] string person,

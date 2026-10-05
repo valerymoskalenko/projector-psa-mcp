@@ -12,9 +12,9 @@ internal static partial class PromptFiles
     /// <summary>Written for a line whose argument was not given; the prompt text says what that means.</summary>
     internal const string NotGiven = "(not given)";
 
-    internal static string ReviewMyDay => Texts.Value["projector_review_my_day.md"];
+    internal static string DraftDayTimecards => Texts.Value["projector_draft_day_timecards.md"];
 
-    internal static string ExpenseReport => Texts.Value["projector_expense_report.md"];
+    internal static string DraftTripExpenses => Texts.Value["projector_draft_trip_expenses.md"];
 
     private static readonly Lazy<IReadOnlyDictionary<string, string>> Texts = new(Load);
 
@@ -22,7 +22,7 @@ internal static partial class PromptFiles
     {
         var assembly = typeof(PromptFiles).Assembly;
         var texts = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var name in new[] { "projector_review_my_day.md", "projector_expense_report.md" })
+        foreach (var name in new[] { "projector_draft_day_timecards.md", "projector_draft_trip_expenses.md" })
         {
             using var stream = assembly.GetManifestResourceStream("prompts." + name)
                 ?? throw new InvalidOperationException($"Prompt file {name} is not embedded in the server.");

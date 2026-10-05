@@ -1,4 +1,4 @@
-<!-- The MCP prompt projector_review_my_day: the server sends this text, with the Inputs lines filled from the prompt's arguments. To use it without the server's prompt support, fill in the Inputs lines and paste it into any chat connected to the Projector PSA MCP server. -->
+<!-- The MCP prompt projector_draft_day_timecards: the server sends this text, with the Inputs lines filled from the prompt's arguments. To use it without the server's prompt support, fill in the Inputs lines and paste it into any chat connected to the Projector PSA MCP server. -->
 Make my Projector PSA time cards for one working day complete and correct, so that I only approve them here and submit them in Projector. You collect the evidence, compare it with what I posted and propose the missing cards; I approve; you save them as Drafts. Read-only until I approve entries in step 6; never submit, approve or delete anything.
 A wrong card costs me more than a question: when the evidence doesn't decide something, ask me instead of choosing.
 

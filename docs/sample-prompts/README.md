@@ -4,14 +4,14 @@ Two long prompts that have been used for real work. The server sends them as MCP
 
 | Prompt (file) | What it does |
 |---|---|
-| [`projector_review_my_day`](../../src/Projector.Mcp.Server/prompts/projector_review_my_day.md) | Completes one working day of time cards. It collects evidence of the day's work (calendar, meetings, mail, chats, commits), compares it with the cards already posted and proposes the missing ones. You approve; it saves Drafts and reads the day back. |
-| [`projector_expense_report`](../../src/Projector.Mcp.Server/prompts/projector_expense_report.md) | Builds a Draft expense report for one trip, with every receipt attached. It finds the project from the trip name, shows a dry run as a numbered table, saves after you write "save" and reads the report back. |
+| [`projector_draft_day_timecards`](../../src/Projector.Mcp.Server/prompts/projector_draft_day_timecards.md) | Completes one working day of time cards. It collects evidence of the day's work (calendar, meetings, mail, chats, commits), compares it with the cards already posted and proposes the missing ones. You approve; it saves Drafts and reads the day back. |
+| [`projector_draft_trip_expenses`](../../src/Projector.Mcp.Server/prompts/projector_draft_trip_expenses.md) | Builds a Draft expense report for one trip, with every receipt attached. It finds the project from the trip name, shows a dry run as a numbered table, saves after you write "save" and reads the report back. |
 
 Both prompts only create Drafts. They never submit, approve or delete anything; you submit in Projector.
 
 ## Arguments
 
-`projector_review_my_day` (all optional):
+`projector_draft_day_timecards` (all optional):
 
 | Argument | Input line | Without it |
 |---|---|---|
@@ -19,7 +19,7 @@ Both prompts only create Drafts. They never submit, approve or delete anything; 
 | `rules_file` | Rules file: path or link to your time-rules file | No personal rules |
 | `code_folders` | Code folders with your local git repositories | Only the folders your rules file lists |
 
-`projector_expense_report`:
+`projector_draft_trip_expenses`:
 
 | Argument | Required | Input line |
 |---|---|---|
