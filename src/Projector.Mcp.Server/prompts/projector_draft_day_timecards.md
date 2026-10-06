@@ -23,13 +23,14 @@ Time cards are a date and hours. Each activity counts on the date it happened in
    - Microsoft 365: calendar events (time, organizer, attendees), Teams meetings and calls, e-mails I sent or replied to, Teams chats and channel messages I wrote, SharePoint/OneDrive files I created or edited.
    - GitHub, Azure DevOps or other work systems: my pushes, commits, PRs, reviews, work items and issues that day.
    - Local git repositories, if you can access my machine: every repository under the Code folders input and the folders my rules file lists (search recursively; folder names contain spaces, so never split paths on spaces). Commits I authored that day, and `git reflog` (branch checkouts and commits) to see when I started and stopped working on a branch.
+   - AI coding-assistant sessions, if you can access my machine: Claude Code keeps one transcript per session under `%USERPROFILE%\.claude\projects\<folder>\<session>.jsonl` (folder = the working directory, with `\`, `:` and spaces as `-`). Read every session with entries in the window: my own prompts (topic, people, customer) with their timestamps, and the active time (first to last entry, leaving out gaps longer than 10 minutes). These are often the only evidence of hands-on work that ends in one e-mail or none.
    - Sent mail: read my Sent Items for the whole window and page until every message is read; skip system notifications sent in my name (for example "You have been added to a team"), which can fill whole pages.
    Not evidence: received-only mail, forwards without my own comment (for example "FYI"), automated notifications and alerts, my own messages of only a few words, my own focus or availability blocks, and earlier AI-generated time reports or summaries (use only the original messages, meetings and commits).
    My own calendar block named after a specific task (for example "Quarterly license review") is planned work: put it under "Questions for me" with the block length as an option, and count it only if I say it happened. Don't leave it out silently. If my e-mails, chats or commits show the work itself, propose the card from that evidence (its own timestamps, not the block length) instead of asking about the block.
    Read each meeting's chat: a message like "can't join, let's reschedule" means the meeting didn't happen; leave it out and say why under E.
    Search a window that covers my whole working day plus one hour on each side: a search by date alone may cover a different 24 hours and split my evening.
    Teams meetings: read the calendar event; when it has a transcript (meetingTranscriptUrl), read it. I attended if I speak in it; its start and end times are the real meeting length ("exact, from transcript"). Use transcripts only for meetings I was invited to, only for attendance and length, and never quote them in card descriptions.
-   If there is no transcript, use the calendar time and label it "scheduled, attendance not verified".
+   If there is no transcript, read the meeting chat: its "call ended" event gives the call length and the participants; if I am among them, use that length ("exact, from call log"). Otherwise use the calendar time and label it "scheduled, attendance not verified".
    No tool can read the length of a Teams call: for a call without a calendar entry, ask me for its length (a screenshot of my Teams Calls history is fastest) instead of guessing.
    Evidence that belongs to another day goes under "Could not confirm" with its date.
 
@@ -50,9 +51,11 @@ Time cards are a date and hours. Each activity counts on the date it happened in
      - Meetings: the transcript's start and end when there is one, otherwise the calendar time. Calls with a start and end time: exact.
      - A run of my own messages, e-mails or commits on one topic: "suggested", from the first to the last timestamp, rounded to the nearest rules.time_increment_minutes, at least one increment. When it overlaps a meeting or call, trim it at that activity's boundary; never start it before its own first evidence.
      - Two meetings that overlap: count the overlap once, for the one with evidence I attended (chat, transcript), and say so in B.
-     - A single message, or a call with no measurable length: "Questions for me", not an estimate.
+     - Work that ran in parallel (two assistant sessions, or a session during a meeting): count the wall-clock time once. A meeting keeps its own time; split the rest between the topics, show the split in B and ask about it under "Questions for me".
+     - A single message, or a call with no measurable length: "Questions for me", not an estimate. A message that reports finished work ("I fixed…", "What I did…") is not a single message: look for the work behind it (sessions, commits) and take the duration from there.
      - Never pad the day to reach my expected hours.
    - Descriptions on billable projects are in customer terms: no internal names, internal chat details or internal ticket links.
+   - Full names in descriptions come from the day's evidence (recipients, attendees, chat members), never from older card descriptions.
 
 **Output** (in the chat):
 A. Summary: the date, expected hours, already posted, proposed, gap or surplus. If posted + proposed is more than expected, say so and list which proposed entries are estimates. Then the missing-days list from step 1 (only days below expected), with an offer to run this prompt for them.
@@ -64,7 +67,8 @@ E. Could not confirm or left out, numbered (E1, E2, ...), one short line each wi
 5. **Stop** and ask which numbered entries to save, with any changes.
 
 6. **Save**:
-   - Never save before I explicitly say to save (for example "save", "save all except 8"). My answers to the questions are not approval: apply them, then show the final list (#, hours, project, task path and WBS, role, description; no rate type column), the day total and the short totals line (internal, with utilization), and ask once "Save these N cards?". The same applies to updates of saved cards.
+   - Never save before I explicitly say to save (for example "save", "save all except 8"). My answers to the questions are not approval: apply them, then show the final list (#, hours, project, task path and WBS, role, description; no rate type column; a date column when the list has more than one date), the day total and the short totals line (internal, with utilization), and ask once "Save these N cards?". The same applies to updates of saved cards. Until the save, start every list with "Nothing is saved yet": I may look for the cards in Projector.
+   - When I merge entries from different dates, ask which date the merged card gets; never move work to another date by yourself. Cards for other dates only when I ask for them.
    - In that same message, ask about anything still open (you would have to choose a task, a duration, or an entry I only named), with the full task path and WBS for every option.
    - Cards I ask to remove or delete: save_timecard can't delete (and hours can't be 0), so list them under "Delete in Projector" with hours, project, task path and description.
    - Save all approved entries in one save_timecard call: cards = every approved card, each with the WBS code as task (exact; task paths from history can start below the top level). It creates Drafts and never submits. Use dry_run = true first only if I ask to check before saving.
