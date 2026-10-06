@@ -8,7 +8,7 @@ Inputs (I fill these in; a line left as <...> or "(not given)" uses the default)
 - Code folders: <folders with my local git repositories, or empty>
 
 "Me" is the signed-in user: use my own e-mail address, full name and accounts wherever a tool needs them. Take my full e-mail address from my Microsoft 365 profile (for example get_me), never a user name or part of it: a search by a partial name can return nothing without an error.
-The day: the Day input; without it, today, or the previous working day if it is before 06:00. Say which date you used.
+The day: the Day input; without it, today, or the previous working day if it is before 06:00. Say which date you used. If the day is today, also say the current local time: later evidence doesn't exist yet, and the cards may need a second run at the end of the day.
 Time cards are a date and hours. Each activity counts on the date it happened in my own working day; if a tool shows times in UTC, use my local date, not the UTC date.
 
 0. **My rules**: if I keep a time-rules file (the Rules file input, for example MyTimeRules.md: my own mappings, exclusions and evidence sources; it stays private), read it first. Its mappings and exclusions win over history and over your own judgement.
@@ -45,6 +45,7 @@ Time cards are a date and hours. Each activity counts on the date it happened in
    - Task names: everywhere (proposals, options, questions, reports) show the full task path and WBS code, for example "User Story 101: Invoice export > Analysis & Design (WBS 3.1)". Never shorten a task name.
    - If no project fits, or you would have to guess the project, put the activity under "Questions for me". Never invent a project, task, code or duration.
    - A customer with no chargeable project (list_time_projects finds nothing): look it up with list_engagements and name the likely open project, its best tasks (full path and WBS) and its project manager, so I can ask the PM for a role. get_timecard_options with roles = [] means I can't post there yet; say so.
+   - A topic for which list_time_projects and list_engagements find no project: look for the task itself with list_timecards for a colleague who works on that customer (resource_id, query = the topic); their cards name the project, task path and WBS. If I have no role there, say so and name the project manager.
    - Durations:
      - Meetings: the transcript's start and end when there is one, otherwise the calendar time. Calls with a start and end time: exact.
      - A run of my own messages, e-mails or commits on one topic: "suggested", from the first to the last timestamp, rounded to the nearest rules.time_increment_minutes, at least one increment. When it overlaps a meeting or call, trim it at that activity's boundary; never start it before its own first evidence.
