@@ -16,7 +16,7 @@ public sealed record SaveTimecardCard(
     string Task,
     [property: JsonPropertyName("role"), Description("Role UID or exact role name (get_timecard_options)")]
     string Role,
-    [property: JsonPropertyName("narrative"), Description("What was done; required, at most 1000 characters")]
+    [property: JsonPropertyName("narrative"), Description("What was done; required, at most 1000 characters. On a Billable task the customer reads it on the invoice: state the result in the customer's terms; never the word 'internal', your own staff's names or internal tools")]
     string Narrative,
     [property: JsonPropertyName("timecard_uid"), Description("Only to update: the card's timecardUid from list_timecards. Omit to create a new Draft card.")]
     string? TimecardUid = null,
