@@ -27,6 +27,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<TimeEntryToolService>();
         services.AddSingleton<IReceiptDownloader, ReceiptDownloader>();
         services.AddSingleton<ExpenseToolService>();
+        services.AddSingleton<BookingToolService>();
         services.AddSingleton<ReportCache>();
         services.AddSingleton<ReportToolService>();
         services.AddSingleton<IValidator<Contracts.Resources.ListResourcesRequest>, ListResourcesValidator>();

@@ -36,7 +36,10 @@ public sealed class PwsCliRunner
     /// retried). No submit, approval or time card method is on the list.
     /// </summary>
     private static readonly string[] DevWriteMethods =
-        ["PwsSaveExpenseDocument", "PwsDeleteExpenseDocument", "PwsDeleteDocument"];
+    [
+        "PwsSaveExpenseDocument", "PwsDeleteExpenseDocument", "PwsDeleteDocument",
+        "PwsSaveProjectRole", "PwsSaveProjectTaskRole", "PwsRequestOrBookRoleHours"
+    ];
 
     private readonly LocalOAuthLoginService _login;
     private readonly ProjectorSoapHttp _soap;

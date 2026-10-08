@@ -51,6 +51,7 @@ public static class ApiClientServiceCollectionExtensions
         services.AddHttpClient<ProjectorDocumentUploadHttp>(client => client.Timeout = WriteTimeout)
             .AddHttpMessageHandler<ProjectorCallStatsHandler>();
         services.AddTransient<Domain.Expenses.IProjectorExpenseClient, ProjectorExpenseClient>();
+        services.AddTransient<Domain.Bookings.IProjectorBookingClient, ProjectorBookingClient>();
 
         // get_report: saved reports and legacy exports (starting a run goes through the write transport).
         services.AddTransient<IProjectorReportClient, ProjectorReportClient>();

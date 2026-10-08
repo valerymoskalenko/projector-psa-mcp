@@ -52,7 +52,8 @@ public static class ToolCatalog
         "save_timecard",
         "get_report",
         "list_expenses",
-        "save_expenses"
+        "save_expenses",
+        "save_booking"
     ];
 
     public static string Canonicalize(string name)
@@ -102,6 +103,7 @@ public static class ToolCatalog
             "get_report" => await GetReportAsync(services, connectionId, args, cancellationToken),
             "list_expenses" => await ListExpensesAsync(services, connectionId, args, cancellationToken),
             "save_expenses" => await SaveExpensesAsync(services, connectionId, args, cancellationToken),
+            "save_booking" => await SaveBookingAsync(services, connectionId, args, cancellationToken),
             _ => throw new ArgumentException(
                 $"Unknown tool '{canonical}'. Known: {string.Join(", ", CanonicalAgentTools)}")
         };
@@ -376,6 +378,44 @@ public static class ToolCatalog
             GetBool(args, "dry_run"),
             ct,
             GetBool(args, "brief"));
+    }
+
+    private static Task<object> SaveBookingAsync(
+        IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
+    {
+        string? Text(string key) => args.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+        var hours = GetDouble(args, "hours")
+            ?? throw new ArgumentException("--hours is required (number of hours per week or per working day).");
+
+        var jsonOpts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        IReadOnlyList<BookingExtraDayInput>? extras = null;
+        if (Text("extra_days_json") is { } extrasFile)
+        {
+            extras = System.Text.Json.JsonSerializer.Deserialize<List<BookingExtraDayInput>>(File.ReadAllText(extrasFile), jsonOpts)
+                ?? throw new ArgumentException("--extra-days-json must contain a JSON array.");
+        }
+
+        IReadOnlyList<BookingCommentInput>? comments = null;
+        if (Text("comments_json") is { } commentsFile)
+        {
+            comments = System.Text.Json.JsonSerializer.Deserialize<List<BookingCommentInput>>(File.ReadAllText(commentsFile), jsonOpts)
+                ?? throw new ArgumentException("--comments-json must contain a JSON array.");
+        }
+
+        return services.GetRequiredService<BookingToolService>().SaveBookingAsync(
+            connectionId,
+            Require(args, "resource"),
+            Require(args, "project_code"),
+            Require(args, "start_date"),
+            Require(args, "end_date"),
+            hours,
+            Text("scheduling_mode") ?? "weekly",
+            Text("task"),
+            Text("role_name"),
+            extras,
+            comments,
+            GetBool(args, "dry_run"),
+            ct);
     }
 
     private static Task<object> GetReportAsync(

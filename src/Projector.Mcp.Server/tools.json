@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.11.6"
+    "version": "0.12.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -982,6 +982,120 @@
             "type": "boolean",
             "default": false,
             "description": "After a real save, list only the cards with errors, warnings or a status other than saved; ignored with dry_run"
+          }
+        }
+      }
+    },
+    {
+      "name": "save_booking",
+      "aliases": [
+        "save_booking"
+      ],
+      "title": "Book a person on a Projector role",
+      "requiredScopes": [
+        "scheduleEngagements"
+      ],
+      "requiredWebServicesAccess": "U",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "description": "Books one person on a project role for a date range (Resource Scheduling grid): hours land on the role, not on the task plan. hours is the amount on each week (weekly) or each working day Mon–Fri (daily). extra_days add hours (and optional comment) on specific dates inside the same call; those weeks are saved as daily amounts (the week's hours are spread Mon–Fri, then the extras are added). Optional comments are the cell tooltip notes. If the person has no role, one named after them is created; if a task is given and the role is not on it, the role is assigned (effort stays 0). Never requests, submits or finalizes. Call with dry_run = true, show the weeks and save only after the user's explicit confirmation.",
+      "whenNotToUse": "Do not use to read bookings; use list_proj_bookings or get_schedule. Do not use for time cards; use save_timecard.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "resource",
+          "project_code",
+          "start_date",
+          "end_date",
+          "hours"
+        ],
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "Person to book: resource id, full name or e-mail"
+          },
+          "project_code": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "hours": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Hours on each week (weekly) or each working day (daily)"
+          },
+          "scheduling_mode": {
+            "type": "string",
+            "enum": [
+              "weekly",
+              "daily"
+            ],
+            "default": "weekly"
+          },
+          "task": {
+            "type": "string",
+            "description": "Optional task WBS, path or name"
+          },
+          "role_name": {
+            "type": "string"
+          },
+          "extra_days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "date",
+                "hours"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "hours": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "comment": {
+                  "type": "string",
+                  "maxLength": 4000
+                }
+              }
+            }
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "date",
+                "text"
+              ],
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 4000
+                }
+              }
+            }
+          },
+          "dry_run": {
+            "type": "boolean",
+            "default": false
           }
         }
       }

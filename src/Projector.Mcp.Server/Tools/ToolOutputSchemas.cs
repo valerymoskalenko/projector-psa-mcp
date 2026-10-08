@@ -138,6 +138,16 @@ public static class ToolOutputSchemas
         + "Expense types with supported = false (mileage, per unit) must be entered in Projector. "
         + "On error NoExpenseIdentity: the user has no expense report yet; they create the first one in Projector.";
 
+    public const string SaveBookingSchemaHint =
+        "Output keys: action (saved|dry_run|refused), error, project_code, resource, role (role_uid, role_name, create), "
+        + "task (task_uid, path, assign), start_date, end_date, scheduling_mode, hours_per_period, weeks[] "
+        + "(week_start, scheduling_mode, previous_hours, new_hours, weekly_hours or daily_hours, notes), "
+        + "skipped_weeks, read_back[] after a real save (week_start, expected_hours, actual_hours, matches), "
+        + "submitted (always false), finalized (always false), note. refused = nothing was written. "
+        + "Error write_outcome_unknown: check list_proj_bookings / list_project_roles before retrying. "
+        + "On error web_services_access_view_only or no_permission_to_book_hours nothing was booked: tell the user "
+        + "they need Web Services Access U and permission to book hours.";
+
     public const string SaveExpensesSchemaHint =
         "Output keys: action (saved|dry_run|refused|failed), error, report (number, name, currency, total, card_count, "
         + "status), results[] (one per card, in input order: index, status valid|invalid|saved|failed|not_applied|"
