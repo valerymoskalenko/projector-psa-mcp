@@ -43,7 +43,7 @@ Steps:
      - receipt.receipt_uid of a receipt already in my pool (options.receipt_pool), for example one I uploaded in Projector myself.
      - receipt.content_base64 with file_name, only for a file under about 10 KB.
      If none of these works for a file, don't save its card yet: ask me to upload it to my receipt pool in Projector, then call list_expenses with include_options again. Don't change, rename or move my files.
-   - Call save_expenses with the cards exactly as approved, each with its receipt, and report_name = the trip name (or report = the ER number), with brief = true. Up to 20 cards per call; for more, save the rest into the same report (report = the ER number from the first result).
+   - Call save_expenses with the cards exactly as approved, each with its receipt, and report_name = the trip name (or report = the ER number), with dry_run = false (without it nothing is saved) and brief = true. Up to 20 cards per call; for more, save the rest into the same report (report = the ER number from the first result).
    - If a result is write_outcome_unknown or failed, read the report with list_expenses before trying again, so no card is saved twice.
    - To correct a saved card later, send its card_uid with only the fields to change; its other fields and receipts stay.
 

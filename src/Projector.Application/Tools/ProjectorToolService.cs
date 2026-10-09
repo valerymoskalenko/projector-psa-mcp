@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
@@ -65,6 +66,15 @@ public sealed class ProjectorToolService
         var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
         var start = Short(startDate);
         var end = Short(endDate);
+        // Agents ask for "since last year" (645 days seen 2026-10-07) and then retry once or twice: read the last
+        // 366 days up to end_date instead, and say so.
+        var (clampedStart, windowNote) = ClampTimecardWindow(start, end);
+        if (windowNote is not null)
+        {
+            start = clampedStart;
+            startDate = clampedStart;
+        }
+
         // Expected hours only when by_date holds every card of the range: a filtered day would look short.
         var filtered = !string.IsNullOrWhiteSpace(status) || !string.IsNullOrWhiteSpace(projectCode) || !string.IsNullOrWhiteSpace(query);
         var expectedTask = filtered
@@ -116,6 +126,7 @@ public sealed class ProjectorToolService
             resource_id = resourceLabel,
             start_date = start,
             end_date = end,
+            window_note = windowNote,
             count = cards.Count,
             by_date = ByDate(cards, expected),
             expected_note = expectedNote,
@@ -128,6 +139,29 @@ public sealed class ProjectorToolService
                     : cards.Select(t => (object)MapTimecard(t, ownCards)).ToList(),
             searchCoverage = SearchCoverageDto.From(coverage)
         }, sw);
+    }
+
+    /// <summary>
+    /// list_timecards over more than <see cref="ProjectorDateWindows.TimecardsDays"/> days: the start moves so the
+    /// window ends at end_date, with a note naming the part that was not read. Unparsable dates are left to the
+    /// Projector call's own checks.
+    /// </summary>
+    internal static (string Start, string? Note) ClampTimecardWindow(string start, string end)
+    {
+        if (!DateTime.TryParseExact(start, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var s)
+            || !DateTime.TryParseExact(end, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var e)
+            || (e - s).TotalDays + 1 <= ProjectorDateWindows.TimecardsDays)
+        {
+            return (start, null);
+        }
+
+        var clamped = e.AddDays(-(ProjectorDateWindows.TimecardsDays - 1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var before = DateTime.ParseExact(clamped, "yyyy-MM-dd", CultureInfo.InvariantCulture).AddDays(-1)
+            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return (clamped,
+            $"Asked for {start}..{end} ({(e - s).TotalDays + 1:0} days); one call reads at most " +
+            $"{ProjectorDateWindows.TimecardsDays} days, so only {clamped}..{end} was read. Call again with " +
+            $"end_date {before} for the earlier part.");
     }
 
     /// <summary>group_by: false for one row per card, true for one row per project and task.</summary>
@@ -451,7 +485,10 @@ public sealed class ProjectorToolService
         IReadOnlyList<EngagementSummary> enriched;
         using (var detailCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            detailCts.CancelAfter(EngagementDetailBudget);
+            // A manager search can't answer without the details, and reads up to 200 of them (about 18 s in batches
+            // on 2026-10-09), so it waits twice as long; still inside Copilot's 45 s.
+            var budget = string.IsNullOrWhiteSpace(effectiveManagerQuery) ? EngagementDetailBudget : EngagementDetailBudget * 2;
+            detailCts.CancelAfter(budget);
             try
             {
                 enriched = await EnrichEngagementsAsync(
@@ -462,8 +499,9 @@ public sealed class ProjectorToolService
                 if (!string.IsNullOrWhiteSpace(effectiveManagerQuery))
                 {
                     throw new ProjectorApiException(
-                        $"Projector did not return the engagement details within {EngagementDetailBudget.TotalSeconds:0} s, " +
-                        "and manager names come only from those details. Retry once, or add " +
+                        $"Projector did not return the engagement details within {budget.TotalSeconds:0} s, " +
+                        "and manager names come only from those details. The server keeps loading them: ask again " +
+                        "with the same arguments in about 15 s and the answer comes from the server's copy. Or add " +
                         "query='<client, engagement, or project code>' so fewer engagements need details.",
                         "projector_timeout",
                         ex);
@@ -1175,12 +1213,88 @@ public sealed class ProjectorToolService
                 .Where(c => !string.IsNullOrWhiteSpace(c))
                 .Cast<string>()
                 .ToList();
-            details = await WithRefreshAsync(connection, c =>
-                _soap.GetEngagementsByCodeAsync(c, codes, ct), ct);
+            var fetched = await GetSharedEngagementDetailsAsync(connection, codes, ct);
+            return ApiClient.Xml.ProjectorResponseParsers.MergeEngagementManagerFields(
+                engagements, fetched.Details, fetched.Projects);
         }
 
         var projects = await LoadProjectsAsync(connection, details, ct);
         return ApiClient.Xml.ProjectorResponseParsers.MergeEngagementManagerFields(engagements, details, projects);
+    }
+
+    private sealed record EngagementDetails(
+        IReadOnlyList<EngagementDetail> Details, IReadOnlyList<ProjectSummary> Projects);
+
+    private sealed record SharedDetailFetch(Task<EngagementDetails> Fetch, DateTimeOffset Expires);
+
+    /// <summary>Engagement details per connection and set of codes, shared by concurrent and repeated calls.</summary>
+    private readonly ConcurrentDictionary<string, Lazy<SharedDetailFetch>> _detailFetches = new(StringComparer.Ordinal);
+
+    /// <summary>How long fetched engagement details are reused for the same connection and codes.</summary>
+    internal TimeSpan EngagementDetailCacheTtl { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>How long a detail fetch may run in the background after the caller's budget ran out.</summary>
+    internal TimeSpan EngagementDetailFetchTimeout { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// The details behind list_engagements (one PwsGetEngagement for every code, then the projects). Copilot sends
+    /// the same search twice in parallel and retries after a timeout (2026-10-07: 5 of 7 manager searches ran out of
+    /// the 12 s budget, each reading the same 200 engagements). The fetch runs once per connection and code set, is
+    /// not cancelled when one caller's budget runs out, and its result is kept for
+    /// <see cref="EngagementDetailCacheTtl"/>, so the retry is answered from it. A failed fetch is not kept.
+    /// </summary>
+    private async Task<EngagementDetails> GetSharedEngagementDetailsAsync(
+        ProjectorConnection connection, IReadOnlyList<string> codes, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var (k, old) in _detailFetches)
+        {
+            if (old.IsValueCreated
+                && (old.Value.Expires < now || old.Value.Fetch.IsFaulted || old.Value.Fetch.IsCanceled))
+            {
+                _detailFetches.TryRemove(new KeyValuePair<string, Lazy<SharedDetailFetch>>(k, old));
+            }
+        }
+
+        var key = connection.ConnectionId + "|" + string.Join(",", codes.Order(StringComparer.OrdinalIgnoreCase));
+        var started = false;
+        var entry = _detailFetches.GetOrAdd(key, _ => new Lazy<SharedDetailFetch>(() =>
+        {
+            started = true;
+            return new SharedDetailFetch(FetchEngagementDetailsAsync(connection, codes), now + EngagementDetailCacheTtl);
+        })).Value;
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            return await entry.Fetch.WaitAsync(ct);
+        }
+        finally
+        {
+            _logger.LogInformation(
+                "list_engagements details: {Codes} engagement(s), {Source}, waited {WaitMs} ms, fetch {FetchState}",
+                codes.Count,
+                started ? "fetched" : entry.Fetch.IsCompletedSuccessfully ? "cache hit" : "shared running fetch",
+                sw.ElapsedMilliseconds,
+                entry.Fetch.Status);
+        }
+    }
+
+    private Task<EngagementDetails> FetchEngagementDetailsAsync(ProjectorConnection connection, IReadOnlyList<string> codes)
+    {
+        var timeout = EngagementDetailFetchTimeout;
+        var task = Task.Run(async () =>
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            var details = await WithRefreshAsync(connection, c =>
+                _soap.GetEngagementsByCodeAsync(c, codes, cts.Token), cts.Token);
+            var projects = await LoadProjectsAsync(connection, details, cts.Token);
+            return new EngagementDetails(details, projects);
+        });
+
+        // Nobody may be waiting any more when it fails: observe the exception so it is not reported as unobserved.
+        _ = task.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+        return task;
     }
 
     private async Task<IReadOnlyList<EngagementDetail>> EnrichEngagementDetailsAsync(

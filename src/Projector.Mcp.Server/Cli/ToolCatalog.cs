@@ -288,7 +288,7 @@ public static class ToolCatalog
         IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
     {
         var svc = services.GetRequiredService<TimeEntryToolService>();
-        var dryRun = GetBool(args, "dry_run");
+        var dryRun = GetBool(args, "dry_run", defaultValue: true);
 
         // --cards-json <file>: the same cards array the MCP tool takes. Otherwise the single-card flags make one card.
         if (args.TryGetValue("cards_json", out var cardsFile) && !string.IsNullOrWhiteSpace(cardsFile))
@@ -375,7 +375,7 @@ public static class ToolCatalog
             string.IsNullOrWhiteSpace(report) ? null : report,
             string.IsNullOrWhiteSpace(reportName) ? null : reportName,
             parsed.Select(c => c.ToInput()).ToList(),
-            GetBool(args, "dry_run"),
+            GetBool(args, "dry_run", defaultValue: true),
             ct,
             GetBool(args, "brief"));
     }
@@ -384,8 +384,8 @@ public static class ToolCatalog
         IServiceProvider services, string connectionId, IReadOnlyDictionary<string, string> args, CancellationToken ct)
     {
         string? Text(string key) => args.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
-        var hours = GetDouble(args, "hours")
-            ?? throw new ArgumentException("--hours is required (number of hours per week or per working day).");
+        // Without --hours the current amounts stay (extra days and comments only).
+        var hours = GetDouble(args, "hours");
 
         var jsonOpts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         IReadOnlyList<BookingExtraDayInput>? extras = null;
@@ -414,7 +414,7 @@ public static class ToolCatalog
             Text("role_name"),
             extras,
             comments,
-            GetBool(args, "dry_run"),
+            GetBool(args, "dry_run", defaultValue: true),
             ct);
     }
 
@@ -503,6 +503,10 @@ public static class ToolCatalog
     private static bool GetBool(IReadOnlyDictionary<string, string> args, string key) =>
         args.TryGetValue(key, out var v)
         && (string.Equals(v, "true", StringComparison.OrdinalIgnoreCase) || v == "1");
+
+    /// <summary>A switch with a default: the write commands check only unless --dry-run false is given.</summary>
+    private static bool GetBool(IReadOnlyDictionary<string, string> args, string key, bool defaultValue) =>
+        args.ContainsKey(key) ? GetBool(args, key) : defaultValue;
 
     private static int GetInt(IReadOnlyDictionary<string, string> args, string key, int defaultValue) =>
         args.TryGetValue(key, out var v) && int.TryParse(v, out var n) ? n : defaultValue;

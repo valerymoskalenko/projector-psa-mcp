@@ -50,7 +50,7 @@ public sealed class AgentTools
         "WhenNotToUse: Do not use for capacity or bookings; use check_availability or get_schedule. " +
         "Do not use for PTO cards; use list_time_off.")]
     public Task<CallToolResult> ListTimecards(
-        [Description("Inclusive start date (yyyy-MM-dd)")] string start_date,
+        [Description("Inclusive start date (yyyy-MM-dd). One call reads at most 366 days: a longer range reads the last 366 days up to end_date and says so in window_note")] string start_date,
         [Description("Inclusive end date (yyyy-MM-dd)")] string end_date,
         [Description("Optional person: resource id, full name or e-mail. Omit (or \"me\") for the signed-in user.")] string? resource_id = null,
         [Description("Optional card status filter: Draft, Submitted, Approved, Rejected or Billed")] string? status = null,

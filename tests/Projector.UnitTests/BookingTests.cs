@@ -61,8 +61,8 @@ public class BookingTests
         // Week of 1 Nov 2026: 20 h weekly + 8 h Mon 2 Nov + 8 h Tue 3 Nov → Mon 12, Tue 12, Wed–Fri 4.
         var extras = new[]
         {
-            new BookingPlanner.ExtraDay("2026-11-02", 8, "Simplanova Go-Live"),
-            new BookingPlanner.ExtraDay("2026-11-03", 8, "Simplanova Go-Live")
+            new BookingPlanner.ExtraDay("2026-11-02", 8, "Go-Live A"),
+            new BookingPlanner.ExtraDay("2026-11-03", 8, "Go-Live A")
         };
         var result = BookingPlanner.Plan(
             "2026-11-01",
@@ -87,8 +87,8 @@ public class BookingTests
             0);          // Sat
         week.NewMinutes.Should().Be(36 * 60);
         week.Notes.Should().NotBeNull();
-        week.Notes![1].Should().Be("Simplanova Go-Live");
-        week.Notes[2].Should().Be("Simplanova Go-Live");
+        week.Notes![1].Should().Be("Go-Live A");
+        week.Notes[2].Should().Be("Go-Live A");
     }
 
     [Fact]
@@ -127,6 +127,176 @@ public class BookingTests
     }
 
     [Fact]
+    public void Plan_WithoutHours_KeepsCurrentWeekAndAddsExtras_OnlyTouchedWeeksWritten()
+    {
+        // 20 h stored weekly on 1 Nov and 8 Nov; "add 8 h on 9 Nov" without hours keeps the 20 h.
+        var current = new Dictionary<string, RoleWeekState>(StringComparer.Ordinal)
+        {
+            ["2026-11-01"] = new RoleWeekState { WeekStart = "2026-11-01", SchedulingMode = "W", WeeklyMinutes = 1200 },
+            ["2026-11-08"] = new RoleWeekState { WeekStart = "2026-11-08", SchedulingMode = "W", WeeklyMinutes = 1200 }
+        };
+
+        var result = BookingPlanner.Plan(
+            "2026-11-01",
+            "2026-11-14",
+            "weekly",
+            hoursPerPeriod: null,
+            extraDays: [new BookingPlanner.ExtraDay("2026-11-09", 8, "Go-Live")],
+            comments: null,
+            current);
+
+        result.Errors.Should().BeEmpty();
+        var week = result.Weeks.Should().ContainSingle("the week of 1 Nov is not touched, so it is not written").Subject;
+        week.WeekStart.Should().Be("2026-11-08");
+        week.SchedulingMode.Should().Be("D");
+        week.DailyMinutes.Should().Equal(0, 4 * 60 + 8 * 60, 4 * 60, 4 * 60, 4 * 60, 4 * 60, 0);
+        week.PreviousMinutes.Should().Be(1200);
+        week.NewMinutes.Should().Be(28 * 60);
+    }
+
+    [Fact]
+    public void Plan_WithoutHours_KeepsStoredDailyAmounts()
+    {
+        var current = new Dictionary<string, RoleWeekState>(StringComparer.Ordinal)
+        {
+            ["2026-11-01"] = new RoleWeekState
+            {
+                WeekStart = "2026-11-01",
+                SchedulingMode = "D",
+                WeeklyMinutes = 36 * 60,
+                DailyMinutes = [0, 720, 720, 240, 240, 240, 0]
+            }
+        };
+
+        var result = BookingPlanner.Plan(
+            "2026-11-01", "2026-11-07", "weekly", null,
+            [new BookingPlanner.ExtraDay("2026-11-06", 2, null)], null, current);
+
+        result.Errors.Should().BeEmpty();
+        result.Weeks.Single().DailyMinutes.Should().Equal(0, 720, 720, 240, 240, 360, 0);
+    }
+
+    [Fact]
+    public void Plan_WithoutHours_CommentsOnly_KeepHoursAsStored()
+    {
+        var current = new Dictionary<string, RoleWeekState>(StringComparer.Ordinal)
+        {
+            ["2026-11-01"] = new RoleWeekState { WeekStart = "2026-11-01", SchedulingMode = "W", WeeklyMinutes = 1200 }
+        };
+
+        var result = BookingPlanner.Plan(
+            "2026-11-01", "2026-11-07", "weekly", null, null,
+            [new BookingPlanner.CommentDay("2026-11-02", "kick-off")], current);
+
+        var week = result.Weeks.Should().ContainSingle().Subject;
+        week.SchedulingMode.Should().Be("W");
+        week.WeeklyMinutes.Should().Be(1200);
+        week.NewMinutes.Should().Be(1200);
+        week.Notes![1].Should().Be("kick-off");
+    }
+
+    [Fact]
+    public void Plan_WithoutHoursExtrasOrComments_IsRefused()
+    {
+        var result = BookingPlanner.Plan(
+            "2026-11-01", "2026-11-07", "weekly", null, null, null,
+            new Dictionary<string, RoleWeekState>(StringComparer.Ordinal));
+
+        result.Weeks.Should().BeEmpty();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("Nothing to change");
+    }
+
+    [Fact]
+    public void Plan_ExtraDayOutsideRangeOrInSkippedWeek_IsRefused_NotDropped()
+    {
+        var none = new Dictionary<string, RoleWeekState>(StringComparer.Ordinal);
+
+        // Outside start_date..end_date.
+        var outside = BookingPlanner.Plan(
+            "2026-11-01", "2026-11-07", "weekly", 20,
+            [new BookingPlanner.ExtraDay("2026-11-09", 8, null)], null, none);
+        outside.Weeks.Should().BeEmpty();
+        outside.Errors.Should().ContainSingle().Which.Should().Contain("2026-11-09").And.Contain("outside");
+
+        // Inside the range, but in the last week, which weekly mode skips because it runs past end_date.
+        var skipped = BookingPlanner.Plan(
+            "2026-11-01", "2026-11-10", "weekly", 20,
+            [new BookingPlanner.ExtraDay("2026-11-09", 8, null)], null, none);
+        skipped.Weeks.Should().BeEmpty();
+        skipped.Errors.Should().ContainSingle().Which.Should().Contain("2026-11-09").And.Contain("runs past end_date");
+
+        // A comment outside the range is refused too.
+        var comment = BookingPlanner.Plan(
+            "2026-11-01", "2026-11-07", "weekly", 20, null,
+            [new BookingPlanner.CommentDay("2026-10-30", "x")], none);
+        comment.Errors.Should().ContainSingle().Which.Should().Contain("comments date 2026-10-30");
+    }
+
+    [Fact]
+    public void SkippedWeek_IsExplainedInPlainWords()
+    {
+        var result = BookingPlanner.Plan(
+            "2026-11-22", "2026-11-30", "weekly", 20, null, null,
+            new Dictionary<string, RoleWeekState>(StringComparer.Ordinal));
+
+        result.SkippedWeeks.Should().ContainSingle().Which.Should()
+            .Be("2026-11-29..2026-12-05 not booked: the week runs past end_date 2026-11-30 " +
+                "(weekly mode books full Sunday–Saturday weeks; move end_date to the Saturday or use daily)");
+    }
+
+    [Fact]
+    public void LockFault_MapsToProjectLocked_AndSaysWhatWasWritten()
+    {
+        var fault = new Projector.Domain.Exceptions.ProjectorApiException(
+            "One or more existing locks prevent acquisition of requested lock.", "EntityAlreadyLocked");
+
+        var nothing = BookingToolService.MapSaveError(fault, createdRoleUid: null, assignedTask: false);
+        nothing.ErrorCode.Should().Be(BookingToolService.ProjectLocked);
+        nothing.Message.Should().Contain("Edit mode").And.Contain("Nothing was booked");
+
+        var withRole = BookingToolService.MapSaveError(fault, createdRoleUid: "123", assignedTask: true);
+        withRole.Message.Should().Contain("role_uid 123").And.Contain("assigned to the task")
+            .And.Contain("no hours were booked");
+    }
+
+    [Fact]
+    public async Task SaveGate_OneSavePerProject_SecondWaitsOrTimesOut()
+    {
+        var gate = new ProjectSaveGate();
+        var first = await gate.TryEnterAsync("C000123-001", TimeSpan.FromSeconds(1), CancellationToken.None);
+        first.Should().NotBeNull();
+
+        // Same project (any case) is busy; another project is free.
+        (await gate.TryEnterAsync("c000123-001", TimeSpan.FromMilliseconds(50), CancellationToken.None))
+            .Should().BeNull();
+        using (var other = await gate.TryEnterAsync("C000001-001", TimeSpan.FromMilliseconds(50), CancellationToken.None))
+        {
+            other.Should().NotBeNull();
+        }
+
+        var waiting = gate.TryEnterAsync("C000123-001", TimeSpan.FromSeconds(5), CancellationToken.None);
+        waiting.IsCompleted.Should().BeFalse();
+        first!.Dispose();
+        using (var second = await waiting)
+        {
+            second.Should().NotBeNull();
+        }
+
+        gate.ActiveProjects.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(typeof(BookingTools), nameof(BookingTools.SaveBooking))]
+    [InlineData(typeof(TimeEntryTools), nameof(TimeEntryTools.SaveTimecard))]
+    [InlineData(typeof(ExpenseTools), nameof(ExpenseTools.SaveExpenses))]
+    public void WriteTools_DefaultToDryRun(Type type, string method)
+    {
+        var dryRun = type.GetMethod(method)!.GetParameters().Single(p => p.Name == "dry_run");
+        dryRun.HasDefaultValue.Should().BeTrue();
+        dryRun.DefaultValue.Should().Be(true, "a save needs an explicit dry_run = false");
+    }
+
+    [Fact]
     public void BookEnvelope_HasNoSubmitFinalizeOrClearFlag()
     {
         var body = ProjectorBookingEnvelopes.RequestOrBookRoleHours("ticket", new BookRoleHoursRequest
@@ -153,7 +323,7 @@ public class BookingTests
                 {
                     WeekStart = "2026-11-01",
                     SchedulingMode = "D",
-                    Notes = ["", "Simplanova Go-Live", "Simplanova Go-Live", "", "", "", ""]
+                    Notes = ["", "Go-Live A", "Go-Live A", "", "", "", ""]
                 }
             ]
         });
@@ -164,7 +334,7 @@ public class BookingTests
         doc.Descendants().Count(e => e.Name.LocalName == "BucketStartDate").Should().Be(3);
         doc.Descendants().First(e => e.Name.LocalName == "WeeklyMinutes").Value.Should().Be("1200");
         doc.Descendants().Count(e => e.Name.LocalName == "short" && e.Value == "720").Should().Be(2);
-        xml.Should().Contain("Simplanova Go-Live");
+        xml.Should().Contain("Go-Live A");
         xml.Should().NotContain("SubmitOrder");
         xml.Should().NotContain("FinalizeOrder");
         xml.Should().NotContain("ClearExistingHoursFlag");
@@ -191,22 +361,22 @@ public class BookingTests
     {
         var body = ProjectorBookingEnvelopes.SaveProjectRole("ticket", new SaveProjectRoleRequest
         {
-            ProjectCode = "C001158-001",
-            RoleName = "Robert Michovic",
-            ResourceUid = "5764607523034699367",
+            ProjectCode = "C000123-001",
+            RoleName = "Jane Doe",
+            ResourceUid = "9900000000000000002",
             DefaultSchedulingMode = "W"
         });
         var xml = body.ToString(SaveOptions.DisableFormatting);
 
         body.Descendants().First(e => e.Name.LocalName == "Mode").Value.Should().Be("A");
-        body.Descendants().First(e => e.Name.LocalName == "RoleName").Value.Should().Be("Robert Michovic");
+        body.Descendants().First(e => e.Name.LocalName == "RoleName").Value.Should().Be("Jane Doe");
         body.Descendants().First(e => e.Name.LocalName == "CostCenterCriteriaClearFlag").Value.Should().Be("true");
         body.Descendants().First(e => e.Name.LocalName == "LocationCriteriaClearFlag").Value.Should().Be("true");
         body.Descendants().First(e => e.Name.LocalName == "ResourceTypeCriteriaClearFlag").Value.Should().Be("true");
         body.Descendants().Any(e => e.Name.LocalName == "ResourceTypeAnyFlag").Should().BeFalse();
         body.Descendants().First(e => e.Name.LocalName == "MakeRoleNameUniqueFlag").Value.Should().Be("false");
-        body.Descendants().First(e => e.Name.LocalName == "ResourceUid").Value.Should().Be("5764607523034699367");
-        xml.Should().Contain("C001158-001");
+        body.Descendants().First(e => e.Name.LocalName == "ResourceUid").Value.Should().Be("9900000000000000002");
+        xml.Should().Contain("C000123-001");
     }
 
     [Fact]

@@ -2104,6 +2104,48 @@ public class TimeEntryTests
     }
 
     [Fact]
+    public void ToolCallArguments_HashMatchesForTheSameCallOnly_AndHidesTheValues()
+    {
+        static JsonElement J(string json) => JsonDocument.Parse(json).RootElement.Clone();
+        Dictionary<string, JsonElement> Args(string person) => new()
+        {
+            ["resource"] = J($"\"{person}\""),
+            ["start_date"] = J("\"2026-11-01\""),
+            ["dry_run"] = J("false")
+        };
+
+        var a = Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeArguments(Args("Jane Doe"));
+        var again = Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeArguments(Args("Jane Doe"));
+        var other = Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeArguments(Args("John Roe"));
+
+        a.Hash.Should().MatchRegex("^[0-9a-f]{8}$");
+        again.Hash.Should().Be(a.Hash);
+        other.Hash.Should().NotBe(a.Hash);
+        a.Values.Should().Be("dry_run=false").And.NotContain("Jane");
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.DescribeArguments(null).Hash.Should().BeNull();
+    }
+
+    [Fact]
+    public void ToolCallLine_WriteToolWithoutDryRun_SaysTheDefaultWasUsed()
+    {
+        var logger = new ListLogger();
+        var call = new Projector.Mcp.Server.Tools.ToolCallLogFilter.CallInfo(
+            "save_booking", null, "Sydney 1.0.0", "0.0.0", null, null, null, null);
+
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.Log(
+            logger, call, "ok", TimeSpan.FromMilliseconds(10), exception: null,
+            new Projector.Mcp.Server.Tools.ToolCallLogFilter.ArgumentInfo("project_code,resource", "", null, Hash: "0a1b2c3d"),
+            output: null, []);
+        Projector.Mcp.Server.Tools.ToolCallLogFilter.Log(
+            logger, call with { Tool = "list_timecards" }, "ok", TimeSpan.FromMilliseconds(10), exception: null,
+            new Projector.Mcp.Server.Tools.ToolCallLogFilter.ArgumentInfo("end_date,start_date", "", 5),
+            output: null, []);
+
+        logger.Entries[0].Message.Should().Contain("args hash 0a1b2c3d, dry_run defaulted True");
+        logger.Entries[1].Message.Should().EndWith("dry_run defaulted (null)", "only write tools have a dry_run default");
+    }
+
+    [Fact]
     public void ToolCallOutput_HasSizeRowsAndPagingFlags()
     {
         static ModelContextProtocol.Protocol.CallToolResult Result(string text, bool isError = false) => new()

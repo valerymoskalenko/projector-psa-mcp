@@ -204,6 +204,52 @@ public class ResourceArgumentTests
     }
 
     [Fact]
+    public async Task ListEngagements_ManagerSearchTimesOut_RetryIsAnsweredFromTheSharedFetch()
+    {
+        // 2026-10-07: the detail call took longer than the budget, every retry started it again and timed out again.
+        var (service, soap) = Create();
+        service.EngagementDetailBudget = TimeSpan.FromMilliseconds(50);
+        soap.Engagements.Add(new Projector.Domain.Engagements.EngagementSummary { EngagementCode = "E005678", EngagementName = "Contoso rollout" });
+        soap.EngagementDetailDelay = TimeSpan.FromMilliseconds(300);
+
+        var first = () => service.ListEngagementsAsync(ConnectionId, null, "Jane Doe", null, null, 50, CancellationToken.None);
+        (await first.Should().ThrowAsync<Projector.Domain.Exceptions.ProjectorApiException>()).Which.Message
+            .Should().Contain("ask again with the same arguments");
+
+        await Task.Delay(500);
+        var retry = Json(await service.ListEngagementsAsync(
+            ConnectionId, null, "Jane Doe", null, null, 50, CancellationToken.None));
+
+        retry.GetProperty("count").GetInt32().Should().Be(0, "the fake details name no manager");
+        soap.EngagementDetailCalls.Should().Be(1, "the fetch kept running after the budget and the retry used its result");
+    }
+
+    [Fact]
+    public async Task ListEngagements_SameCallTwiceInParallel_ReadsTheDetailsOnce()
+    {
+        var (service, soap) = Create();
+        soap.Engagements.Add(new Projector.Domain.Engagements.EngagementSummary { EngagementCode = "E005678", EngagementName = "Contoso rollout" });
+        soap.EngagementDetailDelay = TimeSpan.FromMilliseconds(100);
+
+        await Task.WhenAll(
+            service.ListEngagementsAsync(ConnectionId, "Contoso", null, null, null, 50, CancellationToken.None),
+            service.ListEngagementsAsync(ConnectionId, "Contoso", null, null, null, 50, CancellationToken.None));
+
+        soap.EngagementDetailCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public void ListTimecards_RangeOver366Days_ReadsTheLast366DaysWithANote()
+    {
+        var (start, note) = ProjectorToolService.ClampTimecardWindow("2025-01-01", "2026-10-07");
+
+        start.Should().Be("2025-10-07");
+        note.Should().Contain("645 days").And.Contain("2025-10-07..2026-10-07").And.Contain("end_date 2025-10-06");
+
+        ProjectorToolService.ClampTimecardWindow("2025-10-07", "2026-10-07").Should().Be(("2025-10-07", null));
+    }
+
+    [Fact]
     public async Task ListEngagements_CallerCancels_IsNotTurnedIntoAPartialResult()
     {
         var (service, soap) = Create();
@@ -582,6 +628,12 @@ public class ResourceArgumentTests
         /// <summary>The detail call hangs until its token is cancelled, like a Projector call that never answers.</summary>
         public bool EngagementDetailsNeverAnswer { get; set; }
 
+        /// <summary>The detail call answers (with no details) after this delay.</summary>
+        public TimeSpan EngagementDetailDelay { get; set; }
+
+        /// <summary>How many detail calls reached Projector.</summary>
+        public int EngagementDetailCalls;
+
         public static RecordingSoap Create() => (RecordingSoap)(object)Create<IProjectorSoapClient, RecordingSoap>();
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
@@ -606,9 +658,10 @@ public class ResourceArgumentTests
                 case nameof(IProjectorSoapClient.ListEngagementsAsync):
                     return Task.FromResult(new Projector.Domain.Engagements.EngagementListResult { Engagements = Engagements.ToList() });
                 case nameof(IProjectorSoapClient.GetEngagementsByCodeAsync):
+                    Interlocked.Increment(ref EngagementDetailCalls);
                     return EngagementDetailsNeverAnswer
                         ? NeverAnswer((CancellationToken)args![2]!)
-                        : Task.FromResult<IReadOnlyList<Projector.Domain.Engagements.EngagementDetail>>([]);
+                        : AnswerAfter(EngagementDetailDelay, (CancellationToken)args![2]!);
                 case nameof(IProjectorSoapClient.ListProjectRolesAsync):
                     Calls.Add("ListProjectRolesAsync");
                     return Task.FromResult(new Projector.Domain.Engagements.ProjectRoleListResult { Roles = ProjectRoles.ToList() });
@@ -620,6 +673,17 @@ public class ResourceArgumentTests
                 default:
                     throw new NotSupportedException($"Unexpected Projector call {targetMethod.Name}");
             }
+        }
+
+        private static async Task<IReadOnlyList<Projector.Domain.Engagements.EngagementDetail>> AnswerAfter(
+            TimeSpan delay, CancellationToken ct)
+        {
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, ct);
+            }
+
+            return [];
         }
 
         private static async Task<IReadOnlyList<Projector.Domain.Engagements.EngagementDetail>> NeverAnswer(CancellationToken ct)

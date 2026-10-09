@@ -32,4 +32,4 @@ User asks which people have bookings on a project in a month/week, or wants sche
 - Person → projects: **`projector_resource_bookings`**.
 - Roster without hours: **`projector_project_roles`**.
 - Teammates on someone’s projects in a month: **`projector_teammates_on_persons_projects`**.
-- Write bookings: **`save_booking`** (dry_run first; hours on the role, not the task plan).
+- Write bookings: **`save_booking`** (the default dry run first, then `dry_run: false` after the user's OK; hours on the role, not the task plan; omit `hours` to add `extra_days` to the current booking).

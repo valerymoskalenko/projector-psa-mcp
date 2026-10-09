@@ -102,8 +102,10 @@ dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- upload-rece
 
 ```powershell
 # cards.json: [{"date":"2026-10-02","project_code":"C000001-003","expense_type":"Office Fee","description":"Test","amount":1,"receipt":{"file_path":"receipt.png"}}]
-dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- tool save_expenses --cards-json cards.json --report-name "Test - delete me" --dry-run true
+dotnet run --project src/Projector.Mcp.Server --no-launch-profile -- tool save_expenses --cards-json cards.json --report-name "Test - delete me"
 ```
+
+The write commands (`save_timecard`, `save_expenses`, `save_booking`) only check by default, like the MCP tools; add `--dry-run false` to save.
 
 On the HTTP server, a receipt file can also be uploaded the way an AI client does it: `list_expenses` with `include_options` returns `options.receipt_upload` (URL and a 30-minute ticket), then
 

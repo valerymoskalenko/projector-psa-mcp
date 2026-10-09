@@ -80,9 +80,9 @@ public sealed class ExpenseTools
         "about 10 KB, because a larger file can't be written out in one call. A receipt is added to the card; receipts " +
         "already on it stay (remove a receipt in Projector). Projector re-encodes large photos (receipt note); PDFs are " +
         "stored unchanged. " +
-        "Every card is checked first; if one is invalid, nothing is saved. Call with dry_run = true, show the user every " +
+        "Every card is checked first; if one is invalid, nothing is saved. dry_run defaults to true: call, show the user every " +
         "card (date, project, type, description, amount, converted amount, receipt) and the total, and save only after " +
-        "the user's explicit confirmation; for the save itself brief = true keeps the answer short. After a save the " +
+        "the user's explicit confirmation, with dry_run = false; for the save itself brief = true keeps the answer short. After a save the " +
         "report is read back: a card with status not_applied was " +
         "not saved as sent. Most expense types need a receipt before the report can be submitted: a card without one " +
         "gets the warning \"receipt required\", so ask the user for the receipt before saving. Relay every warning. " +
@@ -92,7 +92,7 @@ public sealed class ExpenseTools
         [Description("The cost cards to save (1-20), in the order the user approved them")] SaveExpenseCard[] cards,
         [Description("ER number of an existing editable report of yours to add to or change. Omit to create a new report")] string? report = null,
         [Description("Name of a new report, e.g. Trip to Toronto 4-11 Jul 2026 (required without report; with report it renames it)")] string? report_name = null,
-        [Description("true: check every card and show the converted amounts, but save and upload nothing")] bool dry_run = false,
+        [Description("Default true: check only, nothing is saved. Pass false to save, only after the user's explicit OK (true shows the converted amounts and uploads nothing)")] bool dry_run = true,
         [Description("true: after a real save, list only the cards with errors, warnings or a status other than saved (the counts cover every card). Ignored with dry_run")] bool brief = false,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _expenses.SaveExpensesAsync(

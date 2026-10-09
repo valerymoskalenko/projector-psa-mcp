@@ -352,7 +352,8 @@ public sealed class TimeEntryToolService
             not_attempted_count = Count("not_attempted"),
             submitted = false,
             note = dryRun
-                ? "Dry run: nothing was saved. Cards with status valid would be saved; fix the invalid ones first."
+                ? "Dry run: nothing was saved. Cards with status valid would be saved; fix the invalid ones first. To save, call " +
+                  "again with the same cards and dry_run = false after the user's explicit OK."
                 : "Saved cards are Drafts, not submitted. Submit your time sheet in Projector when it is complete.",
             warnings = outcome.Warnings.Count == 0 ? null : outcome.Warnings
         };

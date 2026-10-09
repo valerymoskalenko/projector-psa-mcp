@@ -235,6 +235,9 @@ public sealed class ProjectorSoapClient :
         return items.Count == 0 ? null : items[0];
     }
 
+    /// <summary>Engagement codes per PwsGetEngagement call.</summary>
+    internal const int EngagementDetailBatchSize = 20;
+
     public async Task<IReadOnlyList<EngagementDetail>> GetEngagementsByCodeAsync(
         ProjectorConnection connection,
         IReadOnlyList<string> engagementCodes,
@@ -249,16 +252,17 @@ public sealed class ProjectorSoapClient :
             return [];
         }
 
-        var items = new List<EngagementDetail>();
-        for (var i = 0; i < codes.Count; i += 100)
+        // Small batches side by side: one call for 100 engagements (about 750 KB) took 6-10 s and often hit the 10 s
+        // attempt timeout (production 2026-10-07; 30 s and three timeouts locally on 2026-10-09). The per-user call
+        // limiter keeps at most three of them running at once.
+        var batches = codes.Chunk(EngagementDetailBatchSize).Select(async batch =>
         {
-            var batch = codes.Skip(i).Take(100).ToList();
             var xml = ProjectorEnvelopeBuilders.BuildGetEngagement(connection.SessionTicket, batch);
             var doc = await PostEnvelopeAsync(connection, "PwsGetEngagement", xml, cancellationToken);
-            items.AddRange(ProjectorResponseParsers.ParseEngagements(doc));
-        }
+            return ProjectorResponseParsers.ParseEngagements(doc);
+        });
 
-        return items;
+        return (await Task.WhenAll(batches)).SelectMany(b => b).ToList();
     }
 
     public async Task<IReadOnlyList<ProjectSummary>> GetProjectsByCodeAsync(

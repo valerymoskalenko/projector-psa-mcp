@@ -91,14 +91,15 @@ public sealed class TimeEntryTools
         "code (preferred), the UID, the task_path (or its end) or a unique name; role accepts the UID or the exact name. " +
         "The rate type is not a parameter: the server always uses the task's default rate type. On an update send the " +
         "full card. Every card is checked first: invalid cards are reported and not sent, valid ones are saved one by " +
-        "one. dry_run = true checks everything and shows the day totals without saving. Relay each card's status and " +
+        "one. dry_run defaults to true: it checks everything and shows the day totals without saving; send the approved " +
+        "cards again with dry_run = false to save. Relay each card's status and " +
         "warnings (e.g. a likely duplicate, a weekend, holiday or PTO date, more hours than the day expects, a date " +
         "after the project end) to the user: the cards are saved anyway, so ask whether they should stay. " +
         ToolOutputSchemas.SaveTimecardSchemaHint + " " +
         "WhenNotToUse: Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.")]
     public Task<CallToolResult> SaveTimecard(
         [Description("The cards to save (1–20), in the order the user approved them")] SaveTimecardCard[] cards,
-        [Description("true: check every card and show the day totals, but save nothing")] bool dry_run = false,
+        [Description("Default true: check only, nothing is saved. Pass false to save, only after the user's explicit OK (true shows every card's status and the day totals)")] bool dry_run = true,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _timeEntry.SaveTimecardsAsync(
                 ct.ConnectionId,

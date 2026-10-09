@@ -24,4 +24,4 @@ User asks “what is the booking for X this week?”, “list projects they are 
 - Sum `scheduledMinutes` (or `scheduledHours`) for project bookings when reporting weekly booked hours.
 - Prefer this over `check_availability` when the user wants a project list; use availability when they ask about free capacity or “can they take N hours/week”.
 - **Direction:** this is **person → projects**. For **project → people** (roster) use `projector_project_roles`; for **project → people with hours** use `projector_project_bookings` / `projector_teammates_on_persons_projects`.
-- To write hours on a role, use **`save_booking`** (dry_run first).
+- To write hours on a role, use **`save_booking`** (the default dry run first, then `dry_run: false` after the user's OK).

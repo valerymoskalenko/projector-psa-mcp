@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -60,13 +61,38 @@ internal static class ToolCallLogFilter
     /// and switch arguments in <see cref="LoggedArgumentValues"/>, the length of list arguments, and the length of
     /// the dates asked for (start_date, end_date, work_date as yyyy-MM-dd) with the length of the range in days.
     /// </summary>
+    /// <param name="Hash">
+    /// A fingerprint of every argument (salted per process, 8 hex characters): the same call sent twice shows the same
+    /// value, and the value can't be turned back into names or text.
+    /// </param>
     internal sealed record ArgumentInfo(
         string Names,
         string Values,
         int? DateSpanDays,
         string? StartDate = null,
         string? EndDate = null,
-        string? WorkDate = null);
+        string? WorkDate = null,
+        string? Hash = null);
+
+    /// <summary>The write tools: their log line says whether the agent relied on the dry_run default (true).</summary>
+    private static readonly HashSet<string> WriteTools = new(StringComparer.Ordinal)
+    {
+        "save_timecard", "save_expenses", "save_booking"
+    };
+
+    private static readonly byte[] HashSalt = RandomNumberGenerator.GetBytes(16);
+
+    internal static string? Fingerprint(IReadOnlyList<KeyValuePair<string, JsonElement>> given)
+    {
+        if (given.Count == 0)
+        {
+            return null;
+        }
+
+        var canonical = string.Join("\u001f", given.Select(a => a.Key + "=" + a.Value.GetRawText()));
+        var hash = HMACSHA256.HashData(HashSalt, Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexString(hash, 0, 4).ToLowerInvariant();
+    }
 
     /// <summary>Arguments whose value says how much was asked for and nothing about a person, project or search.</summary>
     private static readonly HashSet<string> LoggedArgumentValues = new(StringComparer.Ordinal)
@@ -74,7 +100,7 @@ internal static class ToolCallLogFilter
         "max_rows", "max_tasks", "offset", "compact", "include_closed", "include_inactive", "chargeable_only",
         "dry_run", "include_history", "include_udfs", "include_task_plan", "show_availability_days", "status",
         "manager_role", "dataset", "bucket", "by", "billable_only", "include_unapproved", "include_time_off", "group_by",
-        "include_options", "months", "unreceived_only"
+        "include_options", "months", "unreceived_only", "scheduling_mode"
     };
 
     internal static ArgumentInfo DescribeArguments(IEnumerable<KeyValuePair<string, JsonElement>>? arguments)
@@ -110,7 +136,7 @@ internal static class ToolCallLogFilter
         var days = startDate is { } start && endDate is { } end ? (int)(end - start).TotalDays + 1 : (int?)null;
         return new ArgumentInfo(
             string.Join(",", given.Select(a => a.Key)), string.Join(";", values), days,
-            Text(startDate), Text(endDate), Text(Date("work_date")));
+            Text(startDate), Text(endDate), Text(Date("work_date")), Fingerprint(given));
     }
 
     /// <summary>
@@ -332,7 +358,8 @@ internal static class ToolCallLogFilter
             "(client {Client}, server {ServerVersion}, requested as {RequestedTool}); " +
             "Projector {ProjectorCalls} call(s), {ProjectorMs} ms, {ProjectorKb} KB, {ProjectorRows} rows; " +
             "total {OutputTotal}, more {HasMore}, partial {Partial}; args [{ArgNames}] {ArgValues}, " +
-            "dates {StartDate}..{EndDate} ({DateSpanDays} day(s)), work date {WorkDate}",
+            "dates {StartDate}..{EndDate} ({DateSpanDays} day(s)), work date {WorkDate}, args hash {ArgsHash}, " +
+            "dry_run defaulted {DryRunDefaulted}",
             call.Tool,
             outcome,
             (long)elapsed.TotalMilliseconds,
@@ -353,6 +380,10 @@ internal static class ToolCallLogFilter
             arguments.StartDate,
             arguments.EndDate,
             arguments.DateSpanDays,
-            arguments.WorkDate);
+            arguments.WorkDate,
+            arguments.Hash,
+            WriteTools.Contains(call.Tool)
+                ? !arguments.Names.Split(',').Contains("dry_run", StringComparer.Ordinal)
+                : (bool?)null);
     }
 }

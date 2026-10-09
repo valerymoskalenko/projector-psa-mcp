@@ -26,10 +26,20 @@ public sealed class BookingToolService
 
     private const string WriteOutcomeUnknown = ProjectorTimeEntryClient.WriteOutcomeUnknown;
 
+    /// <summary>Error code when Projector has the project locked (open in Edit mode, or another save).</summary>
+    public const string ProjectLocked = "project_locked";
+
+    /// <summary>Error code when another save on the same project is still running after <see cref="SaveGateWait"/>.</summary>
+    public const string ProjectBusy = "project_busy";
+
+    /// <summary>How long a save waits for another save on the same project.</summary>
+    internal static TimeSpan SaveGateWait { get; set; } = TimeSpan.FromSeconds(30);
+
     private readonly ProjectorConnectionService _connections;
     private readonly IProjectorBookingClient _bookings;
     private readonly IProjectorSoapClient _soap;
     private readonly IProjectorResourceClient _resources;
+    private readonly ProjectSaveGate _gate;
     private readonly ILogger<BookingToolService> _logger;
 
     public BookingToolService(
@@ -37,22 +47,28 @@ public sealed class BookingToolService
         IProjectorBookingClient bookings,
         IProjectorSoapClient soap,
         IProjectorResourceClient resources,
+        ProjectSaveGate gate,
         ILogger<BookingToolService> logger)
     {
         _connections = connections;
         _bookings = bookings;
         _soap = soap;
         _resources = resources;
+        _gate = gate;
         _logger = logger;
     }
 
+    /// <param name="hours">
+    /// Hours on each week (weekly) or each working day (daily); replaces the planned weeks. Null keeps the current
+    /// amounts: extra days are added on top and comments change only the notes.
+    /// </param>
     public async Task<object> SaveBookingAsync(
         string connectionId,
         string resource,
         string projectCode,
         string startDate,
         string endDate,
-        double hours,
+        double? hours,
         string schedulingMode,
         string? task,
         string? roleName,
@@ -61,19 +77,77 @@ public sealed class BookingToolService
         bool dryRun,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(resource))
+        var audit = new SaveAudit
         {
-            return Refused("resource is required (name, e-mail or id). A booking write never defaults to the signed-in user.");
-        }
-
-        if (string.IsNullOrWhiteSpace(projectCode))
+            DryRun = dryRun,
+            HoursGiven = hours is not null,
+            ExtraDays = extraDays?.Count ?? 0,
+            Comments = comments?.Count ?? 0
+        };
+        try
         {
-            return Refused("project_code is required.");
-        }
+            if (string.IsNullOrWhiteSpace(resource))
+            {
+                return audit.Done(Refused("resource is required (name, e-mail or id). A booking write never defaults to the signed-in user."));
+            }
 
+            if (string.IsNullOrWhiteSpace(projectCode))
+            {
+                return audit.Done(Refused("project_code is required."));
+            }
+
+            if (dryRun)
+            {
+                return audit.Done(await SaveBookingCoreAsync(
+                    connectionId, resource, projectCode.Trim(), startDate, endDate, hours, schedulingMode, task,
+                    roleName, extraDays, comments, dryRun, audit, ct));
+            }
+
+            // One save per project at a time: from reading the roles to the read-back.
+            var waited = System.Diagnostics.Stopwatch.StartNew();
+            using var slot = await _gate.TryEnterAsync(projectCode.Trim(), SaveGateWait, ct);
+            audit.GateWaitMs = waited.ElapsedMilliseconds;
+            if (slot is null)
+            {
+                throw new ProjectorApiException(
+                    $"Another save on {projectCode.Trim()} is still running after {SaveGateWait.TotalSeconds:0} s. " +
+                    "Nothing was written. Wait for it to finish, then read the bookings back before trying again.",
+                    ProjectBusy);
+            }
+
+            return audit.Done(await SaveBookingCoreAsync(
+                connectionId, resource, projectCode.Trim(), startDate, endDate, hours, schedulingMode, task,
+                roleName, extraDays, comments, dryRun, audit, ct));
+        }
+        catch (Exception ex)
+        {
+            audit.Error = (ex as ProjectorApiException)?.ErrorCode ?? ex.GetType().Name;
+            throw;
+        }
+        finally
+        {
+            LogAudit(audit);
+        }
+    }
+
+    private async Task<object> SaveBookingCoreAsync(
+        string connectionId,
+        string resource,
+        string code,
+        string startDate,
+        string endDate,
+        double? hours,
+        string schedulingMode,
+        string? task,
+        string? roleName,
+        IReadOnlyList<BookingExtraDayInput>? extraDays,
+        IReadOnlyList<BookingCommentInput>? comments,
+        bool dryRun,
+        SaveAudit audit,
+        CancellationToken ct)
+    {
         var connection = await RequireAsync(connectionId, ct);
         var person = await ResolvePersonAsync(connection, resource.Trim(), ct);
-        var code = projectCode.Trim();
 
         var roles = await WithRefreshAsync(connection, c => _soap.ListProjectRolesAsync(c, [code], ct), ct);
         var plan = string.IsNullOrWhiteSpace(task)
@@ -219,15 +293,26 @@ public sealed class BookingToolService
             ["end_date"] = endDate,
             ["scheduling_mode"] = schedulingMode.Trim().ToLowerInvariant(),
             ["hours_per_period"] = hours,
+            ["hours_mode"] = hours is null ? "keep_current_add_extras" : "replace",
             ["weeks"] = weeksView,
             ["skipped_weeks"] = planResult.SkippedWeeks,
+            ["written"] = false,
             ["note"] =
                 "Hours are booked on the role (Resource Scheduling grid), not on the task plan. " +
-                "Task-plan effort is not changed. Show this dry run and save only after the user confirms."
+                "Task-plan effort is not changed."
         };
+
+        audit.Weeks = planResult.Weeks.Count;
+        audit.PreviousMinutes = planResult.Weeks.Sum(w => w.PreviousMinutes);
+        audit.NewMinutes = planResult.Weeks.Sum(w => w.NewMinutes);
+        audit.CreateRole = willCreateRole;
+        audit.AssignTask = willAssignTask;
 
         if (dryRun)
         {
+            preview["note"] =
+                "Dry run: nothing was saved. Show the user the weeks (previous and new hours, notes); to save, call " +
+                "again with the same arguments and dry_run = false after the user's explicit OK. " + preview["note"];
             return preview;
         }
 
@@ -336,7 +421,9 @@ public sealed class BookingToolService
         }).ToList();
 
         preview["action"] = "saved";
+        preview["written"] = true;
         preview["read_back"] = readBack;
+        audit.ReadBackMatches = readBack.All(r => r.matches);
         preview["submitted"] = false;
         preview["finalized"] = false;
         if (readBack.Any(r => !r.matches))
@@ -576,14 +663,30 @@ public sealed class BookingToolService
         {
             ["action"] = "refused",
             ["error"] = error,
+            ["written"] = false,
             ["details"] = details
         };
 
     private static double RoundHours(int minutes) => Math.Round(minutes / 60.0, 2);
 
-    private static ProjectorApiException MapSaveError(
+    internal static ProjectorApiException MapSaveError(
         ProjectorApiException ex, string? createdRoleUid, bool assignedTask)
     {
+        if (string.Equals(ex.ErrorCode, "EntityAlreadyLocked", StringComparison.OrdinalIgnoreCase))
+        {
+            var written = createdRoleUid is null
+                ? "Nothing was booked. "
+                : $"A role was created (role_uid {createdRoleUid})"
+                  + (assignedTask ? " and assigned to the task" : string.Empty)
+                  + ", but no hours were booked. ";
+            return new ProjectorApiException(
+                "Projector has the project locked, usually because it is open in Edit mode in the Projector web " +
+                "app, or another save is running. " + written +
+                "Ask the user to close the project in Projector, then try again with the same arguments.",
+                ProjectLocked,
+                ex);
+        }
+
         if (string.Equals(ex.ErrorCode, "UpdatePermissionDenied", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ex.ErrorCode, "NoPermissionToBookHours", StringComparison.OrdinalIgnoreCase))
         {
@@ -636,6 +739,58 @@ public sealed class BookingToolService
         string.Equals(ex.ErrorCode, "InvalidSessionTicket", StringComparison.OrdinalIgnoreCase)
         || (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase)
             && ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+
+    private void LogAudit(SaveAudit a) =>
+        _logger.LogInformation(
+            "save_booking audit: {SaveAction} {Weeks} week(s), {PreviousHours} -> {NewHours} h, hours given {HoursGiven}, " +
+            "{ExtraDays} extra day(s), {CommentDays} comment(s), create role {CreateRole}, assign task {AssignTask}, " +
+            "gate wait {GateWaitMs} ms, read-back match {ReadBackMatches}, error {SaveError}",
+            a.Action, a.Weeks, Math.Round(a.PreviousMinutes / 60.0, 2), Math.Round(a.NewMinutes / 60.0, 2),
+            a.HoursGiven, a.ExtraDays, a.Comments, a.CreateRole, a.AssignTask, a.GateWaitMs, a.ReadBackMatches,
+            a.Error);
+
+    /// <summary>What the save_booking audit line reports: counts and flags only, no names, notes or comments.</summary>
+    private sealed class SaveAudit
+    {
+        public bool DryRun { get; init; }
+
+        public bool HoursGiven { get; init; }
+
+        public int ExtraDays { get; init; }
+
+        public int Comments { get; init; }
+
+        public string Action { get; private set; } = "failed";
+
+        public int Weeks { get; set; }
+
+        public int PreviousMinutes { get; set; }
+
+        public int NewMinutes { get; set; }
+
+        public bool CreateRole { get; set; }
+
+        public bool AssignTask { get; set; }
+
+        public long? GateWaitMs { get; set; }
+
+        public bool? ReadBackMatches { get; set; }
+
+        public string? Error { get; set; }
+
+        public object Done(object result)
+        {
+            Action = result is IDictionary<string, object?> d && d.TryGetValue("action", out var a) && a is string s
+                ? s
+                : DryRun ? "dry_run" : "saved";
+            if (Action == "refused")
+            {
+                Error = "refused";
+            }
+
+            return result;
+        }
+    }
 
     private sealed record BookingPerson(
         string? ReferenceSystemId,

@@ -30,11 +30,16 @@ public static class BookingPlanner
         IReadOnlyList<string> SkippedWeeks,
         IReadOnlyList<string> Errors);
 
+    /// <summary>
+    /// Plans the weeks to write. With <paramref name="hoursPerPeriod"/> each planned week is replaced (weekly total,
+    /// or hours on each working day). Without it the current amounts stay: extra days are added on top and comments
+    /// change only the notes, and only the weeks they touch are written.
+    /// </summary>
     public static PlanResult Plan(
         string startDate,
         string endDate,
         string schedulingMode,
-        double hoursPerPeriod,
+        double? hoursPerPeriod,
         IReadOnlyList<ExtraDay>? extraDays,
         IReadOnlyList<CommentDay>? comments,
         IReadOnlyDictionary<string, RoleWeekState> currentByWeek)
@@ -66,7 +71,9 @@ public static class BookingPlanner
             errors.Add("hours must be zero or greater.");
         }
 
-        var periodMinutes = (int)Math.Round(hoursPerPeriod * 60.0, MidpointRounding.AwayFromZero);
+        var periodMinutes = hoursPerPeriod is null
+            ? (int?)null
+            : (int)Math.Round(hoursPerPeriod.Value * 60.0, MidpointRounding.AwayFromZero);
         if (periodMinutes > MaxMinutes)
         {
             errors.Add($"hours is too large for Projector (max {MaxMinutes / 60.0:0} hours on one day or week).");
@@ -74,6 +81,13 @@ public static class BookingPlanner
 
         var extras = NormalizeExtras(extraDays, errors);
         var noteEdits = NormalizeComments(comments, extras, errors);
+        if (errors.Count == 0 && periodMinutes is null && extras.Count == 0 && noteEdits.Count == 0)
+        {
+            errors.Add(
+                "Nothing to change: give hours (replaces each week), or extra_days / comments (keep the current " +
+                "hours and add on top).");
+        }
+
         if (errors.Count > 0)
         {
             return new PlanResult([], [], errors);
@@ -83,16 +97,49 @@ public static class BookingPlanner
         var planned = new List<PlannedWeek>();
         var weekStarts = WeekStartsInRange(start, end, mode == "weekly", skipped);
 
+        // A day the call names must land in a week that is written, or it would be dropped without a word.
+        var plannedWeeks = new HashSet<string>(weekStarts, StringComparer.Ordinal);
+        var namedDays = extras.Select(e => (Field: "extra_days", e.Date))
+            .Concat(noteEdits.Select(n => (Field: "comments", n.Date)));
+        foreach (var (field, date) in namedDays)
+        {
+            var day = ParseDate(date);
+            var week = WeekStartOf(day);
+            if (day < start || day > end)
+            {
+                errors.Add($"{field} date {date} is outside start_date..end_date ({Format(start)}..{Format(end)}).");
+            }
+            else if (!plannedWeeks.Contains(Format(week)))
+            {
+                errors.Add(
+                    $"{field} date {date} is in the week {Format(week)}..{Format(week.AddDays(6))}, which runs past " +
+                    $"end_date {Format(end)}: weekly mode books full Sunday–Saturday weeks only. Move end_date to " +
+                    "the Saturday or use scheduling_mode daily.");
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            return new PlanResult([], skipped, errors);
+        }
+
         foreach (var weekStart in weekStarts)
         {
             currentByWeek.TryGetValue(weekStart, out var current);
             var weekExtras = extras.Where(e => Format(WeekStartOf(e.Date)) == weekStart).ToList();
             var weekNotes = noteEdits.Where(n => Format(WeekStartOf(n.Date)) == weekStart).ToList();
-            var needsDaily = mode == "daily" || weekExtras.Count > 0;
+            if (periodMinutes is null && weekExtras.Count == 0 && weekNotes.Count == 0)
+            {
+                // Keep-current mode: a week the call does not touch is not written.
+                continue;
+            }
+
+            var needsDaily = weekExtras.Count > 0 || (periodMinutes is not null && mode == "daily");
             var sunday = ParseDate(weekStart);
             var saturday = sunday.AddDays(6);
             var weekFullyInside = sunday >= start && saturday <= end;
             var currentIsWeekly = string.Equals(current?.SchedulingMode, "W", StringComparison.OrdinalIgnoreCase);
+            var currentIsDaily = string.Equals(current?.SchedulingMode, "D", StringComparison.OrdinalIgnoreCase);
 
             if (needsDaily && currentIsWeekly && !weekFullyInside && weekExtras.Count == 0)
             {
@@ -102,27 +149,40 @@ public static class BookingPlanner
                 continue;
             }
 
-            var previousMinutes = current?.WeeklyMinutes
-                ?? (current?.DailyMinutes.Sum() ?? 0);
+            var previousMinutes = current?.WeeklyMinutes ?? 0;
 
             int[]? daily = null;
             int? weekly = null;
             string outMode;
-            int newMinutes;
 
-            if (needsDaily)
+            if (periodMinutes is null && weekExtras.Count == 0)
+            {
+                // Notes only: the hours stay exactly as stored.
+                if (currentIsDaily)
+                {
+                    outMode = "D";
+                    daily = current!.DailyMinutes.ToArray();
+                }
+                else
+                {
+                    outMode = "W";
+                    weekly = current?.WeeklyMinutes ?? 0;
+                }
+            }
+            else if (needsDaily)
             {
                 outMode = "D";
-                daily = BuildDailyMinutes(weekStart, start, end, mode, periodMinutes, weekExtras, current);
-                newMinutes = daily.Sum();
+                daily = periodMinutes is null
+                    ? BuildDailyFromCurrent(current, weekExtras)
+                    : BuildDailyMinutes(weekStart, start, end, mode, periodMinutes.Value, weekExtras, current);
             }
             else
             {
                 outMode = "W";
-                weekly = periodMinutes;
-                newMinutes = periodMinutes;
+                weekly = periodMinutes!.Value;
             }
 
+            var newMinutes = daily?.Sum() ?? weekly!.Value;
             if (newMinutes > MaxMinutes || (daily is not null && daily.Any(m => m > MaxMinutes)))
             {
                 errors.Add($"Week {weekStart}: minutes exceed Projector's limit of {MaxMinutes}.");
@@ -151,6 +211,48 @@ public static class BookingPlanner
         return new PlanResult(planned, skipped, errors);
     }
 
+    /// <summary>
+    /// Keep-current mode with extra days: the stored daily amounts (or the stored weekly total spread over Mon–Fri)
+    /// plus the extras.
+    /// </summary>
+    internal static int[] BuildDailyFromCurrent(RoleWeekState? current, IReadOnlyList<ExtraDay> weekExtras)
+    {
+        var daily = new int[7];
+        if (string.Equals(current?.SchedulingMode, "D", StringComparison.OrdinalIgnoreCase))
+        {
+            for (var i = 0; i < 7; i++)
+            {
+                daily[i] = current!.DailyMinutes.ElementAtOrDefault(i);
+            }
+        }
+        else if (current is not null)
+        {
+            SpreadOverWorkdays(daily, current.WeeklyMinutes);
+        }
+
+        AddExtras(daily, weekExtras);
+        return daily;
+    }
+
+    private static void SpreadOverWorkdays(int[] daily, int weekMinutes)
+    {
+        var basePerDay = weekMinutes / 5;
+        var remainder = weekMinutes % 5;
+        for (var i = 1; i <= 5; i++)
+        {
+            daily[i] = basePerDay + (i == 5 ? remainder : 0);
+        }
+    }
+
+    private static void AddExtras(int[] daily, IReadOnlyList<ExtraDay> weekExtras)
+    {
+        foreach (var extra in weekExtras)
+        {
+            var index = (int)ParseDate(extra.Date).DayOfWeek;
+            daily[index] = checked(daily[index] + (int)Math.Round(extra.Hours * 60.0, MidpointRounding.AwayFromZero));
+        }
+    }
+
     /// <summary>Weekly: weeks whose Saturday is on or before end. Daily: every overlapping week.</summary>
     internal static IReadOnlyList<string> WeekStartsInRange(
         DateTime start, DateTime end, bool weeklyOnlyFull, List<string> skipped)
@@ -163,7 +265,9 @@ public static class BookingPlanner
             var saturday = week.AddDays(6);
             if (weeklyOnlyFull && saturday > end)
             {
-                skipped.Add($"{Format(week)} (runs past {Format(end)})");
+                skipped.Add(
+                    $"{Format(week)}..{Format(saturday)} not booked: the week runs past end_date {Format(end)} " +
+                    "(weekly mode books full Sunday–Saturday weeks; move end_date to the Saturday or use daily)");
                 continue;
             }
 
@@ -193,12 +297,7 @@ public static class BookingPlanner
         if (mode == "weekly")
         {
             // Spread the week hours over Mon–Fri, then add extras on top.
-            var basePerDay = periodMinutes / 5;
-            var remainder = periodMinutes % 5;
-            for (var i = 1; i <= 5; i++)
-            {
-                daily[i] = basePerDay + (i == 5 ? remainder : 0);
-            }
+            SpreadOverWorkdays(daily, periodMinutes);
         }
         else
         {
@@ -215,12 +314,7 @@ public static class BookingPlanner
             }
         }
 
-        foreach (var extra in weekExtras)
-        {
-            var index = (int)ParseDate(extra.Date).DayOfWeek;
-            daily[index] = checked(daily[index] + (int)Math.Round(extra.Hours * 60.0, MidpointRounding.AwayFromZero));
-        }
-
+        AddExtras(daily, weekExtras);
         return daily;
     }
 

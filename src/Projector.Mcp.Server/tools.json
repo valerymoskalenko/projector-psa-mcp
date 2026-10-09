@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.12.0"
+    "version": "0.13.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -87,7 +87,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector. by_date gives posted hours per day (and per status) with expected_hours from the schedule and short_by on working days below expected; working days without cards are listed with 0 hours (ranges of up to 56 days without status, project_code or query filters; expected_note says why it is missing otherwise). group_by = task returns one row per project and task (card_count, hours, first and last date, last description) instead of the cards: use it for history reads.",
+      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector. by_date gives posted hours per day (and per status) with expected_hours from the schedule and short_by on working days below expected; working days without cards are listed with 0 hours (ranges of up to 56 days without status, project_code or query filters; expected_note says why it is missing otherwise). group_by = task returns one row per project and task (card_count, hours, first and last date, last description) instead of the cards: use it for history reads. One call reads at most 366 days: a longer range reads the last 366 days up to end_date and says so in window_note.",
       "whenNotToUse": "Do not use for capacity or bookings; use check_availability or get_schedule. Do not use for PTO cards; use list_time_off.",
       "inputSchema": {
         "type": "object",
@@ -622,7 +622,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Saves 1–20 work time cards on the signed-in user's own time sheet in one call (PwsSaveTimeCards per card, SubmitFlag=false): each card is created as Draft, or updates one of the user's own Draft or Rejected cards when its timecard_uid is given. Never submits, approves or deletes; no resource parameter. To remove a card, tell the user to delete it in Projector: this tool can't delete, and a card can't be saved with 0 hours. Show the user every card and get one confirmation, then send all approved cards in one call. Every card is checked first (task, role, hours, summary tasks, tasks the user is not assigned to, duplicates): invalid cards are reported and not sent, valid ones are saved one by one and never retried; after an unknown outcome the remaining cards are not attempted. The rate type is always the task's default. dry_run = true checks everything and shows the day totals without saving. Each day shows expected_hours from the user's schedule; cards on a weekend or day off, a holiday or PTO, cards that take the day above its expected hours and cards near or after the end of the project or of the user's role get warnings (one schedule read per call; never blocking).",
+      "description": "Saves 1–20 work time cards on the signed-in user's own time sheet in one call (PwsSaveTimeCards per card, SubmitFlag=false): each card is created as Draft, or updates one of the user's own Draft or Rejected cards when its timecard_uid is given. Never submits, approves or deletes; no resource parameter. To remove a card, tell the user to delete it in Projector: this tool can't delete, and a card can't be saved with 0 hours. Show the user every card and get one confirmation, then send all approved cards in one call. Every card is checked first (task, role, hours, summary tasks, tasks the user is not assigned to, duplicates): invalid cards are reported and not sent, valid ones are saved one by one and never retried; after an unknown outcome the remaining cards are not attempted. The rate type is always the task's default. dry_run defaults to true: it checks everything and shows the day totals without saving; send the approved cards again with dry_run = false to save. Each day shows expected_hours from the user's schedule; cards on a weekend or day off, a holiday or PTO, cards that take the day above its expected hours and cards near or after the end of the project or of the user's role get warnings (one schedule read per call; never blocking).",
       "whenNotToUse": "Do not use to read cards; use list_timecards. Do not use for time off; it writes work time only.",
       "inputSchema": {
         "type": "object",
@@ -691,7 +691,8 @@
           },
           "dry_run": {
             "type": "boolean",
-            "description": "true: check every card and show the day totals, but save nothing"
+            "default": true,
+            "description": "Default true: check only, nothing is saved. Pass false to save, only after the user's explicit OK (true shows every card's status and the day totals)"
           }
         }
       }
@@ -890,7 +891,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). A receipt is a pool receipt_uid, a source_url the server downloads (https, public addresses only, checked on every connection and redirect), or content_base64 for small files; its type is checked from the file's bytes and an optional sha256 must match. Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts; Projector's DocumentSize must equal the bytes sent (warning otherwise), except an image stored smaller: Projector re-encodes large photos, so that gets a receipt note instead (PDFs are stored byte for byte). A receipt is added to the card; existing receipts stay (the tool never removes or replaces receipts). With card_uid, fields left out keep the card's values, so a change sends only card_uid and the changed fields; the card's receipts stay, and an existing card that has a receipt gets no \"receipt required\" warning. A refused project (not open for expenses) adds the projects of the caller's own time cards on those dates ±7 days (PwsGetTimecards; one read, only on that error). Expense types with ReceiptRequiredFlag (PwsGetExpenseTypes, with its threshold) can't be submitted without a receipt: such a card saved without one gets the warning \"receipt required\". The report is read back after the save; cards or receipts not found get not_applied. dry_run = true checks and converts without uploading or saving. brief = true (real saves only) lists only the cards with errors, warnings or a status other than saved, plus results_omitted.",
+      "description": "Saves 1-20 cost cards with receipts on one of the signed-in user's own expense reports in one PwsSaveExpenseDocument (SubmitFlag=false, SendNotificationEmailFlag=false): a new draft report or an existing editable one (the update sends the ExpenseDocument block with UID and Timestamp; without it Projector ignores card changes). Never submits, approves or deletes; no resource parameter. Every card is checked first (project open for expenses, expense type allowed, description, open day, location, currency, receipt type and size); one invalid card refuses the whole call. Foreign amounts are converted with PwsGetCurrencies' rate for the date (TotalAmountDisbursedCurrency). A receipt is a pool receipt_uid, a source_url the server downloads (https, public addresses only, checked on every connection and redirect), or content_base64 for small files; its type is checked from the file's bytes and an optional sha256 must match. Receipt files are uploaded once to the user's receipt pool ({DocumentServerUrl}/AjxAddDocument) and linked with SaveReceipts; Projector's DocumentSize must equal the bytes sent (warning otherwise), except an image stored smaller: Projector re-encodes large photos, so that gets a receipt note instead (PDFs are stored byte for byte). A receipt is added to the card; existing receipts stay (the tool never removes or replaces receipts). With card_uid, fields left out keep the card's values, so a change sends only card_uid and the changed fields; the card's receipts stay, and an existing card that has a receipt gets no \"receipt required\" warning. A refused project (not open for expenses) adds the projects of the caller's own time cards on those dates ±7 days (PwsGetTimecards; one read, only on that error). Expense types with ReceiptRequiredFlag (PwsGetExpenseTypes, with its threshold) can't be submitted without a receipt: such a card saved without one gets the warning \"receipt required\". The report is read back after the save; cards or receipts not found get not_applied. dry_run defaults to true: it checks and converts without uploading or saving; save with dry_run = false after the user's explicit OK. brief = true (real saves only) lists only the cards with errors, warnings or a status other than saved, plus results_omitted.",
       "whenNotToUse": "Do not use to read reports; use list_expenses. Do not use for time; use save_timecard.",
       "inputSchema": {
         "type": "object",
@@ -976,7 +977,8 @@
           },
           "dry_run": {
             "type": "boolean",
-            "default": false
+            "default": true,
+            "description": "Default true: check only, nothing is saved. Pass false to save, only after the user's explicit OK (true shows the converted amounts and uploads nothing)"
           },
           "brief": {
             "type": "boolean",
@@ -1002,7 +1004,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Books one person on a project role for a date range (Resource Scheduling grid): hours land on the role, not on the task plan. hours is the amount on each week (weekly) or each working day Mon–Fri (daily). extra_days add hours (and optional comment) on specific dates inside the same call; those weeks are saved as daily amounts (the week's hours are spread Mon–Fri, then the extras are added). Optional comments are the cell tooltip notes. If the person has no role, one named after them is created; if a task is given and the role is not on it, the role is assigned (effort stays 0). Never requests, submits or finalizes. Call with dry_run = true, show the weeks and save only after the user's explicit confirmation.",
+      "description": "Books one person on a project role for a date range (Resource Scheduling grid): hours land on the role, not on the task plan. Weeks run Sunday–Saturday. With hours, each week in the range is replaced: hours is the amount on each week (weekly; a week that runs past end_date is skipped) or on each working day Mon–Fri (daily). Without hours, the current amounts stay and only the weeks of extra_days / comments are written. extra_days add hours (and an optional comment) on dates inside start_date..end_date, on top of the week; those weeks are saved as daily amounts (the week's hours spread Mon–Fri, then the extras added); a date outside the written weeks is refused. To add hours to an existing booking, omit hours. Optional comments are the cell tooltip notes. If the person has no role, one named after them is created; if a task is given and the role is not on it, the role is assigned (effort stays 0). Never requests, submits or finalizes. One save per project at a time (a second waits); a project open in Edit mode in Projector gives project_locked. dry_run defaults to true: show the weeks and save with dry_run = false only after the user's explicit confirmation.",
       "whenNotToUse": "Do not use to read bookings; use list_proj_bookings or get_schedule. Do not use for time cards; use save_timecard.",
       "inputSchema": {
         "type": "object",
@@ -1010,8 +1012,7 @@
           "resource",
           "project_code",
           "start_date",
-          "end_date",
-          "hours"
+          "end_date"
         ],
         "properties": {
           "resource": {
@@ -1032,7 +1033,7 @@
           "hours": {
             "type": "number",
             "minimum": 0,
-            "description": "Hours on each week (weekly) or each working day (daily)"
+            "description": "Hours on each week (weekly) or each working day (daily); replaces those weeks. Omit to keep the current hours and only add extra_days / change comments"
           },
           "scheduling_mode": {
             "type": "string",
@@ -1095,7 +1096,8 @@
           },
           "dry_run": {
             "type": "boolean",
-            "default": false
+            "default": true,
+            "description": "Default true: check only, nothing is saved. Pass false to save, only after the user's explicit OK (true shows the before/after weeks)"
           }
         }
       }

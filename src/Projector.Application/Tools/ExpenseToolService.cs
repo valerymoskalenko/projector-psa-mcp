@@ -424,7 +424,7 @@ public sealed class ExpenseToolService
                 dryRun ? "dry_run" : "refused", existing?.Number, name, currency, plans, existing,
                 invalid > 0
                     ? $"Nothing was saved: {invalid} card(s) are invalid. Fix them and send the call again; only the cards in the call are changed, other cards on the report stay as they are."
-                    : "Dry run: nothing was saved or uploaded. Show the user the cards and amounts, then call again without dry_run after an explicit \"save\".",
+                    : "Dry run: nothing was saved or uploaded. Show the user the cards and amounts; to save, call again with the same cards and dry_run = false after an explicit \"save\".",
                 []);
         }
 
