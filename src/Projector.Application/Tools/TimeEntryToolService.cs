@@ -1160,14 +1160,46 @@ public sealed class TimeEntryToolService
         }
 
         var shared = wordsA.Intersect(wordsB).Count();
-        return shared / (double)Math.Min(wordsA.Count, wordsB.Count) >= 0.75;
+        return shared / (double)Math.Min(wordsA.Count, wordsB.Count) >= 0.75 && !NameDifferentPeople(a, b);
     }
 
-    private static HashSet<string> Words(string? text) =>
+    /// <summary>
+    /// Two narratives that name different people are different work even when the rest is the same text: the
+    /// one-to-ones "… meeting with Dana Whitfield, …" and "… meeting with Marek Novak, …" were flagged as duplicates
+    /// (Cowork, 2026-10-13). A name is a capitalised word (with lower-case letters, so not an acronym like BC or D365)
+    /// that doesn't start a sentence. The texts differ when each has a name the other lacks; a name added on one side
+    /// only ("Call with Tiago" / "Call with Tiago Cavalca") still counts as the same work.
+    /// </summary>
+    internal static bool NameDifferentPeople(string? a, string? b)
+    {
+        var allA = Words(a, minLength: 2);
+        var allB = Words(b, minLength: 2);
+        return Names(a).Any(n => !allB.Contains(n)) && Names(b).Any(n => !allA.Contains(n));
+    }
+
+    private static HashSet<string> Names(string? text)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var sentenceStart = true;
+        foreach (var token in (text ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var word = new string(token.Where(char.IsLetter).ToArray());
+            if (!sentenceStart && word.Length >= 2 && char.IsUpper(word[0]) && word.Skip(1).Any(char.IsLower))
+            {
+                names.Add(word.ToLowerInvariant());
+            }
+
+            sentenceStart = token.EndsWith('.') || token.EndsWith('!') || token.EndsWith('?') || token.EndsWith(':');
+        }
+
+        return names;
+    }
+
+    private static HashSet<string> Words(string? text, int minLength = 4) =>
         (text ?? string.Empty)
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
             .Select(w => new string(w.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant())
-            .Where(w => w.Length > 3)
+            .Where(w => w.Length >= minLength)
             .ToHashSet(StringComparer.Ordinal);
 
     private static string NormalizePath(string path) =>

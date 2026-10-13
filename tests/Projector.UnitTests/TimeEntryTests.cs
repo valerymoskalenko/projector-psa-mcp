@@ -1690,6 +1690,30 @@ public class TimeEntryTests
             .Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("Held the personal one-to-one meeting with Dana Whitfield, D365 Systems Engineer.",
+        "Held the personal one-to-one meeting with Marek Novak, D365 Systems Engineer.", false)]
+    [InlineData("Call with Lena Ortiz.", "Call with Lena Ortiz about the BC upgrade.", true)]
+    [InlineData("Weekly status call with Lena", "Weekly status call with Lena Ortiz", true)]
+    [InlineData("Weekly status call with the customer team", "Weekly status call with customer team", true)]
+    public void SimilarText_DifferentPeopleAreDifferentWork(string a, string b, bool similar)
+    {
+        TimeEntryToolService.SimilarText(a, b).Should().Be(similar);
+    }
+
+    [Fact]
+    public void LikelyDuplicate_OneToOnesWithDifferentPeople_AreNotDuplicates()
+    {
+        var cards = new[] { DayCard("1", 15, "task-a", "Held the personal one-to-one meeting with Dana Whitfield, D365 Systems Engineer.") };
+
+        TimeEntryToolService.FindLikelyDuplicate(cards, "P005678-001", "task-a", 30,
+                "Held the personal one-to-one meeting with Marek Novak, D365 Systems Engineer.")
+            .Should().BeNull();
+        TimeEntryToolService.FindLikelyDuplicate(cards, "P005678-001", "task-a", 15,
+                "Held the personal one-to-one meeting with Dana Whitfield, D365 Systems Engineer.")
+            !.TimecardUid.Should().Be("1");
+    }
+
     [Fact]
     public void RoleWarning_OnlyWhenEarlierCardsOnTheProjectUseAnotherRole()
     {

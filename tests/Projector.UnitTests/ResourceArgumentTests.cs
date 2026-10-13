@@ -485,6 +485,30 @@ public class ResourceArgumentTests
     }
 
     [Fact]
+    public async Task ListTimecards_ByDate_ListsHolidaysAndPtoWithAReason_ButNotWeekends()
+    {
+        var (service, soap) = Create();
+        soap.Schedule = TimeEntryTests.Schedule(
+            [("2026-10-10", 0, 0), ("2026-10-11", 0, 0), ("2026-10-12", 480, 0), ("2026-10-13", 480, 240), ("2026-10-14", 480, 480)],
+            holidays: [("2026-10-12", "Thanksgiving Day")],
+            pto: [("2026-10-13", 240)]);
+        soap.Timecards.Add(Card("1", "D", minutes: 480, date: "2026-10-14", statusName: "Draft"));
+
+        var result = Json(await service.ListTimecardsAsync(
+            ConnectionId, null, "2026-10-10", "2026-10-14", null, null, CancellationToken.None));
+
+        var days = result.GetProperty("by_date").EnumerateArray().ToList();
+        days.Select(d => d.GetProperty("date").GetString()).Should().Equal("2026-10-12", "2026-10-13", "2026-10-14");
+        days[0].GetProperty("expected_hours").GetDouble().Should().Be(0);
+        days[0].GetProperty("reason").GetString().Should().Be("holiday: Thanksgiving Day");
+        days[0].GetProperty("short_by").ValueKind.Should().Be(JsonValueKind.Null);
+        days[1].GetProperty("reason").GetString().Should().Be("PTO 4 h");
+        days[1].GetProperty("short_by").GetDouble().Should().Be(4);
+        days[2].TryGetProperty("reason", out var reason).Should().BeTrue();
+        reason.ValueKind.Should().Be(JsonValueKind.Null, "a normal day has no reason");
+    }
+
+    [Fact]
     public async Task ListTimecards_Filtered_LeavesExpectedHoursOut_WithoutReadingTheSchedule()
     {
         var (service, soap) = Create();

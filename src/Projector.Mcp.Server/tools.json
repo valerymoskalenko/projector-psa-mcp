@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.13.1"
+    "version": "0.13.2"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -87,7 +87,7 @@
       "requiredScopes": [
         "enterTime"
       ],
-      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector. by_date gives posted hours per day (and per status) with expected_hours from the schedule and short_by on working days below expected; working days without cards are listed with 0 hours (ranges of up to 56 days without status, project_code or query filters; expected_note says why it is missing otherwise). group_by = task returns one row per project and task (card_count, hours, first and last date, last description) instead of the cards: use it for history reads. One call reads at most 366 days: a longer range reads the last 366 days up to end_date and says so in window_note.",
+      "description": "Lists many work timecard rows for one person (default: the signed-in user) in a date range, in every status including Rejected, with optional status, project_code and query filters. Does not include time-off cards. Each card has the task name, taskPath (parent tasks > task) and taskWbsCode, plus timecardUid, projectTaskUid, projectRoleUid and projectRateTypeUid for save_timecard updates. Includes searchCoverage (status full/partial; when partial, do not present as complete). The signed-in user's own cards have editable: true = Draft or Rejected (save_timecard can change them), false = fix in Projector. by_date gives posted hours per day (and per status) with expected_hours from the schedule and short_by on working days below expected; working days without cards are listed with 0 hours, holidays and PTO days with a reason (ranges of up to 56 days without status, project_code or query filters; expected_note says why it is missing otherwise). group_by = task returns one row per project and task (card_count, hours, first and last date, last description) instead of the cards: use it for history reads. One call reads at most 366 days: a longer range reads the last 366 days up to end_date and says so in window_note.",
       "whenNotToUse": "Do not use for capacity or bookings; use check_availability or get_schedule. Do not use for PTO cards; use list_time_off.",
       "inputSchema": {
         "type": "object",

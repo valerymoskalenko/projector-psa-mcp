@@ -1599,14 +1599,16 @@ public sealed class ProjectorToolService
     /// adding up dozens of cards itself.
     /// </summary>
     /// <param name="expected">From the schedule: adds expected_hours and short_by, and lists working days without cards
-    /// (0 hours), so missing days show up.</param>
+    /// (0 hours), so missing days show up. Holidays and PTO days are listed too, with a reason, so an agent doesn't guess
+    /// why a day expects less (a Thanksgiving Monday was missing and taken for a day off, Cowork 2026-10-13); weekends
+    /// without either stay out.</param>
     internal static IReadOnlyList<object> ByDate(
         IEnumerable<Timecard> cards,
         IReadOnlyDictionary<string, ExpectedDay>? expected = null)
     {
         var byDate = cards.GroupBy(c => c.WorkDate ?? "unknown").ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
         var dates = byDate.Keys
-            .Concat(expected?.Values.Where(d => d.ExpectedHours > 0).Select(d => d.Date) ?? [])
+            .Concat(expected?.Values.Where(d => d.ExpectedHours > 0 || Reason(d) is not null).Select(d => d.Date) ?? [])
             .Distinct(StringComparer.Ordinal)
             .OrderBy(d => d, StringComparer.Ordinal);
         return dates.Select(date =>
@@ -1624,9 +1626,27 @@ public sealed class ProjectorToolService
                     .OrderBy(s => s.Key, StringComparer.Ordinal)
                     .ToDictionary(s => s.Key, s => s.Sum(c => c.WorkMinutes) / 60.0),
                 expected_hours = day?.ExpectedHours,
-                short_by = day is not null && hours < day.ExpectedHours ? day.ExpectedHours - hours : (double?)null
+                short_by = day is not null && hours < day.ExpectedHours ? day.ExpectedHours - hours : (double?)null,
+                reason = day is null ? null : Reason(day)
             };
         }).ToList();
+    }
+
+    /// <summary>Why the schedule expects less on a day: "holiday: name", "PTO 4 h", or both; null on a normal day.</summary>
+    private static string? Reason(ExpectedDay day)
+    {
+        var parts = new List<string>(2);
+        if (day.Holiday is not null)
+        {
+            parts.Add($"holiday: {day.Holiday}");
+        }
+
+        if (day.PtoHours > 0)
+        {
+            parts.Add($"PTO {day.PtoHours:0.##} h");
+        }
+
+        return parts.Count == 0 ? null : string.Join("; ", parts);
     }
 
     private static TimecardDto MapTimecard(Timecard t) => MapTimecard(t, ownCards: false);

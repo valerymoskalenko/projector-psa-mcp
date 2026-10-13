@@ -29,8 +29,9 @@ public static class ToolOutputSchemas
 
     public const string TimecardsSchemaHint =
         "Output keys: resource_id (\"me\" for the signed-in user), start_date, end_date (the range read), window_note (when a range over 366 days was cut), count, by_date[] (date, hours, card_count, "
-        + "hours_by_status, expected_hours, short_by: posted hours per day against the schedule; working days without cards "
-        + "are listed with 0 hours, so short_by shows the missing days without get_schedule), expected_note (why "
+        + "hours_by_status, expected_hours, short_by, reason: posted hours per day against the schedule; working days without cards "
+        + "are listed with 0 hours, so short_by shows the missing days without get_schedule; holidays and PTO days are listed "
+        + "with reason, e.g. \"holiday: Thanksgiving Day\" or \"PTO 4 h\"), expected_note (why "
         + "expected_hours is missing: ranges over 56 days, or a status, project_code or query filter), timecards[], searchCoverage. "
         + "Each card has taskName, taskPath (parent tasks > task), taskWbsCode, timecardUid, projectTaskUid, projectRoleUid "
         + "and projectRateTypeUid (use them with save_timecard). Every status is listed, Rejected included (with the "
