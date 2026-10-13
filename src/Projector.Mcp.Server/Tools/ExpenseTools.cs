@@ -77,7 +77,8 @@ public sealed class ExpenseTools
         "(PDF, PNG, JPEG or GIF, at most 2 MB) is one of: receipt_uid of a file in the user's pool (upload files from " +
         "disk first with list_expenses options.receipt_upload: curl, one file per request, ticket valid 30 minutes); " +
         "source_url, a public https link the server downloads; or content_base64 + file_name, only for files under " +
-        "about 10 KB, because a larger file can't be written out in one call. A receipt is added to the card; receipts " +
+        "about 10 KB, because a larger file can't be written out in one call (in Copilot Cowork content_base64 takes a " +
+        "workspace file of any size up to the limit: Cowork sends the content).A receipt is added to the card; receipts " +
         "already on it stay (remove a receipt in Projector). Projector re-encodes large photos (receipt note); PDFs are " +
         "stored unchanged. " +
         "Every card is checked first; if one is invalid, nothing is saved. dry_run defaults to true: call, show the user every " +

@@ -134,6 +134,26 @@ public class ProtocolTests : IClassFixture<ProjectorWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ToolsList_MarksReceiptContentAsBase64File_ForCowork()
+    {
+        // Copilot Cowork turns a string with contentEncoding base64 into a workspace file input.
+        var client = _factory.CreateClient();
+        var token = _factory.Services.GetRequiredService<Projector.Mcp.Server.Auth.McpJwtIssuer>()
+            .CreateAccessToken("protocol-test-connection");
+        var tools = (await PostMcpAsync(client, token, """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"""))
+            .GetProperty("result").GetProperty("tools");
+        var save = tools.EnumerateArray().Single(t => t.GetProperty("name").GetString() == "save_expenses");
+        var receipt = save.GetProperty("inputSchema").GetProperty("properties").GetProperty("cards")
+            .GetProperty("items").GetProperty("properties").GetProperty("receipt");
+        var file = receipt.GetProperty("properties").GetProperty("content_base64");
+        file.GetProperty("contentEncoding").GetString().Should().Be("base64");
+        file.GetProperty("type").GetString().Should().Be("string");
+        file.GetProperty("description").GetString().Should().Contain("Cowork");
+        receipt.GetProperty("properties").GetProperty("file_name").GetProperty("type").ValueKind
+            .Should().Be(JsonValueKind.Array, "only the file content parameter changes");
+    }
+
+    [Fact]
     public async Task GetReport_IsListedAndCallableOnlyForTheUsersInTheSetting()
     {
         using var factory = _factory.WithWebHostBuilder(b => b.UseSetting("Projector:GetReportUsers", "oid-allowed"));

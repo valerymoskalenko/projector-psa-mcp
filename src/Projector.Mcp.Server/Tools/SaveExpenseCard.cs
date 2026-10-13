@@ -13,7 +13,7 @@ public sealed record SaveExpenseReceipt(
     string? ReceiptUid = null,
     [property: JsonPropertyName("source_url"), Description("A public https link that downloads the file (e.g. a share link set to download); the server fetches it")]
     string? SourceUrl = null,
-    [property: JsonPropertyName("content_base64"), Description("The file content, base64 encoded; only for files under about 10 KB (a large file can't be written out in one call): use the receipt upload or source_url instead")]
+    [property: JsonPropertyName("content_base64"), Description("The file content, base64 encoded. In Copilot Cowork: the workspace file (Cowork sends its content), any size up to the receipt limit. Elsewhere only for files under about 10 KB (a large file can't be written out in one call): use the receipt upload or source_url instead")]
     string? ContentBase64 = null,
     [property: JsonPropertyName("file_name"), Description("File name with extension .pdf, .png, .jpg, .jpeg or .gif; with content_base64, or to rename a source_url file")]
     string? FileName = null,

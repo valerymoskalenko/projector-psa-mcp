@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.13.0"
+    "version": "0.13.1"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -952,7 +952,7 @@
                     "content_base64": {
                       "type": "string",
                       "contentEncoding": "base64",
-                      "description": "The file content, base64 encoded; only practical under about 10 KB"
+                      "description": "The file content, base64 encoded. In Copilot Cowork: the workspace file (Cowork sends its content), any size up to the receipt limit. Elsewhere only practical under about 10 KB"
                     },
                     "file_name": {
                       "type": "string",

@@ -131,7 +131,7 @@ public static class ProjectorMcpHttpHost
             })
             .AddAuthorizationFilters()
             .WithToolsFromAssembly()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(ToolCallLogFilter.Filter).AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ReportAccessFilter.CallFilter).AddCallToolFilter(ToolArgumentFilter.Filter).AddListToolsFilter(ReportAccessFilter.ListFilter))
+            .WithRequestFilters(filters => filters.AddCallToolFilter(ToolCallLogFilter.Filter).AddCallToolFilter(CopilotToolNameFilter.Filter).AddCallToolFilter(ReportAccessFilter.CallFilter).AddCallToolFilter(ToolArgumentFilter.Filter).AddListToolsFilter(ReportAccessFilter.ListFilter).AddListToolsFilter(FileInputSchemaFilter.ListFilter))
             .WithResourcesFromAssembly()
             .WithPromptsFromAssembly();
 
