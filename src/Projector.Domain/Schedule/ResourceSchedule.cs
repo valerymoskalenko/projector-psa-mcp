@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Projector.Domain.Schedule;
 
 public sealed class ResourceSchedule
@@ -7,7 +9,9 @@ public sealed class ResourceSchedule
     /// <summary>
     /// Every date of the Sunday–Saturday weeks the window touches. A weekly booking is spread over its whole week's
     /// working days, so a window of part of a week still shows the right hours per day. Empty = use <see cref="Dates"/>.
+    /// Calculation only: not in tool answers (days outside the window would read as the asked-for capacity).
     /// </summary>
+    [JsonIgnore]
     public IReadOnlyList<ScheduleDate> WeekDates { get; init; } = [];
 
     public IReadOnlyList<ScheduleHoliday> Holidays { get; init; } = [];
@@ -118,6 +122,17 @@ public sealed class ScheduleBooking
     public int ScheduledMinutes { get; init; }
 
     public double ScheduledHours { get; init; }
+
+    /// <summary>Weekly rows: working days the week's hours are spread over (Mon–Fri when the week has none).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? WeekWorkingDays { get; init; }
+
+    /// <summary>Weekly rows: the part of the week's minutes that falls on the asked-for dates.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? WindowMinutes { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? WindowHours { get; init; }
 
     /// <summary>Booking notes of the week, one entry per day that has a note.</summary>
     public IReadOnlyList<BookingDayNote>? Notes { get; init; }

@@ -309,7 +309,8 @@ public sealed class ProjectorToolService
         var (resourceId, resourceLabel) = await ResolveResourceArgAsync(connection, resource, ct);
         var schedule = await WithRefreshAsync(connection, c =>
             _soap.GetResourceScheduleAsync(c, resourceId, startDate, endDate, ct), ct);
-        var availability = AvailabilityCalculatorShim.Summarize(schedule, resourceLabel, requiredMinutesPerWeek: 0);
+        var availability = AvailabilityCalculatorShim.Summarize(
+            schedule, resourceLabel, requiredMinutesPerWeek: 0, includeDayBookings: true);
         return AttachDuration(new
         {
             resource_id = resourceLabel,
@@ -1571,7 +1572,11 @@ public sealed class ProjectorToolService
         }
     }
 
-    private static ResourceSchedule MergeSchedules(IEnumerable<ResourceSchedule> chunks)
+    /// <summary>
+    /// get_overview reads up to 120 days in 56-day chunks. Each chunk reads whole weeks, so a week cut by a chunk
+    /// border comes back from both: its weekly row is kept once, with the window minutes of both chunks added up.
+    /// </summary>
+    internal static ResourceSchedule MergeSchedules(IEnumerable<ResourceSchedule> chunks)
     {
         var list = chunks.ToList();
         if (list.Count == 0)
@@ -1591,7 +1596,18 @@ public sealed class ProjectorToolService
             TimeOff = list.SelectMany(s => s.TimeOff).ToList(),
             Roles = list.SelectMany(s => s.Roles).GroupBy(r => r.ProjectCode + "|" + r.RoleName)
                 .Select(g => g.First()).ToList(),
-            Bookings = list.SelectMany(s => s.Bookings).ToList()
+            Bookings = list.SelectMany(s => s.Bookings)
+                .Select((b, i) => (Booking: b, Index: i))
+                .GroupBy(x => string.Equals(x.Booking.DailyWeeklyFlag, "W", StringComparison.OrdinalIgnoreCase)
+                    ? $"W|{x.Booking.ProjectCode}|{x.Booking.RoleName}|{x.Booking.Date}"
+                    : $"#{x.Index}", x => x.Booking)
+                .Select(g => g.Count() == 1
+                    ? g.First()
+                    : ApiClient.Xml.AvailabilityCalculator.WithWindow(
+                        g.First(),
+                        g.First().WeekWorkingDays,
+                        g.Any(b => b.WindowMinutes is not null) ? g.Sum(b => b.WindowMinutes ?? 0) : null))
+                .ToList()
         };
     }
 
@@ -1725,10 +1741,11 @@ internal static class AvailabilityCalculatorShim
     public static AvailabilitySummary Summarize(
         ResourceSchedule schedule,
         string resourceId,
-        double requiredMinutesPerWeek)
+        double requiredMinutesPerWeek,
+        bool includeDayBookings = false)
     {
         // Application references ApiClient — call the real calculator.
         return ApiClient.Xml.AvailabilityCalculator.ToAvailabilitySummary(
-            schedule, resourceId, null, null, requiredMinutesPerWeek);
+            schedule, resourceId, null, null, requiredMinutesPerWeek, includeDayBookings);
     }
 }

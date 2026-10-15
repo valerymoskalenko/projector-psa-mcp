@@ -86,8 +86,9 @@ public sealed class AgentTools
         "date, text — what the scheduler wrote for that week), plus daily/weekly capacity summaries. " +
         "Cap is eight weeks. Booked minutes are planned resource bookings (the resource plan), not time posted on " +
         "timecards; use list_timecards for posted hours. A weekly booking is spread over the working days of its " +
-        "whole week, also when the window is part of a week. roles lists the person's roles in the window, not " +
-        "every role they hold. " +
+        "whole week, also when the window is part of a week: days[].bookings shows each day's hours per project " +
+        "role (from daily or weekly), and a weekly booking row has weekWorkingDays and windowHours (its share on the " +
+        "asked-for dates). roles lists the person's roles in the window, not every role they hold. " +
         "WhenNotToUse: Do not use for multi-person availability comparisons. " +
         "Do not use for historical time entry totals; use list_timecards. " +
         "Do not use for a project team roster; use list_project_roles. " +

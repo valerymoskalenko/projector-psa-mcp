@@ -179,6 +179,94 @@ public class BookingWeekTests
     }
 
     [Fact]
+    public void Schedule_DayBookings_SayWhereEachDaysHoursComeFrom_AndWeeklyRowHasItsWindowShare()
+    {
+        var full = new ResourceSchedule
+        {
+            Dates = WeekDates("2026-11-08", 480),
+            Bookings =
+            [
+                Weekly("P900001-001", "2026-11-08", 2400),
+                Daily("P900002-001", "2026-11-09", 480),
+                Daily("P900002-001", "2026-11-10", 480)
+            ]
+        };
+
+        var trimmed = AvailabilityCalculator.TrimToWindow(full, "2026-11-09", "2026-11-10");
+        var summary = AvailabilityCalculator.ToAvailabilitySummary(trimmed, includeDayBookings: true);
+
+        var weekly = trimmed.Bookings.Single(b => b.DailyWeeklyFlag == "W");
+        weekly.WeekWorkingDays.Should().Be(5);
+        weekly.WindowMinutes.Should().Be(960);
+        weekly.WindowHours.Should().Be(16);
+        summary.Days.Should().AllSatisfy(d =>
+        {
+            d.Bookings!.Select(b => (b.ProjectCode, b.From, b.BookedMinutes)).Should().BeEquivalentTo(
+                [("P900002-001", "daily", 480), ("P900001-001", "weekly", 480)]);
+            d.Bookings!.Sum(b => b.BookedMinutes).Should().Be(d.BookedMinutes);
+        });
+    }
+
+    [Fact]
+    public void Schedule_WeeklyShare_FollowsTheWeeksWorkingDays_WhenAHolidayIsOutsideTheWindow()
+    {
+        var dates = WeekDates("2026-11-08", 480);
+        dates[3] = new ScheduleDate { Date = "2026-11-11", NormalWorkingMinutes = 480, UtilizationBasisMinutes = 0 };
+        var full = new ResourceSchedule { Dates = dates, Bookings = [Weekly("P900001-001", "2026-11-08", 2400)] };
+
+        var trimmed = AvailabilityCalculator.TrimToWindow(full, "2026-11-09", "2026-11-10");
+        var summary = AvailabilityCalculator.ToAvailabilitySummary(trimmed, includeDayBookings: true);
+
+        trimmed.Bookings.Single().WeekWorkingDays.Should().Be(4);
+        trimmed.Bookings.Single().WindowMinutes.Should().Be(1200);
+        summary.Days.Sum(d => d.BookedMinutes).Should().Be(1200);
+    }
+
+    [Fact]
+    public void Schedule_Answer_HasNoWeekDates_AndCheckAvailabilityHasNoDayBookings()
+    {
+        var full = new ResourceSchedule
+        {
+            Dates = WeekDates("2026-11-08", 480),
+            Bookings = [Weekly("P900001-001", "2026-11-08", 2400)]
+        };
+        var trimmed = AvailabilityCalculator.TrimToWindow(full, "2026-11-09", "2026-11-10");
+
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            trimmed, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        trimmed.WeekDates.Should().HaveCount(7, "still used for the spreading");
+        json.Should().NotContain("weekDates");
+        json.Should().Contain("\"windowHours\":16");
+        AvailabilityCalculator.ToAvailabilitySummary(trimmed).Days!.Should().AllSatisfy(d => d.Bookings.Should().BeNull());
+    }
+
+    [Fact]
+    public void Overview_WeekCutByAChunkBorder_IsOneRow_WithBothChunksWindowMinutes()
+    {
+        // Seen 2026-10-15 on v0.14.0: get_overview 4 Nov–8 Jan listed the week of 27 Dec twice.
+        var chunk1 = new ResourceSchedule
+        {
+            Bookings =
+            [
+                AvailabilityCalculator.WithWindow(Weekly("P900001-001", "2026-12-27", 1200), 5, 480),
+                Daily("P900002-001", "2026-12-28", 240)
+            ]
+        };
+        var chunk2 = new ResourceSchedule
+        {
+            Bookings = [AvailabilityCalculator.WithWindow(Weekly("P900001-001", "2026-12-27", 1200), 5, 720)]
+        };
+
+        var merged = ProjectorToolService.MergeSchedules([chunk1, chunk2]);
+
+        merged.Bookings.Should().HaveCount(2);
+        var weekly = merged.Bookings.Single(b => b.DailyWeeklyFlag == "W");
+        weekly.ScheduledMinutes.Should().Be(1200, "the week's own total is not added up");
+        weekly.WindowMinutes.Should().Be(1200);
+    }
+
+    [Fact]
     public void Schedule_WeeklyBooking_InAWeekWithoutCapacity_CountsAsOverallocated()
     {
         // Seen 2026-10-15: a person with a 0-hour work calendar showed nothing booked; Projector shows -20.

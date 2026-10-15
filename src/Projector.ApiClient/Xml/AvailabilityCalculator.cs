@@ -30,14 +30,46 @@ public static class AvailabilityCalculator
             Holidays = full.Holidays.Where(h => InWindow(h.Date)).ToList(),
             TimeOff = full.TimeOff.Where(t => InWindow(t.Date)).ToList(),
             Roles = full.Roles,
-            Bookings = full.Bookings.Where(b => IsWeekly(b)
+            Bookings = full.Bookings
+                .Where(b => IsWeekly(b)
                     ? !string.IsNullOrWhiteSpace(b.Date)
                       && string.CompareOrdinal(b.Date, firstWeek) >= 0
                       && string.CompareOrdinal(b.Date, end) <= 0
                     : InWindow(b.Date))
+                .Select(b => IsWeekly(b) ? WithWindowShare(b, full.Dates, InWindow) : b)
                 .ToList()
         };
     }
+
+    /// <summary>
+    /// A weekly row with the share of its minutes on the asked-for dates, spread exactly as the day totals are (same
+    /// <see cref="ExpandWeeklyBookings"/>), so windowMinutes always equals what days[] shows for that booking.
+    /// </summary>
+    private static ScheduleBooking WithWindowShare(
+        ScheduleBooking weekly, IReadOnlyList<ScheduleDate> weekDates, Func<string?, bool> inWindow)
+    {
+        var spread = ExpandWeeklyBookings([weekly], weekDates);
+        var windowMinutes = spread.Where(d => inWindow(d.Date)).Sum(d => d.BookedMinutes);
+        return WithWindow(weekly, spread.Count, windowMinutes);
+    }
+
+    /// <summary>Copy of a booking row with the window fields set (rows are immutable).</summary>
+    public static ScheduleBooking WithWindow(ScheduleBooking b, int? weekWorkingDays, int? windowMinutes) => new()
+    {
+        ProjectCode = b.ProjectCode,
+        ProjectName = b.ProjectName,
+        RoleName = b.RoleName,
+        BookingStatus = b.BookingStatus,
+        DailyWeeklyFlag = b.DailyWeeklyFlag,
+        SchedulingMode = b.SchedulingMode,
+        Date = b.Date,
+        ScheduledMinutes = b.ScheduledMinutes,
+        ScheduledHours = b.ScheduledHours,
+        WeekWorkingDays = weekWorkingDays,
+        WindowMinutes = windowMinutes,
+        WindowHours = windowMinutes is null ? null : ProjectorDateHelpers.MinutesAsHours(windowMinutes.Value),
+        Notes = b.Notes
+    };
 
     private static bool IsWeekly(ScheduleBooking b)
     {
@@ -117,6 +149,7 @@ public static class AvailabilityCalculator
                     ProjectName = b.ProjectName,
                     RoleName = b.RoleName,
                     BookingStatus = b.BookingStatus,
+                    FromWeekly = true,
                     BookedMinutes = mins
                 });
             }
@@ -130,10 +163,31 @@ public static class AvailabilityCalculator
         string? resourceReferenceSystemId = null,
         string? displayName = null,
         string? emailAddress = null,
-        double requiredMinutesPerWeek = 0)
+        double requiredMinutesPerWeek = 0,
+        bool includeDayBookings = false)
     {
         var dailyBookings = ExpandWeeklyBookings(
             schedule.Bookings, schedule.WeekDates.Count > 0 ? schedule.WeekDates : schedule.Dates);
+        var bookingsByDate = includeDayBookings
+            ? dailyBookings
+                .Where(b => !string.IsNullOrWhiteSpace(b.Date) && b.BookedMinutes != 0)
+                .GroupBy(b => b.Date!, StringComparer.Ordinal)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<DayBooking>)g
+                        .GroupBy(b => (b.ProjectCode, b.ProjectName, b.RoleName, b.FromWeekly))
+                        .Select(r => new DayBooking
+                        {
+                            ProjectCode = r.Key.ProjectCode,
+                            ProjectName = r.Key.ProjectName,
+                            RoleName = r.Key.RoleName,
+                            From = r.Key.FromWeekly ? "weekly" : "daily",
+                            BookedMinutes = r.Sum(b => b.BookedMinutes),
+                            BookedHours = ProjectorDateHelpers.MinutesAsHours(r.Sum(b => b.BookedMinutes))
+                        })
+                        .ToList(),
+                    StringComparer.Ordinal)
+            : null;
         var bookedByDate = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var b in dailyBookings)
         {
@@ -214,7 +268,10 @@ public static class AvailabilityCalculator
                 AvailableHours = ProjectorDateHelpers.MinutesAsHours(available),
                 OverallocatedMinutes = over,
                 OverallocatedHours = ProjectorDateHelpers.MinutesAsHours(over),
-                State = state
+                State = state,
+                Bookings = bookingsByDate is null
+                    ? null
+                    : string.IsNullOrWhiteSpace(d.Date) ? [] : bookingsByDate.GetValueOrDefault(d.Date) ?? []
             };
         }).ToList();
 

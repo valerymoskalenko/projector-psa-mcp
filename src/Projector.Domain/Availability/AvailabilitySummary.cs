@@ -81,6 +81,30 @@ public sealed class AvailabilityDay
     public double OverallocatedHours { get; init; }
 
     public string State { get; init; } = "non_working";
+
+    /// <summary>
+    /// Where the day's booked hours come from: one entry per project role, a weekly booking's share of the week or a
+    /// daily booking. Only get_schedule fills it (per-day detail); null elsewhere.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<DayBooking>? Bookings { get; init; }
+}
+
+/// <summary>One project role's hours on one day (get_schedule days[].bookings).</summary>
+public sealed class DayBooking
+{
+    public string? ProjectCode { get; init; }
+
+    public string? ProjectName { get; init; }
+
+    public string? RoleName { get; init; }
+
+    /// <summary>daily = booked on this day; weekly = this day's share of a weekly booking.</summary>
+    public string From { get; init; } = "daily";
+
+    public int BookedMinutes { get; init; }
+
+    public double BookedHours { get; init; }
 }
 
 public sealed class AvailabilityWeek
@@ -141,6 +165,9 @@ public sealed class DailyBooking
     public string? RoleName { get; init; }
 
     public string? BookingStatus { get; init; }
+
+    /// <summary>True when the minutes are a share of a weekly booking.</summary>
+    public bool FromWeekly { get; init; }
 
     public int BookedMinutes { get; init; }
 }
