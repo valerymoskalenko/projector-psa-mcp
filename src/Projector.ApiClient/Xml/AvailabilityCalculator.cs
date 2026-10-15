@@ -11,7 +11,44 @@ namespace Projector.ApiClient.Xml;
 public static class AvailabilityCalculator
 {
     /// <summary>
-    /// Expands weekly bookings across utilization workdays. Empty bookings are OK (PTO-only weeks).
+    /// Cuts a schedule read in whole weeks back to start..end (yyyy-MM-dd): dates, holidays, time off and daily
+    /// bookings inside the window, weekly bookings of the weeks it touches. The whole weeks stay in
+    /// <see cref="ResourceSchedule.WeekDates"/> for spreading weekly bookings.
+    /// </summary>
+    public static ResourceSchedule TrimToWindow(ResourceSchedule full, string start, string end)
+    {
+        bool InWindow(string? date) =>
+            !string.IsNullOrWhiteSpace(date)
+            && string.CompareOrdinal(date, start) >= 0
+            && string.CompareOrdinal(date, end) <= 0;
+
+        var firstWeek = ProjectorDateHelpers.GetWeekStart(start)!;
+        return new ResourceSchedule
+        {
+            Dates = full.Dates.Where(d => InWindow(d.Date)).ToList(),
+            WeekDates = full.Dates,
+            Holidays = full.Holidays.Where(h => InWindow(h.Date)).ToList(),
+            TimeOff = full.TimeOff.Where(t => InWindow(t.Date)).ToList(),
+            Roles = full.Roles,
+            Bookings = full.Bookings.Where(b => IsWeekly(b)
+                    ? !string.IsNullOrWhiteSpace(b.Date)
+                      && string.CompareOrdinal(b.Date, firstWeek) >= 0
+                      && string.CompareOrdinal(b.Date, end) <= 0
+                    : InWindow(b.Date))
+                .ToList()
+        };
+    }
+
+    private static bool IsWeekly(ScheduleBooking b)
+    {
+        var flag = b.DailyWeeklyFlag ?? "";
+        return !(flag is "D" or "Daily" || string.IsNullOrWhiteSpace(flag));
+    }
+
+    /// <summary>
+    /// Expands weekly bookings across the utilization workdays of their week. A week without any (no capacity, or
+    /// all holidays) spreads over Monday–Friday, so the hours show as overallocated instead of vanishing. Empty
+    /// bookings are OK (PTO-only weeks).
     /// </summary>
     public static IReadOnlyList<DailyBooking> ExpandWeeklyBookings(
         IReadOnlyList<ScheduleBooking> bookings,
@@ -21,8 +58,7 @@ public static class AvailabilityCalculator
 
         foreach (var b in bookings)
         {
-            var flag = b.DailyWeeklyFlag ?? "";
-            if (flag is "D" or "Daily" || string.IsNullOrWhiteSpace(flag))
+            if (!IsWeekly(b))
             {
                 daily.Add(new DailyBooking
                 {
@@ -56,7 +92,12 @@ public static class AvailabilityCalculator
 
             if (workDays.Count == 0)
             {
-                continue;
+                workDays = Enumerable.Range(1, 5)
+                    .Select(i => new ScheduleDate
+                    {
+                        Date = weekStart.AddDays(i).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                    })
+                    .ToList();
             }
 
             var perDay = b.ScheduledMinutes / workDays.Count;
@@ -91,7 +132,8 @@ public static class AvailabilityCalculator
         string? emailAddress = null,
         double requiredMinutesPerWeek = 0)
     {
-        var dailyBookings = ExpandWeeklyBookings(schedule.Bookings, schedule.Dates);
+        var dailyBookings = ExpandWeeklyBookings(
+            schedule.Bookings, schedule.WeekDates.Count > 0 ? schedule.WeekDates : schedule.Dates);
         var bookedByDate = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var b in dailyBookings)
         {

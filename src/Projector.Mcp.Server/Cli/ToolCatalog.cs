@@ -402,6 +402,13 @@ public static class ToolCatalog
                 ?? throw new ArgumentException("--comments-json must contain a JSON array.");
         }
 
+        IReadOnlyList<BookingSetDayInput>? setDays = null;
+        if (Text("set_days_json") is { } setDaysFile)
+        {
+            setDays = System.Text.Json.JsonSerializer.Deserialize<List<BookingSetDayInput>>(File.ReadAllText(setDaysFile), jsonOpts)
+                ?? throw new ArgumentException("--set-days-json must contain a JSON array.");
+        }
+
         return services.GetRequiredService<BookingToolService>().SaveBookingAsync(
             connectionId,
             Require(args, "resource"),
@@ -414,6 +421,7 @@ public static class ToolCatalog
             Text("role_name"),
             extras,
             comments,
+            setDays,
             GetBool(args, "dry_run", defaultValue: true),
             ct);
     }

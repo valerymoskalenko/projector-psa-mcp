@@ -106,8 +106,16 @@ public static class ProjectorEnvelopeBuilders
     private static XElement? ResourceIdentity(string? resourceReferenceSystemId) =>
         string.IsNullOrWhiteSpace(resourceReferenceSystemId)
             ? null
-            : new XElement(SoapNamespaces.Tim + "ResourceIdentity",
-                new XElement(SoapNamespaces.Com + "ResourceReferenceSystemId", resourceReferenceSystemId));
+            : new XElement(SoapNamespaces.Tim + "ResourceIdentity", ResourceIdValue(resourceReferenceSystemId));
+
+    /// <summary>
+    /// The id inside a ResourceIdentity: a ResourceUid (15+ digits, as in <see cref="ProjectorIdentityRefs"/>) for
+    /// people without an employee id, else the ResourceReferenceSystemId.
+    /// </summary>
+    private static XElement ResourceIdValue(string id) =>
+        long.TryParse(id, out _) && id.Length >= 15
+            ? new XElement(SoapNamespaces.Com + "ResourceUid", id)
+            : new XElement(SoapNamespaces.Com + "ResourceReferenceSystemId", id);
 
     /// <summary>PTO-only cards via PwsGetTimeCards (never PwsGetTimeEntryTimeOff).</summary>
     public static string BuildGetTimeOffCards(
@@ -301,8 +309,7 @@ public static class ProjectorEnvelopeBuilders
                 new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
                 new XElement(SoapNamespaces.Tim + "CutoffDate", cutoff),
                 new XElement(SoapNamespaces.Tim + "IncludePastRequestedTimeOffFlag", "false"),
-                new XElement(SoapNamespaces.Tim + "ResourceIdentity",
-                    new XElement(SoapNamespaces.Com + "ResourceReferenceSystemId", resourceReferenceSystemId))));
+                new XElement(SoapNamespaces.Tim + "ResourceIdentity", ResourceIdValue(resourceReferenceSystemId))));
         return EnvelopeString(body, includeTim: true);
     }
 
@@ -426,8 +433,7 @@ public static class ProjectorEnvelopeBuilders
             new XElement(SoapNamespaces.Pws + "serviceRequest",
                 new XElement(SoapNamespaces.Req + "SessionTicket", sessionTicket),
                 new XElement(SoapNamespaces.Tim + "IncludeSubmittedTimeFlag", "true"),
-                new XElement(SoapNamespaces.Tim + "ResourceIdentity",
-                    new XElement(SoapNamespaces.Com + "ResourceReferenceSystemId", resourceReferenceSystemId))));
+                new XElement(SoapNamespaces.Tim + "ResourceIdentity", ResourceIdValue(resourceReferenceSystemId))));
         return EnvelopeString(body, includeTim: true);
     }
 

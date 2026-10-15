@@ -4,6 +4,12 @@ public sealed class ResourceSchedule
 {
     public IReadOnlyList<ScheduleDate> Dates { get; init; } = [];
 
+    /// <summary>
+    /// Every date of the Sunday–Saturday weeks the window touches. A weekly booking is spread over its whole week's
+    /// working days, so a window of part of a week still shows the right hours per day. Empty = use <see cref="Dates"/>.
+    /// </summary>
+    public IReadOnlyList<ScheduleDate> WeekDates { get; init; } = [];
+
     public IReadOnlyList<ScheduleHoliday> Holidays { get; init; } = [];
 
     public IReadOnlyList<ScheduleTimeOff> TimeOff { get; init; } = [];

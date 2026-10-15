@@ -975,6 +975,7 @@ public sealed class ProjectorToolService
                 schedulingMode = b.SchedulingMode,
                 scheduledMinutes = b.ScheduledMinutes,
                 scheduledHours = b.ScheduledHours,
+                dailyHours = b.DailyMinutes?.Select(m => Math.Round(m / 60.0, 2)).ToList(),
                 notes = b.Notes
             }).ToList(),
             count = listed.Bookings.Count,
@@ -1082,15 +1083,16 @@ public sealed class ProjectorToolService
         {
             var match = await WithRefreshAsync(connection, c =>
                 ResourceEmailResolver.FindAsync(_soap, c, id, ct), ct);
-            if (match?.ResourceReferenceSystemId is null)
+            var matchId = PersonId(match?.ResourceReferenceSystemId, match?.ResourceUid);
+            if (matchId is null)
             {
                 throw new ProjectorApiException($"Resource not found for email '{id}'.", "AtLeastOneItemNotFound");
             }
 
             var detail = await WithRefreshAsync(connection, c =>
-                _soap.GetResourceAsync(c, match.ResourceReferenceSystemId, includeHistory, includeUdfs: false, ct), ct);
+                _soap.GetResourceAsync(c, matchId, includeHistory, includeUdfs: false, ct), ct);
             return (
-                match.ResourceReferenceSystemId,
+                matchId,
                 detail?.DisplayName ?? match.DisplayName,
                 detail?.EmailAddress ?? match.EmailAddress,
                 detail);
@@ -1119,9 +1121,9 @@ public sealed class ProjectorToolService
         {
             var byName = await WithRefreshAsync(connection, c =>
                 _soap.GetResourceAsync(c, id, includeHistory, includeUdfs: false, ct), ct);
-            if (byName?.ResourceReferenceSystemId is not null)
+            if (PersonId(byName?.ResourceReferenceSystemId, byName?.ResourceUid) is { } byNameId)
             {
-                return (byName.ResourceReferenceSystemId, byName.DisplayName, byName.EmailAddress, byName);
+                return (byNameId, byName!.DisplayName, byName.EmailAddress, byName);
             }
         }
         catch (ProjectorApiException ex) when (
@@ -1160,19 +1162,29 @@ public sealed class ProjectorToolService
             }
         }
 
-        if (summary?.ResourceReferenceSystemId is null)
+        var summaryId = PersonId(summary?.ResourceReferenceSystemId, summary?.ResourceUid);
+        if (summaryId is null)
         {
             throw new ProjectorApiException($"Resource not found for '{id}'.", "AtLeastOneItemNotFound");
         }
 
         var resolved = await WithRefreshAsync(connection, c =>
-            _soap.GetResourceAsync(c, summary.ResourceReferenceSystemId, includeHistory, includeUdfs: false, ct), ct);
+            _soap.GetResourceAsync(c, summaryId, includeHistory, includeUdfs: false, ct), ct);
         return (
-            summary.ResourceReferenceSystemId,
+            summaryId,
             resolved?.DisplayName ?? summary.DisplayName,
             resolved?.EmailAddress ?? summary.EmailAddress,
             resolved);
     }
+
+    /// <summary>
+    /// The employee id, or for people without one (their role is often named after them) the ResourceUid: the
+    /// schedule, PTO and utilization calls accept either (ResourceUid probed on PwsGetResourceSchedule 2026-10-15).
+    /// </summary>
+    private static string? PersonId(string? referenceSystemId, string? resourceUid) =>
+        !string.IsNullOrWhiteSpace(referenceSystemId) ? referenceSystemId
+        : !string.IsNullOrWhiteSpace(resourceUid) ? resourceUid
+        : null;
 
     private async Task<(string ResourceId, string? DisplayName, string? Email, ResourceDetail? Detail)> ResolvePersonAsync(
         ProjectorConnection connection,

@@ -178,10 +178,17 @@ public sealed class ProjectorSoapClient :
         CancellationToken cancellationToken)
     {
         RejectEmailAsResourceId(resourceReferenceSystemId);
+        // Read whole Sunday–Saturday weeks: a weekly booking is spread over its whole week, then the answer is cut
+        // back to the asked window.
+        var start = ProjectorDateHelpers.ToShortDate(startDate);
+        var end = ProjectorDateHelpers.ToShortDate(endDate);
+        var weekStart = ProjectorDateHelpers.GetWeekStart(start)!;
+        var weekEnd = DateTime.ParseExact(ProjectorDateHelpers.GetWeekStart(end)!, "yyyy-MM-dd", CultureInfo.InvariantCulture)
+            .AddDays(6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var xml = ProjectorEnvelopeBuilders.BuildGetResourceSchedule(
-            connection.SessionTicket, resourceReferenceSystemId, startDate, endDate);
+            connection.SessionTicket, resourceReferenceSystemId, weekStart, weekEnd);
         var doc = await PostEnvelopeAsync(connection, "PwsGetResourceSchedule", xml, cancellationToken);
-        return ProjectorResponseParsers.ParseResourceSchedule(doc);
+        return AvailabilityCalculator.TrimToWindow(ProjectorResponseParsers.ParseResourceSchedule(doc), start, end);
     }
 
     public async Task<IReadOnlyList<HolidayEntry>> GetResourcePtoHolidaysAsync(
@@ -345,12 +352,15 @@ public sealed class ProjectorSoapClient :
 
         var start = ProjectorDateHelpers.ToShortDate(startDate);
         var end = ProjectorDateHelpers.ToShortDate(endDate);
-        var weekCount = ProjectorDateHelpers.GetMinimumWeekCountForWindow(start, end);
+        // Projector returns weeks from the first Sunday on or after StartDate, so a mid-week start would leave out
+        // its own week: read from that week's Sunday.
+        var readFrom = ProjectorDateHelpers.GetWeekStart(start)!;
+        var weekCount = ProjectorDateHelpers.GetMinimumWeekCountForWindow(readFrom, end);
         var wcfUrl = ProjectorSoapHttp.GetWcfUrl(connection);
         var requests = codes.Select(code =>
         {
             var envelopeXml = ProjectorEnvelopeBuilders.BuildGetResourceSchedulingRoleData(
-                connection.SessionTicket, code, start, "A", weekCount);
+                connection.SessionTicket, code, readFrom, "A", weekCount);
             return new SoapRequestItem(
                 code,
                 wcfUrl,

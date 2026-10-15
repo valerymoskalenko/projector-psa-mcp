@@ -15,6 +15,9 @@ public static class BookingPlanner
 
     public sealed record CommentDay(string Date, string Text);
 
+    /// <summary>A day set to exactly <see cref="Hours"/>, after hours and extra_days (0 clears the day).</summary>
+    public sealed record SetDay(string Date, double Hours, string? Comment);
+
     public sealed record PlannedWeek(
         string WeekStart,
         string SchedulingMode,
@@ -33,7 +36,8 @@ public static class BookingPlanner
     /// <summary>
     /// Plans the weeks to write. With <paramref name="hoursPerPeriod"/> each planned week is replaced (weekly total,
     /// or hours on each working day). Without it the current amounts stay: extra days are added on top and comments
-    /// change only the notes, and only the weeks they touch are written.
+    /// change only the notes, and only the weeks they touch are written. <paramref name="setDays"/> then set single
+    /// days to an exact amount (in either mode).
     /// </summary>
     public static PlanResult Plan(
         string startDate,
@@ -42,7 +46,8 @@ public static class BookingPlanner
         double? hoursPerPeriod,
         IReadOnlyList<ExtraDay>? extraDays,
         IReadOnlyList<CommentDay>? comments,
-        IReadOnlyDictionary<string, RoleWeekState> currentByWeek)
+        IReadOnlyDictionary<string, RoleWeekState> currentByWeek,
+        IReadOnlyList<SetDay>? setDays = null)
     {
         var errors = new List<string>();
         if (!TryParseDate(startDate, out var start))
@@ -80,12 +85,27 @@ public static class BookingPlanner
         }
 
         var extras = NormalizeExtras(extraDays, errors);
-        var noteEdits = NormalizeComments(comments, extras, errors);
-        if (errors.Count == 0 && periodMinutes is null && extras.Count == 0 && noteEdits.Count == 0)
+        var sets = NormalizeSetDays(setDays, errors);
+        var noteEdits = NormalizeComments(comments, extras, sets, errors);
+        if (errors.Count == 0 && periodMinutes is null && extras.Count == 0 && sets.Count == 0 && noteEdits.Count == 0)
         {
             errors.Add(
-                "Nothing to change: give hours (replaces each week), or extra_days / comments (keep the current " +
-                "hours and add on top).");
+                "Nothing to change: give hours (replaces each week), or extra_days / set_days / comments (keep the " +
+                "current hours and change only those days).");
+        }
+
+        // The current weeks must be keyed by their Sunday. Projector returns weeks from the first Sunday on or after
+        // the requested start (probed 2026-10-15: a Thursday start left out that whole week), so the caller reads from
+        // the Sunday; a key that is not a Sunday means the read can't be trusted.
+        foreach (var key in currentByWeek.Keys)
+        {
+            if (TryParseDate(key, out var keyDate) && keyDate.DayOfWeek != DayOfWeek.Sunday)
+            {
+                errors.Add(
+                    $"week_alignment: the current bookings were read in weeks starting {key} (a {keyDate.DayOfWeek}), " +
+                    "not on Sunday, so the current hours are unknown. Nothing was planned.");
+                break;
+            }
         }
 
         if (errors.Count > 0)
@@ -100,6 +120,7 @@ public static class BookingPlanner
         // A day the call names must land in a week that is written, or it would be dropped without a word.
         var plannedWeeks = new HashSet<string>(weekStarts, StringComparer.Ordinal);
         var namedDays = extras.Select(e => (Field: "extra_days", e.Date))
+            .Concat(sets.Select(d => (Field: "set_days", d.Date)))
             .Concat(noteEdits.Select(n => (Field: "comments", n.Date)));
         foreach (var (field, date) in namedDays)
         {
@@ -127,21 +148,23 @@ public static class BookingPlanner
         {
             currentByWeek.TryGetValue(weekStart, out var current);
             var weekExtras = extras.Where(e => Format(WeekStartOf(e.Date)) == weekStart).ToList();
+            var weekSets = sets.Where(d => Format(WeekStartOf(d.Date)) == weekStart).ToList();
             var weekNotes = noteEdits.Where(n => Format(WeekStartOf(n.Date)) == weekStart).ToList();
-            if (periodMinutes is null && weekExtras.Count == 0 && weekNotes.Count == 0)
+            var dayEdits = weekExtras.Count + weekSets.Count;
+            if (periodMinutes is null && dayEdits == 0 && weekNotes.Count == 0)
             {
                 // Keep-current mode: a week the call does not touch is not written.
                 continue;
             }
 
-            var needsDaily = weekExtras.Count > 0 || (periodMinutes is not null && mode == "daily");
+            var needsDaily = dayEdits > 0 || (periodMinutes is not null && mode == "daily");
             var sunday = ParseDate(weekStart);
             var saturday = sunday.AddDays(6);
             var weekFullyInside = sunday >= start && saturday <= end;
             var currentIsWeekly = string.Equals(current?.SchedulingMode, "W", StringComparison.OrdinalIgnoreCase);
             var currentIsDaily = string.Equals(current?.SchedulingMode, "D", StringComparison.OrdinalIgnoreCase);
 
-            if (needsDaily && currentIsWeekly && !weekFullyInside && weekExtras.Count == 0)
+            if (needsDaily && currentIsWeekly && !weekFullyInside && dayEdits == 0)
             {
                 errors.Add(
                     $"Week {weekStart} is stored as a weekly total and the date range does not cover the whole " +
@@ -155,7 +178,7 @@ public static class BookingPlanner
             int? weekly = null;
             string outMode;
 
-            if (periodMinutes is null && weekExtras.Count == 0)
+            if (periodMinutes is null && dayEdits == 0)
             {
                 // Notes only: the hours stay exactly as stored.
                 if (currentIsDaily)
@@ -175,6 +198,7 @@ public static class BookingPlanner
                 daily = periodMinutes is null
                     ? BuildDailyFromCurrent(current, weekExtras)
                     : BuildDailyMinutes(weekStart, start, end, mode, periodMinutes.Value, weekExtras, current);
+                ApplySetDays(daily, weekSets);
             }
             else
             {
@@ -191,9 +215,9 @@ public static class BookingPlanner
 
             string[]? notes = null;
             var notesChanged = false;
-            if (weekNotes.Count > 0 || weekExtras.Any(e => e.Comment is not null))
+            if (weekNotes.Count > 0 || weekExtras.Any(e => e.Comment is not null) || weekSets.Any(d => d.Comment is not null))
             {
-                notes = MergeNotes(weekStart, current?.Notes, weekNotes, weekExtras);
+                notes = MergeNotes(weekStart, current?.Notes, weekNotes, weekExtras, weekSets);
                 notesChanged = true;
             }
 
@@ -250,6 +274,15 @@ public static class BookingPlanner
         {
             var index = (int)ParseDate(extra.Date).DayOfWeek;
             daily[index] = checked(daily[index] + (int)Math.Round(extra.Hours * 60.0, MidpointRounding.AwayFromZero));
+        }
+    }
+
+    private static void ApplySetDays(int[] daily, IReadOnlyList<SetDay> weekSets)
+    {
+        foreach (var set in weekSets)
+        {
+            daily[(int)ParseDate(set.Date).DayOfWeek] =
+                (int)Math.Round(set.Hours * 60.0, MidpointRounding.AwayFromZero);
         }
     }
 
@@ -322,7 +355,8 @@ public static class BookingPlanner
         string weekStart,
         IReadOnlyList<string>? current,
         IReadOnlyList<CommentDay> comments,
-        IReadOnlyList<ExtraDay> extras)
+        IReadOnlyList<ExtraDay> extras,
+        IReadOnlyList<SetDay>? sets = null)
     {
         var notes = new string[7];
         for (var i = 0; i < 7; i++)
@@ -338,6 +372,11 @@ public static class BookingPlanner
         foreach (var e in extras.Where(e => e.Comment is not null))
         {
             notes[(int)ParseDate(e.Date).DayOfWeek] = e.Comment!;
+        }
+
+        foreach (var d in (sets ?? []).Where(d => d.Comment is not null))
+        {
+            notes[(int)ParseDate(d.Date).DayOfWeek] = d.Comment!;
         }
 
         return notes;
@@ -377,9 +416,52 @@ public static class BookingPlanner
         return list;
     }
 
+    private static List<SetDay> NormalizeSetDays(IReadOnlyList<SetDay>? setDays, List<string> errors)
+    {
+        var list = new List<SetDay>();
+        if (setDays is null)
+        {
+            return list;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var d in setDays)
+        {
+            if (!TryParseDate(d.Date, out var date))
+            {
+                errors.Add($"set_days date '{d.Date}' must be yyyy-MM-dd.");
+                continue;
+            }
+
+            if (d.Hours < 0 || d.Hours * 60.0 > MaxMinutes)
+            {
+                errors.Add($"set_days hours for {d.Date} must be between 0 and {MaxMinutes / 60.0:0}.");
+                continue;
+            }
+
+            if (d.Comment is { Length: > 4000 })
+            {
+                errors.Add($"set_days comment for {d.Date} is longer than 4000 characters.");
+                continue;
+            }
+
+            var key = Format(date);
+            if (!seen.Add(key))
+            {
+                errors.Add($"set_days has {key} more than once.");
+                continue;
+            }
+
+            list.Add(new SetDay(key, d.Hours, d.Comment));
+        }
+
+        return list;
+    }
+
     private static List<CommentDay> NormalizeComments(
         IReadOnlyList<CommentDay>? comments,
         IReadOnlyList<ExtraDay> extras,
+        IReadOnlyList<SetDay> sets,
         List<string> errors)
     {
         var list = new List<CommentDay>();
@@ -388,7 +470,11 @@ public static class BookingPlanner
             return list;
         }
 
-        var extraDates = new HashSet<string>(extras.Select(e => e.Date), StringComparer.Ordinal);
+        // A note given in extra_days / set_days wins for its date; an entry without a note hides nothing.
+        var notedDates = new HashSet<string>(
+            extras.Where(e => e.Comment is not null).Select(e => e.Date)
+                .Concat(sets.Where(d => d.Comment is not null).Select(d => d.Date)),
+            StringComparer.Ordinal);
         foreach (var c in comments)
         {
             if (!TryParseDate(c.Date, out var d))
@@ -404,9 +490,8 @@ public static class BookingPlanner
             }
 
             var key = Format(d);
-            if (extraDates.Contains(key))
+            if (notedDates.Contains(key))
             {
-                // extra_days.comment wins for the same date.
                 continue;
             }
 

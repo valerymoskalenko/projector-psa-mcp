@@ -171,6 +171,9 @@ public sealed class ProjectBookingRow
 
     public double ScheduledHours { get; init; }
 
+    /// <summary>Minutes on each day Sunday..Saturday, for a week booked day by day (scheduling mode D); else null.</summary>
+    public IReadOnlyList<int>? DailyMinutes { get; init; }
+
     /// <summary>Booking notes of the week, one entry per day that has a note.</summary>
     public IReadOnlyList<Schedule.BookingDayNote>? Notes { get; init; }
 }

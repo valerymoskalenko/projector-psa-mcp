@@ -70,7 +70,8 @@ public static class ToolOutputSchemas
         + "predecessors, roles[] with roleName, displayName, effortHours), searchCoverage. " + SearchCoverageRule;
 
     public const string ProjectBookingsSchemaHint =
-        "Output keys: bookings[] (each with notes[] when the week has booking notes), count, startDate, endDate, "
+        "Output keys: bookings[] (each with notes[] when the week has booking notes, dailyHours when booked day by "
+        + "day), count, startDate, endDate, "
         + "failed_project_codes, searchCoverage. "
         + SearchCoverageRule;
 
@@ -143,7 +144,8 @@ public static class ToolOutputSchemas
         "Output keys: action (saved|dry_run|refused), error, project_code, resource, role (role_uid, role_name, create), "
         + "task (task_uid, path, assign), start_date, end_date, scheduling_mode, hours_per_period, weeks[] "
         + "(week_start, scheduling_mode, previous_hours, new_hours, weekly_hours or daily_hours, notes), "
-        + "skipped_weeks, read_back[] after a real save (week_start, expected_hours, actual_hours, matches), "
+        + "skipped_weeks, warnings[] (date, kind holiday|time_off, name, planned_hours) and warnings_note, "
+        + "read_back[] after a real save (week_start, expected_hours, actual_hours, matches), "
         + "submitted (always false), finalized (always false), note. refused = nothing was written. "
         + "Error write_outcome_unknown: check list_proj_bookings / list_project_roles before retrying. "
         + "On error web_services_access_view_only or no_permission_to_book_hours nothing was booked: tell the user "

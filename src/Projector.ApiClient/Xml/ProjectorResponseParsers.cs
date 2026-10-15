@@ -864,6 +864,11 @@ public static class ProjectorResponseParsers
         };
     }
 
+    private static string AddDays(string date, int days) =>
+        DateTime.ParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture)
+            .AddDays(days)
+            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
     public static IReadOnlyList<ProjectBookingRow> ParseResourceSchedulingRoleData(
         XDocument response,
         string startDate,
@@ -920,8 +925,11 @@ public static class ProjectorResponseParsers
                 }
             }
 
+            // A week (Sunday + 6 days) is in the window when it overlaps start..end, so a window that starts mid-week
+            // keeps that week.
             bool InWindow(string bucketStart) =>
-                string.CompareOrdinal(bucketStart, startKey) >= 0 && string.CompareOrdinal(bucketStart, endKey) <= 0;
+                string.CompareOrdinal(bucketStart, endKey) <= 0
+                && string.CompareOrdinal(AddDays(bucketStart, 6), startKey) >= 0;
 
             var bookedBuckets = role.Elements().FirstOrDefault(e => e.Name.LocalName == "BookedBuckets");
             string? roleSchedulingMode = null;
@@ -941,6 +949,9 @@ public static class ProjectorResponseParsers
 
                 var mode = XmlNodeHelpers.Value(bucket, "SchedulingMode");
                 var minutes = 0;
+                var dailyDays = bucket.Elements().FirstOrDefault(e => e.Name.LocalName == "DailyMinutes")?.Elements()
+                    .Select(e => int.TryParse(e.Value, out var m) ? m : 0)
+                    .ToList();
                 var weeklyRaw = XmlNodeHelpers.Value(bucket, "WeeklyMinutes");
                 if (!string.IsNullOrWhiteSpace(weeklyRaw) && int.TryParse(weeklyRaw, out var weeklyMins))
                 {
@@ -979,6 +990,10 @@ public static class ProjectorResponseParsers
                     SchedulingMode = MapDailyWeeklyFlag(mode),
                     ScheduledMinutes = minutes,
                     ScheduledHours = ProjectorDateHelpers.MinutesAsHours(minutes),
+                    DailyMinutes = string.Equals(mode, "D", StringComparison.OrdinalIgnoreCase)
+                        && dailyDays is { Count: 7 }
+                        ? dailyDays
+                        : null,
                     Notes = notesByWeek.GetValueOrDefault(bucketStart)
                 });
                 notesByWeek.Remove(bucketStart);

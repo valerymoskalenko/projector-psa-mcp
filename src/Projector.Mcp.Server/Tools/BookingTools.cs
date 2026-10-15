@@ -39,7 +39,11 @@ public sealed class BookingTools
         "(daily). Without hours, the current amounts stay and only the weeks of extra_days / comments are written. " +
         "extra_days add hours (and an optional comment) on dates inside start_date..end_date, on top of the week; " +
         "those weeks are saved as daily amounts (the week's hours spread Mon–Fri, then the extras added). To add " +
-        "hours to an existing booking, omit hours. Optional comments are the cell tooltip notes. If the person has no role, one named after them is created; if a " +
+        "hours to an existing booking, omit hours. set_days sets a day to exactly that many hours (0 clears it; use " +
+        "it to lower or change single days, e.g. 12 → 8 on a Monday), after hours and extra_days; the other days of " +
+        "the week keep their amounts. Optional comments are the cell tooltip notes; a note given with extra_days / " +
+        "set_days replaces the comments entry for that date. warnings[] lists day-by-day hours planned on a holiday " +
+        "or time off. If the person has no role, one named after them is created; if a " +
         "task is given and the role is not on it, the role is assigned (effort stays 0). Never requests, submits or " +
         "finalizes. dry_run defaults to true: call, show the weeks (role name, previous and new hours, notes), and save " +
         "with dry_run = false only after the user's explicit confirmation. " +
@@ -57,6 +61,7 @@ public sealed class BookingTools
         [Description("Optional role name when the person has more than one role on the project")] string? role_name = null,
         [Description("Optional extra days: hours added on top of the week, with optional comment (tooltip text)")] BookingExtraDay[]? extra_days = null,
         [Description("Optional comments only (date + text). Omit a day to keep its note; empty text clears it")] BookingCommentDay[]? comments = null,
+        [Description("Optional days set to exactly hours (0 clears the day), with optional comment; applied after hours and extra_days")] BookingSetDay[]? set_days = null,
         [Description("Default true: check only, nothing is saved. Pass false to save, only after the user's explicit OK (true shows the before/after weeks)")] bool dry_run = true,
         CancellationToken cancellationToken = default) =>
         InvokeAsync(ct => _bookings.SaveBookingAsync(
@@ -71,6 +76,7 @@ public sealed class BookingTools
                 role_name,
                 (extra_days ?? []).Select(e => new BookingExtraDayInput(e.date, e.hours, e.comment)).ToList(),
                 (comments ?? []).Select(c => new BookingCommentInput(c.date, c.text)).ToList(),
+                (set_days ?? []).Select(d => new BookingSetDayInput(d.date, d.hours, d.comment)).ToList(),
                 dry_run,
                 ct.Token),
             cancellationToken);
@@ -98,6 +104,13 @@ public sealed class BookingTools
 }
 
 public sealed class BookingExtraDay
+{
+    public string date { get; set; } = "";
+    public double hours { get; set; }
+    public string? comment { get; set; }
+}
+
+public sealed class BookingSetDay
 {
     public string date { get; set; } = "";
     public double hours { get; set; }

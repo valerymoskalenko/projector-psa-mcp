@@ -85,7 +85,9 @@ public sealed class AgentTools
         "and hours (expected hours), holidays, PTO, roles, bookings with their booking notes (bookings[].notes: day, " +
         "date, text — what the scheduler wrote for that week), plus daily/weekly capacity summaries. " +
         "Cap is eight weeks. Booked minutes are planned resource bookings (the resource plan), not time posted on " +
-        "timecards; use list_timecards for posted hours. " +
+        "timecards; use list_timecards for posted hours. A weekly booking is spread over the working days of its " +
+        "whole week, also when the window is part of a week. roles lists the person's roles in the window, not " +
+        "every role they hold. " +
         "WhenNotToUse: Do not use for multi-person availability comparisons. " +
         "Do not use for historical time entry totals; use list_timecards. " +
         "Do not use for a project team roster; use list_project_roles. " +
@@ -253,6 +255,8 @@ public sealed class AgentTools
         "one SOAP call per project with bounded concurrency. Each row carries the booking notes of its week " +
         "(notes[]: day, date, text — the comment on a week cell of the Resource Scheduling grid); a week with notes " +
         "but no hours is listed with zero hours. Other zero-hour buckets are omitted. " +
+        "Rows are Sunday–Saturday weeks (date = the Sunday); a week that overlaps the window is included. A week " +
+        "booked day by day has dailyHours (Sunday..Saturday), so hours per person per day need one call. " +
         "Accepts many project_codes in one MCP call. " +
         ToolOutputSchemas.ProjectBookingsSchemaHint + " " +
         "WhenNotToUse: Do not use for assignment roster without hours; use list_project_roles. " +

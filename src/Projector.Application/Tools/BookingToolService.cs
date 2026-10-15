@@ -16,6 +16,8 @@ public sealed record BookingExtraDayInput(string Date, double Hours, string? Com
 
 public sealed record BookingCommentInput(string Date, string Text);
 
+public sealed record BookingSetDayInput(string Date, double Hours, string? Comment = null);
+
 /// <summary>
 /// save_booking: book one person on a project role for a date range (scheduler mode). Never requests, submits or
 /// finalizes. Optional role create and task assignment when missing.
@@ -74,6 +76,7 @@ public sealed class BookingToolService
         string? roleName,
         IReadOnlyList<BookingExtraDayInput>? extraDays,
         IReadOnlyList<BookingCommentInput>? comments,
+        IReadOnlyList<BookingSetDayInput>? setDays,
         bool dryRun,
         CancellationToken ct)
     {
@@ -82,6 +85,7 @@ public sealed class BookingToolService
             DryRun = dryRun,
             HoursGiven = hours is not null,
             ExtraDays = extraDays?.Count ?? 0,
+            SetDays = setDays?.Count ?? 0,
             Comments = comments?.Count ?? 0
         };
         try
@@ -100,7 +104,7 @@ public sealed class BookingToolService
             {
                 return audit.Done(await SaveBookingCoreAsync(
                     connectionId, resource, projectCode.Trim(), startDate, endDate, hours, schedulingMode, task,
-                    roleName, extraDays, comments, dryRun, audit, ct));
+                    roleName, extraDays, comments, setDays, dryRun, audit, ct));
             }
 
             // One save per project at a time: from reading the roles to the read-back.
@@ -117,7 +121,7 @@ public sealed class BookingToolService
 
             return audit.Done(await SaveBookingCoreAsync(
                 connectionId, resource, projectCode.Trim(), startDate, endDate, hours, schedulingMode, task,
-                roleName, extraDays, comments, dryRun, audit, ct));
+                roleName, extraDays, comments, setDays, dryRun, audit, ct));
         }
         catch (Exception ex)
         {
@@ -142,6 +146,7 @@ public sealed class BookingToolService
         string? roleName,
         IReadOnlyList<BookingExtraDayInput>? extraDays,
         IReadOnlyList<BookingCommentInput>? comments,
+        IReadOnlyList<BookingSetDayInput>? setDays,
         bool dryRun,
         SaveAudit audit,
         CancellationToken ct)
@@ -160,9 +165,12 @@ public sealed class BookingToolService
             matchedTask = FindTask(plan, task.Trim());
             if (matchedTask is null)
             {
+                var closest = ClosestTasks(plan, task.Trim());
                 return Refused(
-                    $"Task '{task.Trim()}' was not found on {code}. Use list_project_roles with include_task_plan.",
-                    new { project_code = code, task });
+                    $"Task '{task.Trim()}' was not found on {code}." +
+                    (closest.Count > 0 ? $" Closest: {string.Join("; ", closest)}." : string.Empty) +
+                    " Pass the WBS code, or use list_project_roles with include_task_plan.",
+                    new { project_code = code, task, closest_tasks = closest });
             }
 
             if (matchedTask.OpenForTime == false)
@@ -207,13 +215,16 @@ public sealed class BookingToolService
             willAssignTask = true;
         }
 
-        var weekCount = Math.Max(1, ProjectorDateHelpers.GetMinimumWeekCountForWindow(startDate, endDate) + 1);
+        // Projector returns weeks from the first Sunday on or after the requested start, so read from the Sunday of
+        // start_date: a mid-week start would leave out its own week and the save would overwrite it as if empty.
+        var readFrom = SundayOf(startDate);
+        var weekCount = Math.Max(1, ProjectorDateHelpers.GetMinimumWeekCountForWindow(readFrom, endDate) + 1);
         IReadOnlyList<RoleScheduleState> schedules = [];
         if (!willCreateRole && role?.RoleUid is not null)
         {
             schedules = await WithRefreshAsync(
                 connection,
-                c => _bookings.GetRoleSchedulesAsync(c, code, startDate, weekCount, ct),
+                c => _bookings.GetRoleSchedulesAsync(c, code, readFrom, weekCount, ct),
                 ct);
         }
 
@@ -229,7 +240,8 @@ public sealed class BookingToolService
             hours,
             (extraDays ?? []).Select(e => new BookingPlanner.ExtraDay(e.Date, e.Hours, e.Comment)).ToList(),
             (comments ?? []).Select(c => new BookingPlanner.CommentDay(c.Date, c.Text)).ToList(),
-            currentByWeek);
+            currentByWeek,
+            (setDays ?? []).Select(d => new BookingPlanner.SetDay(d.Date, d.Hours, d.Comment)).ToList());
 
         if (planResult.Errors.Count > 0)
         {
@@ -302,6 +314,18 @@ public sealed class BookingToolService
                 "Task-plan effort is not changed."
         };
 
+        var (warnings, warningsNote) = await DayOffWarningsAsync(connection, person, planResult.Weeks, ct);
+        if (warnings.Count > 0)
+        {
+            preview["warnings"] = warnings;
+        }
+
+        if (warningsNote is not null)
+        {
+            preview["warnings_note"] = warningsNote;
+        }
+
+        audit.Warnings = warnings.Count;
         audit.Weeks = planResult.Weeks.Count;
         audit.PreviousMinutes = planResult.Weeks.Sum(w => w.PreviousMinutes);
         audit.NewMinutes = planResult.Weeks.Sum(w => w.NewMinutes);
@@ -404,7 +428,7 @@ public sealed class BookingToolService
         // Read back.
         var after = await WithRefreshAsync(
             connection,
-            c => _bookings.GetRoleSchedulesAsync(c, code, startDate, weekCount, ct),
+            c => _bookings.GetRoleSchedulesAsync(c, code, readFrom, weekCount, ct),
             ct);
         var afterRole = after.FirstOrDefault(s => string.Equals(s.RoleUid, role!.RoleUid, StringComparison.Ordinal));
         var readBack = planResult.Weeks.Select(w =>
@@ -618,7 +642,125 @@ public sealed class BookingToolService
             && string.Equals(role.DisplayName, person.DisplayName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ProjectPlanTask? FindTask(ProjectTaskPlan? plan, string query)
+    /// <summary>
+    /// Days of a day-by-day week that get hours although they are a holiday or time off in the person's schedule.
+    /// One schedule read per 8 weeks; a failed read gives a note, never a refusal.
+    /// </summary>
+    private async Task<(List<object> Warnings, string? Note)> DayOffWarningsAsync(
+        ProjectorConnection connection,
+        BookingPerson person,
+        IReadOnlyList<BookingPlanner.PlannedWeek> weeks,
+        CancellationToken ct)
+    {
+        var bookedDays = weeks
+            .Where(w => w.DailyMinutes is not null)
+            .SelectMany(w => w.DailyMinutes!.Select((minutes, i) => (Date: AddDays(w.WeekStart, i), Minutes: minutes)))
+            .Where(d => d.Minutes > 0)
+            .ToList();
+        var personId = person.ReferenceSystemId ?? person.ResourceUid;
+        if (bookedDays.Count == 0 || string.IsNullOrWhiteSpace(personId))
+        {
+            return ([], null);
+        }
+
+        var warnings = new List<object>();
+        try
+        {
+            var first = bookedDays.Min(d => d.Date)!;
+            var last = bookedDays.Max(d => d.Date)!;
+            for (var from = first; string.CompareOrdinal(from, last) <= 0; from = AddDays(from, 56))
+            {
+                var to = AddDays(from, 55);
+                if (string.CompareOrdinal(to, last) > 0)
+                {
+                    to = last;
+                }
+
+                var chunkFrom = from;
+                var schedule = await WithRefreshAsync(connection, c =>
+                    _soap.GetResourceScheduleAsync(c, personId, chunkFrom, to, ct), ct);
+                foreach (var day in bookedDays.Where(d =>
+                             string.CompareOrdinal(d.Date, chunkFrom) >= 0 && string.CompareOrdinal(d.Date, to) <= 0))
+                {
+                    var holiday = schedule.Holidays.FirstOrDefault(h => h.Date == day.Date);
+                    if (holiday is not null)
+                    {
+                        warnings.Add(new
+                        {
+                            date = day.Date,
+                            kind = "holiday",
+                            name = holiday.HolidayName,
+                            planned_hours = RoundHours(day.Minutes)
+                        });
+                        continue;
+                    }
+
+                    var timeOff = schedule.TimeOff.FirstOrDefault(t => t.Date == day.Date && t.TimeOffMinutes > 0);
+                    if (timeOff is not null)
+                    {
+                        warnings.Add(new
+                        {
+                            date = day.Date,
+                            kind = "time_off",
+                            name = timeOff.TimeOffReason,
+                            planned_hours = RoundHours(day.Minutes)
+                        });
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogInformation(
+                "save_booking day-off check skipped: {ErrorCode}", (ex as ProjectorApiException)?.ErrorCode ?? ex.GetType().Name);
+            return ([], "Holidays and time off were not checked (the person's schedule could not be read).");
+        }
+
+        return (warnings, null);
+    }
+
+    private static string SundayOf(string date) =>
+        DateTime.TryParseExact(
+            date.Length >= 10 ? date[..10] : date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None,
+            out var d)
+            ? d.AddDays(-(int)d.DayOfWeek).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : date;
+
+    private static string AddDays(string date, int days) =>
+        DateTime.ParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture)
+            .AddDays(days)
+            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>Lowercase letters and digits only: "Northwind: User Migration" = "northwind user migration".</summary>
+    internal static string NormalizeTaskText(string? text) =>
+        new string((text ?? string.Empty).ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+
+    /// <summary>Up to three task labels whose names share the most words with the query, for a "not found" answer.</summary>
+    internal static IReadOnlyList<string> ClosestTasks(ProjectTaskPlan? plan, string query)
+    {
+        if (plan is null)
+        {
+            return [];
+        }
+
+        var words = query.ToLowerInvariant()
+            .Split([' ', ':', '-', '/', '.', ',', '(', ')'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(NormalizeTaskText)
+            .Where(w => w.Length > 1)
+            .Distinct()
+            .ToList();
+        return plan.Tasks
+            .Where(t => !string.IsNullOrWhiteSpace(t.TaskName))
+            .Select(t => (Task: t, Score: words.Count(w => NormalizeTaskText(t.TaskName).Contains(w, StringComparison.Ordinal))))
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Task.TaskName, StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .Select(x => TaskLabel(x.Task))
+            .ToList();
+    }
+
+    internal static ProjectPlanTask? FindTask(ProjectTaskPlan? plan, string query)
     {
         if (plan is null || plan.Tasks.Count == 0)
         {
@@ -652,7 +794,20 @@ public sealed class BookingToolService
             (t.TaskName is not null && t.TaskName.Contains(query, StringComparison.OrdinalIgnoreCase))
             || (paths.TryGetValue(t.TaskUid ?? "", out var path) && path.Contains(query, StringComparison.OrdinalIgnoreCase)))
             .ToList();
-        return contains.Count == 1 ? contains[0] : null;
+        if (contains.Count == 1)
+        {
+            return contains[0];
+        }
+
+        // Same words, other punctuation or case: "Northwind user migration" = "Northwind: User Migration".
+        var normalized = NormalizeTaskText(query);
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        var sameText = plan.Tasks.Where(t => NormalizeTaskText(t.TaskName) == normalized).ToList();
+        return sameText.Count == 1 ? sameText[0] : null;
     }
 
     private static string TaskLabel(ProjectPlanTask task) =>
@@ -743,11 +898,12 @@ public sealed class BookingToolService
     private void LogAudit(SaveAudit a) =>
         _logger.LogInformation(
             "save_booking audit: {SaveAction} {Weeks} week(s), {PreviousHours} -> {NewHours} h, hours given {HoursGiven}, " +
-            "{ExtraDays} extra day(s), {CommentDays} comment(s), create role {CreateRole}, assign task {AssignTask}, " +
-            "gate wait {GateWaitMs} ms, read-back match {ReadBackMatches}, error {SaveError}",
+            "{ExtraDays} extra day(s), {SetDays} set day(s), {CommentDays} comment(s), {DayOffWarnings} day-off warning(s), " +
+            "create role {CreateRole}, assign task {AssignTask}, gate wait {GateWaitMs} ms, read-back match {ReadBackMatches}, " +
+            "error {SaveError}",
             a.Action, a.Weeks, Math.Round(a.PreviousMinutes / 60.0, 2), Math.Round(a.NewMinutes / 60.0, 2),
-            a.HoursGiven, a.ExtraDays, a.Comments, a.CreateRole, a.AssignTask, a.GateWaitMs, a.ReadBackMatches,
-            a.Error);
+            a.HoursGiven, a.ExtraDays, a.SetDays, a.Comments, a.Warnings, a.CreateRole, a.AssignTask, a.GateWaitMs,
+            a.ReadBackMatches, a.Error);
 
     /// <summary>What the save_booking audit line reports: counts and flags only, no names, notes or comments.</summary>
     private sealed class SaveAudit
@@ -758,7 +914,11 @@ public sealed class BookingToolService
 
         public int ExtraDays { get; init; }
 
+        public int SetDays { get; init; }
+
         public int Comments { get; init; }
+
+        public int Warnings { get; set; }
 
         public string Action { get; private set; } = "failed";
 
