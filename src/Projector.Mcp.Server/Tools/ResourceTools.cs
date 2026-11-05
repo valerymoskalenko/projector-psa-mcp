@@ -37,19 +37,31 @@ public sealed class ResourceTools
     [Description(
         "Searches Projector resource summaries by optional query string (people catalog). " +
         "Returns truncated lists. Does not return schedules or timecards. " +
+        "People of one team: pass cost_center and/or department (text contained in the name, case-insensitive); " +
+        "each row then has cost_center, department and title, and max_rows goes up to 500. " +
+        "Before a report or check about many people (missing time, hours, bookings) where the user named no " +
+        "cost center, department or list of people, do not assume everyone: call with list_groups=true and ask " +
+        "the user which cost centers or departments to include, showing the options with their head counts. " +
+        "cost_center, department and list_groups need the Projector permission Export Data. " +
         ToolOutputSchemas.ResourcesListSchemaHint + " " +
         "WhenNotToUse: Do not use to resolve a single person by email/resource_id/full name; prefer get_resource.")]
     public Task<CallToolResult> ListResources(
         [Description("Optional search string matching display name, email, or reference system id")] string? query = null,
         [Description("Include inactive resources")] bool include_inactive = false,
-        [Description("Maximum rows to return (1-100)")] int max_rows = 50,
+        [Description("Maximum rows to return (1-100; up to 500 with cost_center or department)")] int max_rows = 50,
+        [Description("Only people whose cost center contains this text, e.g. Professional Services")] string? cost_center = null,
+        [Description("Only people whose department contains this text")] string? department = null,
+        [Description("Return groups: the cost centers and departments with head counts, to ask the user which to include")] bool list_groups = false,
         CancellationToken cancellationToken = default) =>
-        ListResourcesCoreAsync(query, include_inactive, max_rows, cancellationToken);
+        ListResourcesCoreAsync(query, include_inactive, max_rows, cost_center, department, list_groups, cancellationToken);
 
     private async Task<CallToolResult> ListResourcesCoreAsync(
         string? query,
         bool includeInactive,
         int maxRows,
+        string? costCenter,
+        string? department,
+        bool listGroups,
         CancellationToken cancellationToken)
     {
         try
@@ -57,7 +69,7 @@ public sealed class ResourceTools
             var connectionId = await _connections.RequireConnectionIdAsync(cancellationToken);
             var response = await _resources.ListAsync(
                 connectionId,
-                new ListResourcesRequest(query, includeInactive, maxRows),
+                new ListResourcesRequest(query, includeInactive, maxRows, costCenter, department, listGroups),
                 cancellationToken);
             return Ok(response);
         }

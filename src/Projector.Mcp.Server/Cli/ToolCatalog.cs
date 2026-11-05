@@ -119,9 +119,11 @@ public static class ToolCatalog
         args.TryGetValue("query", out var query);
         var includeInactive = GetBool(args, "include_inactive");
         var maxRows = GetInt(args, "max_rows", 50);
+        args.TryGetValue("cost_center", out var costCenter);
+        args.TryGetValue("department", out var department);
         return await svc.ListAsync(
             connectionId,
-            new ListResourcesRequest(query, includeInactive, maxRows),
+            new ListResourcesRequest(query, includeInactive, maxRows, costCenter, department, GetBool(args, "list_groups")),
             cancellationToken);
     }
 

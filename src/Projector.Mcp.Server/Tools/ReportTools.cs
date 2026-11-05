@@ -48,6 +48,9 @@ public sealed class ReportTools
         "Use columns to choose what comes back and query to keep only matching rows. A large result comes in parts: " +
         "when has_more is true, call again with only the argument cursor set to the next_cursor value of the answer. " +
         "A run can take a while: status 'running' means call again the same way after a few seconds. " +
+        "When the user asks about many people (e.g. missing time) and names no cost center, department or people, " +
+        "do not report on everyone: ask which cost centers to include (list_resources with list_groups=true lists " +
+        "them with head counts), then pass cost_center. " +
         ToolOutputSchemas.ReportSchemaHint + " " +
         "WhenNotToUse: Do not use for one person's time cards, schedule or PTO; use list_timecards, get_schedule, " +
         "list_upcoming_pto. Do not use for one engagement or one project's team; use get_engagement, list_project_roles.")]

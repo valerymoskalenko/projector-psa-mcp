@@ -22,7 +22,9 @@ public static class ToolOutputSchemas
         + " (omit location unless filtered). " + SearchCoverageRule;
 
     public const string ResourcesListSchemaHint =
-        "Output keys: resources, count, has_more, searchCoverage, resource_links. " + SearchCoverageRule;
+        "Output keys: resources, count, has_more, searchCoverage, resource_links; with list_groups (or when a filter " +
+        "matched nobody) groups {cost_centers[], departments[]: name, people}; note when a filter matched several " +
+        "groups or nothing. " + SearchCoverageRule;
 
     public const string ResourceGetSchemaHint =
         "Output keys: uri, resource, resource_links.";

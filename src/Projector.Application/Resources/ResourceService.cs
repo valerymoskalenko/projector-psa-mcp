@@ -13,8 +13,11 @@ public sealed class ListResourcesValidator : AbstractValidator<ListResourcesRequ
 {
     public ListResourcesValidator()
     {
-        RuleFor(x => x.MaxRows).InclusiveBetween(1, 100);
+        RuleFor(x => x.MaxRows).InclusiveBetween(1, 100).When(x => !x.UsesExport);
+        RuleFor(x => x.MaxRows).InclusiveBetween(1, ResourceService.MaxExportRows).When(x => x.UsesExport);
         RuleFor(x => x.Query).MaximumLength(255).When(x => x.Query is not null);
+        RuleFor(x => x.CostCenter).MaximumLength(255).When(x => x.CostCenter is not null);
+        RuleFor(x => x.Department).MaximumLength(255).When(x => x.Department is not null);
     }
 }
 
@@ -55,6 +58,11 @@ public sealed class ResourceService
             connectionId,
             ProjectorScopes.BrowseResources,
             cancellationToken);
+
+        if (request.UsesExport)
+        {
+            return await ListFromExportAsync(connection, request, cancellationToken);
+        }
 
         ResourceListResult listed;
         try
@@ -109,6 +117,85 @@ public sealed class ResourceService
                 r.DisplayName)).ToList(),
             page.NextOffset);
     }
+
+    /// <summary>Upper bound of max_rows when listing by cost center or department.</summary>
+    public const int MaxExportRows = 500;
+
+    internal const string ExportPermissionMessage =
+        "Listing people by cost center or department reads Projector's resource export, which needs the Projector "
+        + "permission Export Data, and this user does not have it. Without it: call list_resources without "
+        + "cost_center, department and list_groups, then get_resource for each person (its profile has cost center "
+        + "and department), or ask the user to name the people.";
+
+    private async Task<ListResourcesResponse> ListFromExportAsync(
+        ProjectorConnection connection,
+        ListResourcesRequest request,
+        CancellationToken cancellationToken)
+    {
+        ResourceExportResult export;
+        try
+        {
+            try
+            {
+                export = await _resources.ExportResourcesAsync(connection, request.IncludeInactive, cancellationToken);
+            }
+            catch (ProjectorApiException ex) when (IsSessionExpired(ex))
+            {
+                connection = await _connections.RefreshConnectionAsync(connection, cancellationToken);
+                export = await _resources.ExportResourcesAsync(connection, request.IncludeInactive, cancellationToken);
+            }
+        }
+        catch (ProjectorApiException ex) when (IsPermissionDenied(ex))
+        {
+            throw new ProjectorApiException(ExportPermissionMessage, "projector_permission_denied", ex);
+        }
+
+        var filtered = ResourceExportFilter.Apply(
+            export.Rows, request.Query, request.CostCenter, request.Department, request.IncludeInactive);
+        var filtering = !string.IsNullOrWhiteSpace(request.CostCenter) || !string.IsNullOrWhiteSpace(request.Department);
+
+        // list_groups alone answers with the groups only; with a filter it adds the matching people.
+        var people = filtering ? filtered.People : [];
+        var dtos = people.Take(request.MaxRows).Select(r => new ResourceSummaryDto(
+            ResourceUid: null,
+            r.ResourceReferenceSystemId,
+            r.DisplayName,
+            r.EmailAddress,
+            r.Inactive,
+            r.CostCenterName,
+            r.DepartmentName,
+            r.TitleName)).ToList();
+        var hasMore = people.Count > dtos.Count;
+        var coverage = new SearchCoverageDto(
+            Complete: !hasMore && !export.Truncated,
+            CountIsLowerBound: hasMore || export.Truncated,
+            SearchedScope: $"Projector resource export as of today ({(request.IncludeInactive ? "active and inactive" : "active")} "
+                + $"people); {people.Count} matched, {dtos.Count} returned",
+            Reason: hasMore ? $"{people.Count} people matched; only {dtos.Count} returned (max_rows)." : null,
+            Suggestion: hasMore ? $"Raise max_rows (up to {MaxExportRows}) or narrow cost_center, department or query." : null);
+
+        var showGroups = request.ListGroups || (filtering && people.Count == 0);
+        return new ListResourcesResponse(
+            dtos,
+            dtos.Count,
+            hasMore,
+            coverage,
+            dtos.Select(r => new ResourceLinkDto($"projector://resources/{r.ResourceReferenceSystemId}", r.DisplayName)).ToList(),
+            NextOffset: null,
+            Groups: showGroups ? filtered.Groups : null,
+            Note: ResourceExportFilter.Note(filtered, request.CostCenter, request.Department, export.Truncated));
+    }
+
+    private static bool IsSessionExpired(ProjectorApiException ex) =>
+        string.Equals(ex.ErrorCode, "InvalidSessionTicket", StringComparison.OrdinalIgnoreCase)
+        || (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase)
+            && ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsPermissionDenied(ProjectorApiException ex) =>
+        string.Equals(ex.ErrorCode, "AccessPermissionDenied", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(ex.ErrorCode, "ViewPermissionDenied", StringComparison.OrdinalIgnoreCase)
+        || System.Text.RegularExpressions.Regex.IsMatch(
+            ex.Message, @"(?i)ViewPermissionDenied|AccessPermissionDenied|do not have permission|not authorized");
 
     public async Task<GetResourceResponse> GetAsync(
         string connectionId,

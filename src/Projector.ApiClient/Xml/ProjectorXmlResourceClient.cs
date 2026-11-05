@@ -45,6 +45,31 @@ public sealed class ProjectorXmlResourceClient : IProjectorResourceClient
         };
     }
 
+    /// <summary>Rows cap for one ExportResources call (list_holidays sends 10,000 in one call without trouble).</summary>
+    internal const int ExportMaxRows = 5000;
+
+    public async Task<ResourceExportResult> ExportResourcesAsync(
+        ProjectorConnection connection,
+        bool includeInactive,
+        CancellationToken cancellationToken = default)
+    {
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var envelope = XDocument.Parse(ProjectorEnvelopeBuilders.BuildExportResources(
+            connection.SessionTicket, today, today, includeInactive, ExportMaxRows));
+        var doc = await _soap.PostAsmxAsync(
+            connection, SoapNamespaces.AsmxExportResourcesAction, envelope, "ExportResources", cancellationToken);
+        ProjectorReportParsers.ThrowIfOpsError(doc, "ExportResources");
+
+        var rows = ProjectorResponseParsers.ParseExportedResourcesAsmx(doc);
+        // A one-day window should give one row per person; keep the latest history row if Projector sends more.
+        var perPerson = rows
+            .GroupBy(r => r.ResourceReferenceSystemId ?? r.ResourceId ?? r.DisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderByDescending(r => r.BeginDate, StringComparer.Ordinal).First())
+            .ToList();
+        var truncated = ProjectorSoapHttp.IsRowCountExceeded(doc) || rows.Count >= ExportMaxRows;
+        return new ResourceExportResult(perPerson, truncated);
+    }
+
     public async Task<ResourceDetail?> GetResourceAsync(
         ProjectorConnection connection,
         string id,

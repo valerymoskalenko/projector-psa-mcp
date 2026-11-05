@@ -1241,6 +1241,10 @@ public static class ProjectorResponseParsers
             ResourceId = XmlNodeHelpers.Value(itm, "ResourceId"),
             DisplayName = XmlNodeHelpers.Value(itm, "DisplayName"),
             LocationName = XmlNodeHelpers.Value(itm, "LocationName"),
+            EmailAddress = XmlNodeHelpers.Value(itm, "EmailAddress"),
+            CostCenterName = XmlNodeHelpers.Value(itm, "CostCenterName"),
+            DepartmentName = XmlNodeHelpers.Value(itm, "DepartmentName"),
+            TitleName = XmlNodeHelpers.Value(itm, "TitleName"),
             BeginDate = XmlNodeHelpers.ShortDate(XmlNodeHelpers.Value(itm, "BeginDate")),
             EndDate = XmlNodeHelpers.ShortDate(XmlNodeHelpers.Value(itm, "EndDate")),
             Inactive = XmlNodeHelpers.Bool(itm, "ResourceInactiveFlag")

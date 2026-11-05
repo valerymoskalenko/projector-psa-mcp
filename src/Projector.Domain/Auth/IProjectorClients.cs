@@ -43,7 +43,19 @@ public interface IProjectorResourceClient
         bool includeHistory,
         bool includeUdfs,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Everyone the caller may export (ExportResources, Projector permission Export Data), one row per person as of
+    /// today, with cost center, department and title. The resource list (PwsGetResourceList) has no such fields.
+    /// </summary>
+    Task<ResourceExportResult> ExportResourcesAsync(
+        ProjectorConnection connection,
+        bool includeInactive,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This resource client cannot export resources.");
 }
+
+public sealed record ResourceExportResult(IReadOnlyList<Holidays.ExportedResourceRow> Rows, bool Truncated);
 
 /// <summary>
 /// Focused SOAP method groups beyond resources. Implementations live in ApiClient;

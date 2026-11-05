@@ -28,6 +28,14 @@ public sealed class ExportedResourceRow
 
     public string? LocationName { get; init; }
 
+    public string? EmailAddress { get; init; }
+
+    public string? CostCenterName { get; init; }
+
+    public string? DepartmentName { get; init; }
+
+    public string? TitleName { get; init; }
+
     public string? BeginDate { get; init; }
 
     public string? EndDate { get; init; }

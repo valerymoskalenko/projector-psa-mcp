@@ -144,6 +144,8 @@ $settingsArgs = @(
     "Projector__EntraTenantId=$tenantId"
 )
 if ($entraAppId) { $settingsArgs += "Projector__EntraClientId=$entraAppId" }
+# Who sees get_report ('*' = everyone, or Entra object ids). Kept here so a settings wipe plus redeploy restores it.
+if ($cfg.GetReportUsers) { $settingsArgs += "Projector__GetReportUsers=$($cfg.GetReportUsers)" }
 if ($mcpClientId) { $settingsArgs += "Projector__McpOAuthClientId=$mcpClientId" }
 if ($aiConn) {
     $settingsArgs += "APPLICATIONINSIGHTS_CONNECTION_STRING=$aiConn"

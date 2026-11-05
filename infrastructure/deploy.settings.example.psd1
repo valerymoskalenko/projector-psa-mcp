@@ -20,6 +20,10 @@
     # Extra MCP client redirect URIs to allow (e.g. a Copilot Studio connector callback).
     AllowedMcpRedirectUris = @()
 
+    # Who sees the get_report tool: '*' = everyone, or Entra object ids separated by ';'. Empty = nobody
+    # (Publish-App.ps1 then leaves the App Service setting as it is).
+    GetReportUsers = ''
+
     # Folder with your own reference catalogs (*.json) that replace the samples in
     # src/Projector.Mcp.Server/resources/catalogs at publish time. Relative to this file.
     CatalogsPath = ''

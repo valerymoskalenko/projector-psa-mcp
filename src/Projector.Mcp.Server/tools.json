@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.14.2"
+    "version": "0.15.0"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -20,7 +20,7 @@
       "requiredScopes": [
         "browseResources"
       ],
-      "description": "Searches Projector resource summaries by optional query string (people catalog). Human “list users” maps here. Returns truncated lists with resource_links and searchCoverage (status full/partial; when partial, do not present as complete — follow suggestion). Does not return schedules or timecards.",
+      "description": "Searches Projector resource summaries by optional query string (people catalog). Human “list users” maps here. Returns truncated lists with resource_links and searchCoverage (status full/partial; when partial, do not present as complete — follow suggestion). Does not return schedules or timecards. People of one team: pass cost_center and/or department (text contained in the name); rows then carry cost_center, department and title, and max_rows goes up to 500. Before a report or check about many people where the user named no cost center, department or list of people, do not assume everyone: call with list_groups=true and ask the user which cost centers or departments to include. cost_center, department and list_groups need the Projector permission Export Data.",
       "whenNotToUse": "Do not use to resolve a single person by email/resource_id/full name; prefer get_resource with resource_id, full_name, or email.",
       "inputSchema": {
         "type": "object",
@@ -35,8 +35,22 @@
           "max_rows": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 100,
-            "default": 50
+            "maximum": 500,
+            "default": 50,
+            "description": "1-100; up to 500 with cost_center or department"
+          },
+          "cost_center": {
+            "type": "string",
+            "description": "Only people whose cost center contains this text"
+          },
+          "department": {
+            "type": "string",
+            "description": "Only people whose department contains this text"
+          },
+          "list_groups": {
+            "type": "boolean",
+            "default": false,
+            "description": "Return the cost centers and departments with head counts"
           }
         }
       }
@@ -125,7 +139,9 @@
           },
           "group_by": {
             "type": "string",
-            "enum": ["task"],
+            "enum": [
+              "task"
+            ],
             "description": "task = one row per project and task instead of the cards; use it for history reads"
           }
         }
@@ -706,7 +722,7 @@
       "requiredScopes": [
         "V:exportData"
       ],
-      "description": "Returns large, cross-person results as rows, with the signed-in user's own Projector permissions. Without arguments it lists the datasets (columns, example) and the user's recent report runs. Datasets: ginsu (SubmitOlapGinsuExport: posted and planned hours, time off and revenue by person, project and period, grouped by the chosen columns), projects (ExportProjectList), time_cards (ExportTimeCards: approved cards only), report (PwsGetReportOutput: a report the user saved in Projector, by web service code, spec UID or output UID). A large result comes in parts through next_cursor: projects and time_cards continue with Projector's own paging; a saved report and a cleaned Ginsu batch are kept for ten minutes per user in memory. A report run or an export batch that is not finished within about 20 seconds answers status running with a cursor to ask again. Read-only: starting a run changes no business data. Hosted servers show the tool only to the users in the setting Projector:GetReportUsers (* = everyone).",
+      "description": "Returns large, cross-person results as rows, with the signed-in user's own Projector permissions. Without arguments it lists the datasets (columns, example) and the user's recent report runs. Datasets: ginsu (SubmitOlapGinsuExport: posted and planned hours, time off and revenue by person, project and period, grouped by the chosen columns), projects (ExportProjectList), time_cards (ExportTimeCards: approved cards only), report (PwsGetReportOutput: a report the user saved in Projector, by web service code, spec UID or output UID). A large result comes in parts through next_cursor: projects and time_cards continue with Projector's own paging; a saved report and a cleaned Ginsu batch are kept for ten minutes per user in memory. A report run or an export batch that is not finished within about 20 seconds answers status running with a cursor to ask again. Read-only: starting a run changes no business data. Hosted servers show the tool only to the users in the setting Projector:GetReportUsers (* = everyone). When the user asks about many people (e.g. missing time) and names no cost center, department or people, do not report on everyone: ask which cost centers to include (list_resources with list_groups=true lists them), then pass cost_center.",
       "whenNotToUse": "Do not use for one person's time cards, schedule or PTO; use list_timecards, get_schedule, list_upcoming_pto. Do not use for one engagement or one project's team; use get_engagement, list_project_roles.",
       "inputSchema": {
         "type": "object",
