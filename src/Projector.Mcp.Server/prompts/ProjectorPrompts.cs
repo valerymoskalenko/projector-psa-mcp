@@ -47,7 +47,7 @@ public sealed class ProjectorPrompts
             "on big projects) to pick a task by its task_path (summary tasks are not listed; where tasks show assigned, use one with assigned = true; the rate type is always the task's default; don't ask me about it); " +
             "if several fit, ask me; (3) show me date, hours, project, task path, role and narrative and wait for my yes. " +
             SaveConfirmationRule + " " +
-            "(4) save_timecard with cards = [this card] (WBS code as task); then tell me the card's status, the day's total hours and any warnings. " +
+            "(4) save_timecard with cards = [this card] (the task_uid from step 2 as task, not the WBS code: Projector renumbers WBS codes); then tell me the card's status, the day's total hours and any warnings. " +
             "It saves a Draft only; tell me to submit in Projector. " +
             TimeEntryToolService.NoSaveToolHint + " " +
             "To change an existing Draft or Rejected card, get its timecardUid from list_timecards and send the full card in save_timecard cards.");

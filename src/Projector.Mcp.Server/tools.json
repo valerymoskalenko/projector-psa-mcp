@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.15.0"
+    "version": "0.15.1"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -678,7 +678,7 @@
                 },
                 "task": {
                   "type": "string",
-                  "description": "WBS code (preferred), task UID, task_path or unique task name (get_timecard_options)"
+                  "description": "Task UID (preferred: tasks[].task_uid of get_timecard_options), task_path or unique task name; a WBS code works but Projector renumbers it, so use only one read in this conversation"
                 },
                 "role": {
                   "type": "string",

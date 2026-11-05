@@ -1463,7 +1463,9 @@ public class TimeEntryTests
         projects[0].GetProperty("hours_last_30d").GetDouble().Should().Be(2.25);
         var tasks = projects[0].GetProperty("recent_tasks").EnumerateArray().ToList();
         tasks.Select(t => t.GetProperty("wbs_code").GetString()).Should().Equal("185", "12");
+        tasks.Select(t => t.GetProperty("task_uid").GetString()).Should().Equal("t7", "t8");
         tasks[0].GetProperty("hours").GetDouble().Should().Be(1.25);
+        result.GetProperty("next_step").GetString().Should().NotContain("wbs_code of");
         result.TryGetProperty("recent_note", out _).Should().BeFalse();
 
         await service.ListTimeProjectsAsync(ConnectionId, "2026-09-24", "presale", 50, CancellationToken.None);

@@ -87,8 +87,10 @@ public sealed class TimeEntryTools
         "Never submits, approves or deletes; the user submits in Projector. To remove a card, tell the user to " +
         "delete it in Projector: this tool can't delete, and a card can't be saved with 0 hours. Before calling, show the user every card " +
         "(date, hours, project, task path, role, narrative) and get one explicit confirmation; then send all approved " +
-        "cards in one call. Find the values with list_time_projects, then get_timecard_options; task accepts the WBS " +
-        "code (preferred), the UID, the task_path (or its end) or a unique name; role accepts the UID or the exact name. " +
+        "cards in one call. Find the values with list_time_projects, then get_timecard_options; task accepts the " +
+        "task UID (preferred: task_uid / projectTaskUid read in this conversation), the task_path (or its end), a unique " +
+        "name or a WBS code; a WBS code is the task's position in the plan and Projector renumbers it when tasks are " +
+        "inserted, deleted or moved, so never save by a WBS code from earlier notes or history; role accepts the UID or the exact name. " +
         "The rate type is not a parameter: the server always uses the task's default rate type. On an update send the " +
         "full card. Every card is checked first: invalid cards are reported and not sent, valid ones are saved one by " +
         "one. dry_run defaults to true: it checks everything and shows the day totals without saving; send the approved " +

@@ -181,10 +181,11 @@ public sealed class TimeEntryToolService
     private sealed record RecentUsage(string LastUsed, double Hours, IReadOnlyList<RecentTask> Tasks);
 
     /// <summary>A task the user posted to recently; <paramref name="Descriptions"/> are only matched, never shown.</summary>
-    private sealed record RecentTask(string? Path, string? WbsCode, double Hours, string LastUsed, IReadOnlyList<string> Descriptions);
+    private sealed record RecentTask(
+        string? Uid, string? Path, string? WbsCode, double Hours, string LastUsed, IReadOnlyList<string> Descriptions);
 
     private static object TaskView(RecentTask t) =>
-        new { task_path = t.Path, wbs_code = t.WbsCode, hours = t.Hours, last_used = t.LastUsed };
+        new { task_uid = t.Uid, task_path = t.Path, wbs_code = t.WbsCode, hours = t.Hours, last_used = t.LastUsed };
 
     /// <summary>
     /// The user's own cards of the last <see cref="RecentDays"/> days up to the work date, summed per project and task
@@ -211,6 +212,7 @@ public sealed class TimeEntryToolService
                         g.Sum(c => c.WorkMinutes) / 60.0,
                         g.GroupBy(c => c.ProjectTaskUid ?? c.TaskWbsCode ?? c.TaskName ?? string.Empty)
                             .Select(tg => new RecentTask(
+                                tg.First().ProjectTaskUid,
                                 tg.First().TaskPath ?? tg.First().TaskName,
                                 tg.First().TaskWbsCode,
                                 tg.Sum(c => c.WorkMinutes) / 60.0,
@@ -1060,14 +1062,15 @@ public sealed class TimeEntryToolService
             throw new ProjectorApiException(
                 $"{candidates.Count} tasks on project {projectCode} match '{wanted}': " +
                 string.Join("; ", candidates.Take(MaxListedNames).Select(t => $"{t.Path ?? t.Name} (WBS {t.WbsCode}, {t.Uid})")) +
-                ". Pass the task path, WBS code or UID instead.",
+                ". Pass the task UID instead (or the full task path).",
                 "ambiguous_task");
         }
 
         throw new ProjectorApiException(
-            $"Unknown task '{wanted}' on project {projectCode}. Pass the WBS code instead (taskWbsCode in list_timecards), " +
-            $"or call get_timecard_options with project_code {projectCode} and query set to part of the task name, its WBS " +
-            "code or its parent's name.",
+            $"Unknown task '{wanted}' on project {projectCode}. Pass the task UID instead (projectTaskUid in list_timecards, " +
+            $"task_uid in get_timecard_options), or call get_timecard_options with project_code {projectCode} and query set " +
+            "to part of the task name or its parent's name. A WBS code from earlier notes may be out of date: Projector " +
+            "renumbers WBS codes when the task plan changes.",
             "invalid_task");
     }
 
@@ -1587,7 +1590,6 @@ public sealed class TimeEntryToolService
     }
 
     private static bool IsAuthFailure(ProjectorApiException ex) =>
-        string.Equals(ex.ErrorCode, "InvalidSessionTicket", StringComparison.OrdinalIgnoreCase)
-        || (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase)
-            && ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+        ex.IsSessionInvalid;
+
 }

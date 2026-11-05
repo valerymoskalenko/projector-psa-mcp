@@ -139,7 +139,7 @@ public sealed class ResourceService
             {
                 export = await _resources.ExportResourcesAsync(connection, request.IncludeInactive, cancellationToken);
             }
-            catch (ProjectorApiException ex) when (IsSessionExpired(ex))
+            catch (ProjectorApiException ex) when (ex.IsSessionInvalid)
             {
                 connection = await _connections.RefreshConnectionAsync(connection, cancellationToken);
                 export = await _resources.ExportResourcesAsync(connection, request.IncludeInactive, cancellationToken);
@@ -185,11 +185,6 @@ public sealed class ResourceService
             Groups: showGroups ? filtered.Groups : null,
             Note: ResourceExportFilter.Note(filtered, request.CostCenter, request.Department, export.Truncated));
     }
-
-    private static bool IsSessionExpired(ProjectorApiException ex) =>
-        string.Equals(ex.ErrorCode, "InvalidSessionTicket", StringComparison.OrdinalIgnoreCase)
-        || (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase)
-            && ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsPermissionDenied(ProjectorApiException ex) =>
         string.Equals(ex.ErrorCode, "AccessPermissionDenied", StringComparison.OrdinalIgnoreCase)
@@ -277,11 +272,9 @@ public sealed class ResourceService
     }
 
     private static bool IsAuthFailure(ProjectorApiException ex) =>
-        string.Equals(ex.ErrorCode, "InvalidSessionTicket", StringComparison.OrdinalIgnoreCase)
+        ex.IsSessionInvalid
         || string.Equals(ex.ErrorCode, "AccessPermissionDenied", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(ex.ErrorCode, "ViewPermissionDenied", StringComparison.OrdinalIgnoreCase)
-        || (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase)
-            && ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+        || string.Equals(ex.ErrorCode, "ViewPermissionDenied", StringComparison.OrdinalIgnoreCase);
 
     internal static ResourceDetailDto Map(
         ResourceDetail detail,

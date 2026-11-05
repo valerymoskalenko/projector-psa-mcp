@@ -41,7 +41,7 @@ public static class ToolOutputSchemas
         + "Rejected (save_timecard with timecard_uid can fix it), false = fix it in Projector. "
         + "compact=true returns short cards (workDate, workHours, projectCode, projectName, taskPath, taskWbsCode, roleName, "
         + "rateTypeName, status, description, rejectedReason, timecardUid, editable), about half the size. "
-        + "group_by=task returns tasks[] (project_code, project_name, task_path, wbs_code, role_name, rate_type_name, "
+        + "group_by=task returns tasks[] (project_code, project_name, task_uid, task_path, wbs_code, role_name, rate_type_name, "
         + "card_count, hours, first_date, last_date, last_description; most recent first) and tasks_count instead of "
         + "timecards[]: use it for history reads (task choice and description style). "
         + SearchCoverageRule;
@@ -88,8 +88,8 @@ public static class ToolOutputSchemas
     public const string TimeProjectsSchemaHint =
         "Output keys: work_date, query, count, total, offset, has_more, next_offset, not_chargeable_hidden, projects[] (project_code, "
         + "project_name, engagement_code, client_name, billable, chargeable, roles[] with role_uid and role_name, last_used, "
-        + "hours_last_30d, recent_tasks[] and matched_tasks[] with task_path, wbs_code, hours, last_used), recent_note, next_step. "
-        + "Save by the wbs_code of a recent task.";
+        + "hours_last_30d, recent_tasks[] and matched_tasks[] with task_uid, task_path, wbs_code, hours, last_used), recent_note, next_step. "
+        + "Save by the task_uid of a recent task, not its wbs_code: Projector renumbers WBS codes when the task plan changes.";
 
     public const string TimecardOptionsSchemaHint =
         "Output keys: work_date, project (open_for_time, narrative_required), roles[] (role_uid, role_name), "

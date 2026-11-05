@@ -787,7 +787,6 @@ public sealed class ReportToolService
     }
 
     private static bool IsAuthFailure(ProjectorApiException ex) =>
-        string.Equals(ex.ErrorCode, "InvalidSessionTicket", StringComparison.OrdinalIgnoreCase)
-        || (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase)
-            && ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+        ex.IsSessionInvalid;
+
 }

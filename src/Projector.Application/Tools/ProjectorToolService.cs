@@ -189,6 +189,7 @@ public sealed class ProjectorToolService
                 {
                     project_code = last.ProjectCode,
                     project_name = last.ProjectName,
+                    task_uid = last.ProjectTaskUid,
                     task_path = last.TaskPath ?? last.TaskName,
                     wbs_code = last.TaskWbsCode,
                     role_name = last.RoleName,
@@ -1529,9 +1530,7 @@ public sealed class ProjectorToolService
     }
 
     private static bool IsAuthFailure(ProjectorApiException ex) =>
-        string.Equals(ex.ErrorCode, "InvalidSessionTicket", StringComparison.OrdinalIgnoreCase)
-        || (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase)
-            && ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+        ex.IsSessionInvalid;
 
     private static bool LooksLikeSystemId(string id) =>
         id.Length <= 64 && !id.Contains(' ', StringComparison.Ordinal);

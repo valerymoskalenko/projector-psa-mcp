@@ -580,6 +580,7 @@ public class ResourceArgumentTests
         tasks[1].GetProperty("last_date").GetString().Should().Be("2026-09-24");
         tasks[1].GetProperty("last_description").GetString().Should().Be("Newest style");
         tasks[1].GetProperty("wbs_code").GetString().Should().Be("1.1");
+        tasks[1].GetProperty("task_uid").GetString().Should().Be("T1", "a save goes by the task UID; Projector renumbers WBS codes");
     }
 
     [Fact]

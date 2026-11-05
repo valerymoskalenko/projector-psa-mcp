@@ -12,7 +12,7 @@ public sealed record SaveTimecardCard(
     double Hours,
     [property: JsonPropertyName("project_code"), Description("Project code, e.g. P001234-001")]
     string ProjectCode,
-    [property: JsonPropertyName("task"), Description("WBS code (preferred), task UID, task_path or unique task name (get_timecard_options)")]
+    [property: JsonPropertyName("task"), Description("Task UID (preferred: tasks[].task_uid of get_timecard_options), task_path or unique task name; a WBS code works but Projector renumbers it, so use only one read in this conversation")]
     string Task,
     [property: JsonPropertyName("role"), Description("Role UID or exact role name (get_timecard_options)")]
     string Role,
