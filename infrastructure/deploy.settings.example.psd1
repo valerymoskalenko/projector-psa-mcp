@@ -20,6 +20,11 @@
     # Extra MCP client redirect URIs to allow (e.g. a Copilot Studio connector callback).
     AllowedMcpRedirectUris = @()
 
+    # Microsoft Graph application roles for the web app's managed identity, e.g. @('User.Read.All').
+    # Assigned by Deploy-Infrastructure.ps1 (needs Privileged Role Administrator or Global Administrator);
+    # a failure only warns. Empty = none.
+    ManagedIdentityGraphAppRoles = @()
+
     # Who sees the get_report tool: '*' = everyone, or Entra object ids separated by ';'. Empty = nobody
     # (Publish-App.ps1 then leaves the App Service setting as it is).
     GetReportUsers = ''

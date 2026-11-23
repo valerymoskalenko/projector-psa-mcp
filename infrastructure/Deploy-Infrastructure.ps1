@@ -377,6 +377,19 @@ catch {
     Write-Warning "SQL MI user validation skipped/failed: $_"
 }
 
+# Optional: Microsoft Graph application roles for the web app's managed identity (setting
+# ManagedIdentityGraphAppRoles). A re-created web app gets a new identity, so this runs on every deploy.
+$graphRoles = @($cfg.ManagedIdentityGraphAppRoles | Where-Object { $_ })
+if ($graphRoles.Count -gt 0) {
+    Write-Host "Granting Microsoft Graph app roles to the managed identity: $($graphRoles -join ', ')" -ForegroundColor Cyan
+    . (Join-Path $scriptDir 'GraphAppRoles.ps1')
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $graphOk = Grant-GraphAppRoles -PrincipalId $miPrincipalId -Roles $graphRoles
+    $ErrorActionPreference = $prevEap
+    if (-not $graphOk) { Write-Warning "Graph app roles incomplete (see above). The deploy itself continues." }
+}
+
 # Verify vault still exists and original secrets untouched
 az keyvault show -n $KeyVaultName -o none
 az group show -n $ResourceGroup -o none

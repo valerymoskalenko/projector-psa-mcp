@@ -32,6 +32,7 @@ function Import-DeploySettings {
         EntraHopAppName        = 'Projector-MCP-EntraHop'
         McpOAuthAppName        = 'Projector-MCP-OAuthClient'
         AllowedMcpRedirectUris = @()
+        ManagedIdentityGraphAppRoles = @()
         CatalogsPath           = ''
     }
     foreach ($key in $defaults.Keys) {
