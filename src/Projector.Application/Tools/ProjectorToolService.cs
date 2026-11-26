@@ -682,13 +682,18 @@ public sealed class ProjectorToolService
         // Schedule is fetched in 56-day chunks (stricter than a single PS PwsGetResourceSchedule call).
         ProjectorDateHelpersAssert(startDate, endDate, ProjectorDateWindows.OverviewDays);
         var connection = await RequireAsync(connectionId, ct);
-        var (resolvedId, _) = await ResolveResourceArgAsync(connection, resource, ct);
-        var resourceId = resolvedId ?? throw new ArgumentException(
-            "get_overview needs a person: pass a resource id, full name or e-mail (for yourself, your own name or e-mail).");
+        // "me" (or empty) gives a null id: time cards, schedule and time off then run for the signed-in user, as in the
+        // other tools. Projector has no lookup of the signed-in user's own profile, so the profile is left out then.
+        var (resourceId, _) = await ResolveResourceArgAsync(connection, resource, ct);
 
-        var detail = await WithRefreshAsync(connection, c =>
-            _soap.GetResourceAsync(c, resourceId, includeHistory: false, includeUdfs: true, ct), ct)
-            ?? throw new ProjectorApiException($"Resource '{resourceId}' was not found.", "AtLeastOneItemNotFound");
+        ResourceDetail? detail = null;
+        if (resourceId is not null)
+        {
+            detail = await WithRefreshAsync(connection, c =>
+                _soap.GetResourceAsync(c, resourceId, includeHistory: false, includeUdfs: true, ct), ct)
+                ?? throw new ProjectorApiException($"Resource '{resourceId}' was not found.", "AtLeastOneItemNotFound");
+        }
+
         var timecardsListed = await WithRefreshAsync(connection, c =>
             _soap.ListTimecardsAsync(c, resourceId, startDate, endDate, null, null, ct), ct);
         var scheduleChunks = await FetchScheduleChunksAsync(connection, resourceId, startDate, endDate, ct);
@@ -696,14 +701,29 @@ public sealed class ProjectorToolService
             _soap.ListTimeOffCardsAsync(c, resourceId, startDate, endDate, ct), ct);
 
         var schedule = MergeSchedules(scheduleChunks);
-        var resourceDto = ResourceService.Map(detail, includeHistory: false, includeUdfs: true);
+        var timecards = timecardsListed.Timecards.Select(MapTimecard).ToList();
+        var timeOff = timeOffListed.Cards.Select(MapTimeOff).ToList();
+
+        if (detail is null)
+        {
+            return AttachDuration(new
+            {
+                resource_id = SignedInUser,
+                resource = (object?)null,
+                note = "Ran for the signed-in user. Projector has no lookup of the signed-in user's own profile, so resource is empty: " +
+                       "call get_resource with the user's full name or e-mail for the profile.",
+                timecards,
+                schedule = MapSchedule(schedule),
+                timeOff
+            }, sw);
+        }
 
         return AttachDuration(new
         {
-            resource = resourceDto,
-            timecards = timecardsListed.Timecards.Select(MapTimecard).ToList(),
+            resource = ResourceService.Map(detail, includeHistory: false, includeUdfs: true),
+            timecards,
             schedule = MapSchedule(schedule),
-            timeOff = timeOffListed.Cards.Select(MapTimeOff).ToList()
+            timeOff
         }, sw);
     }
 

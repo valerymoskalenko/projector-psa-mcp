@@ -204,7 +204,7 @@ public sealed class AgentTools
         "The date window is at most 120 days. " +
         "WhenNotToUse: Do not use for simple availability checks; use check_availability.")]
     public Task<CallToolResult> GetResourceOverview(
-        [Description("Person: resource id, full name or e-mail")] string resource_id,
+        [Description("Person: resource id, full name or e-mail; \"me\" = the signed-in user (then without the profile: Projector can't look it up)")] string resource_id,
         [Description("Inclusive start date")] string start_date,
         [Description("Inclusive end date; at most 120 days after start_date")] string end_date,
         CancellationToken cancellationToken = default) =>

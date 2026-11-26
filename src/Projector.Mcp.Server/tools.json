@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.15.2"
+    "version": "0.15.3"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
@@ -389,7 +389,7 @@
         "properties": {
           "resource_id": {
             "type": "string",
-            "description": "Person: resource id, full name or e-mail"
+            "description": "Person: resource id, full name or e-mail; \"me\" = the signed-in user (then without the profile: Projector can't look it up)"
           },
           "start_date": {
             "type": "string",

@@ -60,8 +60,16 @@ public static class ProjectorMcpHttpHost
             ?? builder.Configuration["ApplicationInsights:ConnectionString"];
         if (!string.IsNullOrWhiteSpace(aiConnection))
         {
+            // Keep every trace. The distro's default is rate-limited sampling at 5 traces per second, and the logs of a
+            // dropped trace are dropped with it: a client that calls several tools at once lost whole calls in the logs
+            // (15 parallel calls, 5 without any log line). Traffic is small, so sample 100% instead.
             builder.Services.AddOpenTelemetry()
-                .UseAzureMonitor(o => o.ConnectionString = aiConnection)
+                .UseAzureMonitor(o =>
+                {
+                    o.ConnectionString = aiConnection;
+                    o.SamplingRatio = 1.0F;
+                    o.TracesPerSecond = null;
+                })
                 .WithTracing(t => t.AddSqlClientInstrumentation());
 
             // Scopes (tool, client, user; see ToolCallLogFilter) become custom dimensions on every log line of a call.

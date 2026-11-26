@@ -112,6 +112,40 @@ public class ResourceArgumentTests
         result.GetProperty("by_date").GetArrayLength().Should().Be(1, "compact changes only the cards, not the day totals");
     }
 
+    [Theory]
+    [InlineData("me")]
+    [InlineData(" ME ")]
+    [InlineData("")]
+    public async Task GetOverview_Me_RunsForTheCallerWithoutTheProfile(string resource)
+    {
+        var (service, soap) = Create();
+
+        var result = Json(await service.GetResourceOverviewAsync(
+            ConnectionId, resource, "2026-09-21", "2026-09-25", CancellationToken.None));
+
+        soap.Calls.Should().Equal("ListTimecardsAsync(<none>)", "ListTimeOffCardsAsync(<none>)");
+        soap.ScheduleCalls.Should().OnlyContain(c => c.StartsWith("<none> "));
+        result.GetProperty("resource_id").GetString().Should().Be("me");
+        result.GetProperty("resource").ValueKind.Should().Be(JsonValueKind.Null);
+        result.GetProperty("note").GetString().Should().Contain("get_resource");
+        result.TryGetProperty("timecards", out _).Should().BeTrue();
+        result.TryGetProperty("timeOff", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetOverview_NumericId_KeepsTheProfile()
+    {
+        var (service, soap) = Create();
+        soap.ResourcesByName["10001"] = new ResourceDetail { ResourceReferenceSystemId = "10001", DisplayName = "Jane Doe" };
+
+        var result = Json(await service.GetResourceOverviewAsync(
+            ConnectionId, "10001", "2026-09-21", "2026-09-25", CancellationToken.None));
+
+        soap.Calls.Should().Equal("GetResourceAsync(10001)", "ListTimecardsAsync(10001)", "ListTimeOffCardsAsync(10001)");
+        result.GetProperty("resource").GetProperty("DisplayName").GetString().Should().Be("Jane Doe");
+        result.TryGetProperty("note", out _).Should().BeFalse("the note is only for the signed-in user");
+    }
+
     [Fact]
     public async Task GetOverview_TooLongWindow_SaysTheLimitAndHowToSplit()
     {
@@ -673,6 +707,9 @@ public class ResourceArgumentTests
                     return ScheduleException is null
                         ? Task.FromResult(Schedule)
                         : Task.FromException<Projector.Domain.Schedule.ResourceSchedule>(ScheduleException);
+                case nameof(IProjectorSoapClient.ListTimeOffCardsAsync):
+                    Calls.Add($"ListTimeOffCardsAsync({(args![1] as string) ?? "<none>"})");
+                    return Task.FromResult(new Projector.Domain.TimeOff.TimeOffListResult { Cards = [] });
                 case nameof(IProjectorSoapClient.CheckAvailabilityAsync):
                     Calls.Add($"CheckAvailabilityAsync({(args![1] as string) ?? "<none>"}, {args[6]})");
                     return Task.FromResult(new Projector.Domain.Availability.AvailabilitySummary { State = "available" });
