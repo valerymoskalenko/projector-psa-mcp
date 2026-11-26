@@ -1,7 +1,7 @@
 {
   "server": {
     "name": "Projector PSA MCP Server",
-    "version": "0.15.1"
+    "version": "0.15.2"
   },
   "defaultRequestedScopes": "allowFullPermissions",
   "annotationsDefaults": {
